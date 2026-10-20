@@ -5,6 +5,7 @@ import {
   MENU_KEYS,
   FORMAT_INFO,
   baseMenuOrder,
+  inputKindOf,
   type ActionCapability,
   type ActionId,
   type CapabilitySnapshot,
@@ -29,10 +30,14 @@ import {
  * executor can run.
  */
 
-const REASONS = {
+export const CAPABILITY_REASONS = {
   noEncoder: (label: string): LocalizedText => ({
     ko: `${label} 인코더가 이 빌드에 없음`,
     en: `No ${label} encoder in this build`,
+  }),
+  noDecoder: (label: string): LocalizedText => ({
+    ko: `이 빌드에서는 ${label} 파일을 읽을 수 없음`,
+    en: `This build can't read ${label} files`,
   }),
   noPdfRender: { ko: 'PDF 렌더러를 불러오지 못함', en: 'PDF renderer unavailable' },
   noPdfText: { ko: 'PDF 텍스트 추출 불가', en: 'PDF text extraction unavailable' },
@@ -40,10 +45,23 @@ const REASONS = {
   noCanvas: { ko: '그리기 엔진을 불러오지 못함', en: 'Drawing engine unavailable' },
 } as const;
 
+const REASONS = CAPABILITY_REASONS;
+
 const IMAGE_TARGETS: readonly ImageFormat[] = ['jpeg', 'png', 'webp', 'heic', 'tiff', 'avif', 'bmp'];
+
+/** Actions whose PDF input needs text extraction (the others need page rendering). */
+const PDF_TEXT_ACTIONS: ReadonlySet<ActionId> = new Set<ActionId>(['convert.docx', 'convert.txt']);
 
 function decodableImages(probe: EngineProbe): ImageFormat[] {
   return IMAGE_FORMATS.filter((f) => probe.formats[f]?.input === true);
+}
+
+/** Whether this build can open files of `format` at all (images: a decoder; PDF: PDF.js render or text). */
+export function isReadableFormat(probe: EngineProbe, format: FileFormat): boolean {
+  const kind = inputKindOf(format);
+  if (kind === 'pdf') return probe.pdfRender || probe.pdfText;
+  if (kind === 'image') return probe.formats[format]?.input === true;
+  return false;
 }
 
 function capability(
@@ -51,15 +69,15 @@ function capability(
   enabled: boolean,
   inputKinds: InputKind[],
   imageInputs: FileFormat[],
-  reason?: LocalizedText,
+  reason: LocalizedText,
 ): ActionCapability {
   const usable = enabled && inputKinds.length > 0;
   return {
     actionId,
     enabled: usable,
     inputKinds: usable ? inputKinds : [],
-    imageInputs: usable ? imageInputs : [],
-    ...(usable ? {} : { reason: reason ?? REASONS.noImageDecoder }),
+    imageInputs: usable && inputKinds.includes('image') ? imageInputs : [],
+    ...(usable ? {} : { reason }),
   };
 }
 
@@ -67,6 +85,8 @@ export function buildCapabilitySnapshot(probe: EngineProbe): CapabilitySnapshot 
   const images = decodableImages(probe);
   const hasImages = images.length > 0;
   const canWritePng = probe.formats.png?.output === true;
+  // pdf-lib and docx embed PNG/JPEG only; pixels are re-encoded (orientation applied) before embedding.
+  const canEmbedImages = hasImages && (canWritePng || probe.formats.jpeg?.output === true);
   const actions = {} as Record<ActionId, ActionCapability>;
 
   for (const id of ACTION_IDS) {
@@ -84,39 +104,47 @@ export function buildCapabilitySnapshot(probe: EngineProbe): CapabilitySnapshot 
     switch (id) {
       case 'convert.pdf': {
         const ok = probe.formats.pdf?.output === true;
-        actions[id] = capability(id, ok, hasImages ? ['image'] : [], images, ok ? undefined : REASONS.noEncoder('PDF'));
+        const reason = !ok ? REASONS.noEncoder('PDF') : !hasImages ? REASONS.noImageDecoder : REASONS.noEncoder('PNG');
+        actions[id] = capability(id, ok, canEmbedImages ? ['image'] : [], images, reason);
         break;
       }
       case 'convert.docx': {
         const ok = probe.formats.docx?.output === true;
         const kinds: InputKind[] = [];
         if (probe.pdfText) kinds.push('pdf');
-        if (hasImages) kinds.push('image');
+        if (canEmbedImages) kinds.push('image');
         actions[id] = capability(id, ok, kinds, images, ok ? REASONS.noPdfText : REASONS.noEncoder('DOCX'));
         break;
       }
       case 'convert.txt': {
-        const ok = probe.formats.txt?.output === true && probe.pdfText;
-        actions[id] = capability(id, ok, ok ? ['pdf'] : [], [], REASONS.noPdfText);
+        const canWrite = probe.formats.txt?.output === true;
+        actions[id] = capability(id, canWrite && probe.pdfText, probe.pdfText ? ['pdf'] : [], [], canWrite ? REASONS.noPdfText : REASONS.noEncoder('TXT'));
         break;
       }
       case 'tool.annotate': {
         // Text and shapes are drawn with the canvas backend that also renders PDF pages.
         const ok = hasImages && canWritePng && probe.pdfRender;
-        actions[id] = capability(id, ok, ['image'], images, hasImages ? REASONS.noCanvas : REASONS.noImageDecoder);
+        const reason = !hasImages ? REASONS.noImageDecoder : !canWritePng ? REASONS.noEncoder('PNG') : REASONS.noCanvas;
+        actions[id] = capability(id, ok, ['image'], images, reason);
         break;
       }
       default: {
-        // Crop, Add Background, Compress, Metadata, Edit, Redact: sharp only.
+        // Crop, Add Background, Compress, Metadata, Edit, Redact: sharp only (previews are PNG).
         const ok = hasImages && canWritePng;
-        actions[id] = capability(id, ok, ['image'], images);
+        actions[id] = capability(id, ok, ['image'], images, hasImages ? REASONS.noEncoder('PNG') : REASONS.noImageDecoder);
       }
     }
   }
   return { probe, actions };
 }
 
-/** supports(operation, input, platform) — the single gate used for menus and job submission. */
+/**
+ * supports(operation, input, platform) — the single gate used for menus and job submission.
+ * False when: the snapshot was probed on another platform; the action is
+ * disabled; the input kind/format is not accepted; the descriptor is
+ * inconsistent (kind does not match the format); or it would be a
+ * same-format conversion (no "rename-only" conversions).
+ */
 export function supports(
   snapshot: CapabilitySnapshot,
   actionId: ActionId,
@@ -124,10 +152,10 @@ export function supports(
   platform: Platform = snapshot.probe.platform,
 ): boolean {
   if (platform !== snapshot.probe.platform) return false;
+  if (inputKindOf(input.format) !== input.kind) return false;
   const cap = snapshot.actions[actionId];
   if (!cap?.enabled || !cap.inputKinds.includes(input.kind)) return false;
   if (input.kind === 'image' && !cap.imageInputs.includes(input.format)) return false;
-  // A conversion to the input's own format is not offered (no "rename-only" conversions).
   if (actionId === `convert.${input.format}`) return false;
   return true;
 }
@@ -142,29 +170,47 @@ function imageFormatOfKey(key: MenuKey): ImageFormat | null {
   return key.startsWith('image/') ? (key.slice('image/'.length) as ImageFormat) : null;
 }
 
+/** Why a sector is disabled for this menu, or undefined when it is enabled. */
+function sectorDisabledReason(
+  snapshot: CapabilitySnapshot,
+  cap: ActionCapability,
+  kinds: readonly InputKind[],
+  ownFormat: ImageFormat | null,
+): LocalizedText | undefined {
+  if (!cap.enabled) return cap.reason ?? REASONS.noImageDecoder;
+  for (const kind of kinds) {
+    if (cap.inputKinds.includes(kind)) continue;
+    if (kind === 'image') return decodableImages(snapshot.probe).length > 0 ? REASONS.noEncoder('PNG') : REASONS.noImageDecoder;
+    return PDF_TEXT_ACTIONS.has(cap.actionId) ? REASONS.noPdfText : REASONS.noPdfRender;
+  }
+  if (ownFormat !== null && !cap.imageInputs.includes(ownFormat)) return REASONS.noDecoder(FORMAT_INFO[ownFormat].label);
+  return undefined;
+}
+
 /** Sectors for one menu key and mode (before per-drag adjustments such as the file count). */
 export function buildWheelMenu(snapshot: CapabilitySnapshot, key: MenuKey, mode: WheelMode, locale: Locale): WheelMenu {
   const kinds = kindsOfKey(key);
   const ownFormat = imageFormatOfKey(key);
   const sectors: WheelSector[] = baseMenuOrder(key, mode).map((actionId) => {
     const action = ACTIONS[actionId];
-    const cap = snapshot.actions[actionId];
-    let enabled = cap.enabled && kinds.every((k) => cap.inputKinds.includes(k));
-    if (enabled && ownFormat !== null) enabled = cap.imageInputs.includes(ownFormat);
-    const reason = enabled ? undefined : (cap.reason ?? REASONS.noImageDecoder)[locale];
+    const reason = sectorDisabledReason(snapshot, snapshot.actions[actionId], kinds, ownFormat);
     return {
       actionId,
       label: action.wheelLabel[locale],
       icon: action.icon,
-      enabled,
-      ...(reason === undefined ? {} : { reason }),
+      enabled: reason === undefined,
+      ...(reason === undefined ? {} : { reason: reason[locale] }),
       batch: action.batch,
     };
   });
   return { key, mode, sectors };
 }
 
-/** Disable non-batch sectors when several files are dragged together. */
+/**
+ * Disable non-batch sectors when several files are dragged together. Sectors
+ * that are already disabled keep their own reason. Native helpers apply the
+ * same rule to the menus they received (golden vectors: fileCount section).
+ */
 export function adjustMenuForFileCount(menu: WheelMenu, fileCount: number, multiFileReason: string): WheelMenu {
   if (fileCount <= 1) return menu;
   return {
@@ -173,8 +219,14 @@ export function adjustMenuForFileCount(menu: WheelMenu, fileCount: number, multi
   };
 }
 
+export interface HelperMenu {
+  readonly key: MenuKey;
+  readonly convert: WheelSector[];
+  readonly tools: WheelSector[];
+}
+
 /** All menus the native helper needs, keyed by MenuKey. */
-export function buildHelperMenus(snapshot: CapabilitySnapshot, locale: Locale) {
+export function buildHelperMenus(snapshot: CapabilitySnapshot, locale: Locale): HelperMenu[] {
   return MENU_KEYS.map((key) => ({
     key,
     convert: [...buildWheelMenu(snapshot, key, 'convert', locale).sectors],
@@ -182,13 +234,17 @@ export function buildHelperMenus(snapshot: CapabilitySnapshot, locale: Locale) {
   }));
 }
 
-/** Extension → single-file menu key, for the formats this build can actually read. */
+/**
+ * Extension → single-file menu key, for the formats this build can actually
+ * read (undecodable formats are left out, so the helper shows them as
+ * unsupported instead of offering a menu that cannot run).
+ */
 export function helperExtensionMap(snapshot: CapabilitySnapshot): Record<string, MenuKey> {
   const map: Record<string, MenuKey> = {};
   for (const format of decodableImages(snapshot.probe)) {
     for (const ext of FORMAT_INFO[format].extensions) map[ext] = `image/${format}`;
   }
-  if (snapshot.probe.pdfRender || snapshot.probe.pdfText) {
+  if (isReadableFormat(snapshot.probe, 'pdf')) {
     for (const ext of FORMAT_INFO.pdf.extensions) map[ext] = 'pdf';
   }
   return map;

@@ -11,7 +11,11 @@ import { OrbitError, toErrorInfo, type JobProgress, type JobState, type OrbitErr
  *  - results or progress arriving after a job settled (late responses from a
  *    cancelled/timed-out run) are ignored
  *  - a job whose runner reports a worker crash is retried at most
- *    `maxCrashRetries` times before failing with WORKER_CRASHED
+ *    `maxCrashRetries` times (default 1) before failing with WORKER_CRASHED
+ *  - cancel/timeout free the slot immediately; the runner must honour
+ *    `ctx.signal` (main kills the worker), its eventual result is ignored
+ *  - an exception thrown by `onUpdate` never corrupts the queue (it is passed
+ *    to `onListenerError`)
  */
 
 export interface RunContext {
@@ -43,6 +47,14 @@ export interface JobQueueOptions<P, R> {
   readonly onUpdate?: (entry: QueueEntry<P, R>) => void;
   readonly maxCrashRetries?: number;
   readonly now?: () => number;
+  /** Receives exceptions thrown by onUpdate (they are otherwise swallowed). */
+  readonly onListenerError?: (error: unknown) => void;
+}
+
+export interface QueueStats {
+  readonly queued: number;
+  readonly running: number;
+  readonly settled: number;
 }
 
 interface MutableEntry<P, R> {
@@ -111,8 +123,9 @@ export class JobQueue<P, R> {
       this.settle(entry, 'cancelled', null, { code: 'CANCELLED', message: 'Cancelled', retryable: false });
       return true;
     }
-    entry.controller?.abort(new OrbitError('CANCELLED', 'Cancelled'));
-    this.finishRunning(entry);
+    const controller = entry.controller;
+    this.finishRunning(entry); // invalidate first: abort listeners may report progress synchronously
+    controller?.abort(new OrbitError('CANCELLED', 'Cancelled'));
     this.settle(entry, 'cancelled', null, { code: 'CANCELLED', message: 'Cancelled', retryable: false });
     this.pump();
     return true;
@@ -150,9 +163,28 @@ export class JobQueue<P, R> {
     });
   }
 
-  /** Cancel everything (app quit). */
+  /** Counts by state. */
+  stats(): QueueStats {
+    let queued = 0;
+    let running = 0;
+    let settled = 0;
+    for (const entry of this.entries.values()) {
+      if (entry.state === 'queued') queued += 1;
+      else if (entry.state === 'running') running += 1;
+      else settled += 1;
+    }
+    return { queued, running, settled };
+  }
+
+  /**
+   * Cancel everything (app quit). Queued jobs are cancelled first so that
+   * cancelling a running job never starts a queued one.
+   */
   cancelAll(): void {
-    for (const id of [...this.entries.keys()]) this.cancel(id);
+    for (const id of [...this.waiting]) this.cancel(id);
+    for (const [id, entry] of [...this.entries]) {
+      if (entry.state === 'running' || entry.state === 'queued') this.cancel(id);
+    }
   }
 
   private pump(): void {
@@ -177,8 +209,8 @@ export class JobQueue<P, R> {
     if (this.options.timeoutMs > 0) {
       entry.timer = setTimeout(() => {
         if (entry.token !== token || entry.state !== 'running') return;
-        controller.abort(new OrbitError('TIMEOUT', 'Job timed out'));
         this.finishRunning(entry);
+        controller.abort(new OrbitError('TIMEOUT', 'Job timed out'));
         this.settle(entry, 'failed', null, { code: 'TIMEOUT', message: 'Job timed out', retryable: true });
         this.pump();
       }, this.options.timeoutMs);
@@ -193,7 +225,8 @@ export class JobQueue<P, R> {
 
     let promise: Promise<R>;
     try {
-      promise = this.options.runner(entry.payload, { signal: controller.signal, attempt: entry.attempt, onProgress });
+      // Promise.resolve: a runner returning a plain value (or a thenable) must not break slot accounting.
+      promise = Promise.resolve(this.options.runner(entry.payload, { signal: controller.signal, attempt: entry.attempt, onProgress }));
     } catch (error) {
       promise = Promise.reject(error);
     }
@@ -261,7 +294,15 @@ export class JobQueue<P, R> {
 
   private emit(entry: MutableEntry<P, R>): QueueEntry<P, R> {
     const snapshot = this.snapshot(entry);
-    this.options.onUpdate?.(snapshot);
+    try {
+      this.options.onUpdate?.(snapshot);
+    } catch (error) {
+      try {
+        this.options.onListenerError?.(error);
+      } catch {
+        // a failing error listener must not break the queue either
+      }
+    }
     return snapshot;
   }
 }
