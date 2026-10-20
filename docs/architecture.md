@@ -115,6 +115,13 @@ monitor (Per-Monitor DPI Aware v2).
 | desktop-renderer | `apps/desktop/src/renderer/**`, `apps/desktop/src/shared/locales/*/{ui,errors}.json`, `apps/desktop/test/renderer/**` |
 | packaging-docs | `apps/desktop/electron-builder.yml`, `apps/desktop/build/**`, `apps/desktop/resources/{icons,tray}/**`, `scripts/{package,after-pack,gen-icons,licenses}.*`, `.github/workflows/{ci,release}.yml`, `docs/**` (except architecture/PROGRESS), `README.md`, `THIRD_PARTY_LICENSES.md` |
 
+Every workstream also owns its status file `docs/workstreams/<workstream>.md` and
+screenshots it produces under `docs/screenshots/<workstream>-*.png`.
+
+`packages/core/src/composition-layout.ts` and `annotations-draw.ts` start as stubs
+(final signatures, exported from `packages/core/src/index.ts`) and are implemented by
+processors-edit.
+
 `packages/processors/src/common/io.ts` and `src/index.ts` (dispatcher) are lead-owned;
 processors-convert may extend `common/io.ts` with small helpers if needed (tell the lead).
 
@@ -140,6 +147,12 @@ pre-installed; report missing ones. Don't `git commit`; the lead commits.
   Korean is the default UI language.
 * Preview images: custom protocol `orbit-preview://p/<token>` (main), CSP allows it.
 * Settings: `app.getPath('userData')/settings.json` (versioned, `migrateSettings`).
+* Smoke test (used by packaging to verify installed builds): the app accepts
+  `--smoke-test`. It starts without windows, probes the engines in a worker, starts
+  the helper and waits up to 5 s for `ready`, converts a generated PNG to JPG in a
+  temp folder through the real job pipeline, prints one line
+  `ORBITDROP_SMOKE {"ok":bool,"probe":{…},"helper":{…},"conversion":{…}}` to stdout,
+  and exits 0 (ok) or 1.
 
 ## Conventions
 
