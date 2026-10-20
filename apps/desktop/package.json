@@ -1,0 +1,47 @@
+{
+  "name": "@orbitdrop/desktop",
+  "productName": "OrbitDrop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OrbitDrop – drag a file, hold a modifier, drop it on a ring to convert or edit it locally.",
+  "author": "OrbitDrop",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc -p tsconfig.node.json && tsc -p tsconfig.web.json",
+    "package:mac": "node ../../scripts/package.mjs mac",
+    "package:win": "node ../../scripts/package.mjs win",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "1.0.11",
+    "docx": "~9.12.0",
+    "exif-reader": "^2.0.3",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "6.4.299",
+    "sharp": "0.35.5",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@orbitdrop/contracts": "workspace:*",
+    "@orbitdrop/core": "workspace:*",
+    "@orbitdrop/processors": "workspace:*",
+    "@playwright/test": "^1.64.1",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "44.9.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^6.0.0",
+    "jsdom": "^30.1.3",
+    "lucide-react": "~1.59.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "vite": "^8.3.4"
+  }
+}

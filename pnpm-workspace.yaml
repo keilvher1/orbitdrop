@@ -1,0 +1,26 @@
+packages:
+  - apps/*
+  - packages/*
+  - tests/integration
+
+# electron-builder packs node_modules; a flat layout avoids symlink edge cases
+# with native prebuilt packages (sharp's @img/*, @napi-rs/canvas-*).
+nodeLinker: hoisted
+
+# Lifecycle scripts are blocked by default. electron needs its postinstall to
+# download the runtime binary; esbuild verifies its platform binary.
+# electron-winstaller (Squirrel) is not used: Windows builds use NSIS.
+allowBuilds:
+  electron: true
+  esbuild: true
+  electron-winstaller: false
+
+# Also install the x64 prebuilt binaries on Apple Silicon so the Intel macOS
+# build can be packaged from the same checkout (and vice versa on Windows).
+supportedArchitectures:
+  os:
+    - current
+  cpu:
+    - current
+    - x64
+    - arm64

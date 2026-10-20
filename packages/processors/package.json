@@ -1,0 +1,22 @@
+{
+  "name": "@orbitdrop/processors",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "1.0.11",
+    "@orbitdrop/contracts": "workspace:*",
+    "@orbitdrop/core": "workspace:*",
+    "docx": "~9.12.0",
+    "exif-reader": "^2.0.3",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "6.4.299",
+    "sharp": "0.35.5"
+  }
+}

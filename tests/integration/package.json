@@ -1,0 +1,14 @@
+{
+  "name": "@orbitdrop/integration-tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@orbitdrop/contracts": "workspace:*",
+    "@orbitdrop/core": "workspace:*",
+    "@orbitdrop/processors": "workspace:*"
+  }
+}

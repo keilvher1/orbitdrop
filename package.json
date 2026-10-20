@@ -1,0 +1,27 @@
+{
+  "name": "orbitdrop-monorepo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.27.1",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @orbitdrop/desktop dev",
+    "build": "pnpm --filter @orbitdrop/desktop build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "fixtures": "node scripts/gen-fixtures.mjs",
+    "native:mac": "node scripts/build-native.mjs mac",
+    "native:win": "node scripts/build-native.mjs win",
+    "package:mac": "pnpm --filter @orbitdrop/desktop package:mac",
+    "package:win": "pnpm --filter @orbitdrop/desktop package:win"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "tsx": "^4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "^5.0.5"
+  }
+}

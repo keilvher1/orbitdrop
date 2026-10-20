@@ -1,0 +1,137 @@
+import { describe, expect, it } from 'vitest';
+import {
+  ACTIONS,
+  ACTION_IDS,
+  ACTION_OPTION_SCHEMAS,
+  DEFAULT_SETTINGS,
+  HelperToMainSchema,
+  IMAGE_TOOLS_ORDER,
+  MainToHelperSchema,
+  baseMenuOrder,
+  formatFromExtension,
+  menuKeyFor,
+  migrateSettings,
+  applySettingsPatch,
+  parseActionOptions,
+  parseHelperLine,
+  utf8ByteLength,
+  wheelTokens,
+  DEFAULT_WHEEL_GEOMETRY,
+} from '../src';
+
+describe('menus follow the reference recording', () => {
+  it('PDF convert menu is DOCX, JPG, PNG, TXT clockwise from the top', () => {
+    expect(baseMenuOrder('pdf', 'convert').map((id) => ACTIONS[id].wheelLabel.en)).toEqual(['DOCX', 'JPG', 'PNG', 'TXT']);
+  });
+
+  it('JPG convert menu is PNG, WEBP, HEIC, TIFF, AVIF, BMP, PDF, DOCX', () => {
+    expect(baseMenuOrder('image/jpeg', 'convert').map((id) => ACTIONS[id].wheelLabel.en)).toEqual([
+      'PNG', 'WEBP', 'HEIC', 'TIFF', 'AVIF', 'BMP', 'PDF', 'DOCX',
+    ]);
+  });
+
+  it('image tools menu is COMPRESS, METADATA, EDIT, ANNOTATE, ADD BG, CROP, REDACT', () => {
+    expect(IMAGE_TOOLS_ORDER.map((id) => ACTIONS[id].wheelLabel.en)).toEqual([
+      'COMPRESS', 'METADATA', 'EDIT', 'ANNOTATE', 'ADD BG', 'CROP', 'REDACT',
+    ]);
+  });
+
+  it('other image formats drop their own format and keep 8 sectors', () => {
+    const png = baseMenuOrder('image/png', 'convert');
+    expect(png).not.toContain('convert.png');
+    expect(png).toHaveLength(8);
+    expect(baseMenuOrder('images', 'convert')).toHaveLength(9);
+  });
+
+  it('classifies selections', () => {
+    expect(menuKeyFor(['pdf'])).toBe('pdf');
+    expect(menuKeyFor(['pdf', 'pdf'])).toBe('pdf');
+    expect(menuKeyFor(['jpeg', 'jpeg'])).toBe('image/jpeg');
+    expect(menuKeyFor(['jpeg', 'png'])).toBe('images');
+    expect(menuKeyFor(['jpeg', 'pdf'])).toBe('mixed');
+    expect(menuKeyFor(['docx'])).toBeNull();
+    expect(menuKeyFor(['jpeg', undefined])).toBeNull();
+    expect(menuKeyFor([])).toBeNull();
+    expect(baseMenuOrder('mixed', 'convert')).toEqual(['convert.docx', 'convert.jpeg', 'convert.png']);
+    expect(baseMenuOrder('pdf', 'tools')).toEqual([]);
+  });
+
+  it('maps extensions case-insensitively', () => {
+    expect(formatFromExtension('.JPEG')).toBe('jpeg');
+    expect(formatFromExtension('heif')).toBe('heic');
+    expect(formatFromExtension('.exe')).toBeUndefined();
+  });
+});
+
+describe('option schemas', () => {
+  it('every action has a schema', () => {
+    for (const id of ACTION_IDS) expect(ACTION_OPTION_SCHEMAS[id]).toBeDefined();
+  });
+
+  it('fills defaults and rejects unknown keys', () => {
+    expect(parseActionOptions('convert.jpeg', {}).flattenBackground).toBe('#FFFFFF');
+    expect(() => parseActionOptions('convert.jpeg', { evil: 1 })).toThrow();
+    expect(() => parseActionOptions('tool.crop', { rect: { x: 0, y: 0, width: 0, height: 10 } })).toThrow();
+    const crop = parseActionOptions('tool.crop', { rect: { x: 1, y: 2, width: 3, height: 4 } });
+    expect(crop.aspect).toBe('free');
+  });
+});
+
+describe('settings', () => {
+  it('defaults are valid and conservative', () => {
+    expect(DEFAULT_SETTINGS.launchAtLogin).toBe(false);
+    expect(DEFAULT_SETTINGS.pdf.dpi).toBe(300);
+    expect(DEFAULT_SETTINGS.background.maxEdge).toBe(2400);
+    expect(DEFAULT_SETTINGS.globalDrag.convertModifiers).toEqual(['shift']);
+  });
+
+  it('migrates garbage section by section', () => {
+    const migrated = migrateSettings({ locale: 'en', pdf: { dpi: 999 }, output: { jpegQuality: 70 } });
+    expect(migrated.locale).toBe('en');
+    expect(migrated.pdf.dpi).toBe(300);
+    expect(migrated.output.jpegQuality).toBe(70);
+    expect(migrateSettings('nope')).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it('applies patches and refuses invalid ones', () => {
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { pdf: { dpi: 150 } })?.pdf.dpi).toBe(150);
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { pdf: { dpi: 72 } })).toBeNull();
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { version: 99 })?.version).toBe(1);
+  });
+});
+
+describe('helper protocol', () => {
+  it('accepts a valid drop and rejects unknown actions or move effects', () => {
+    const drop = { v: 1, type: 'drop', sessionId: 's-1', actionId: 'convert.jpeg', mode: 'convert', files: ['/a/b.pdf'], dropEffect: 'copy' };
+    expect(parseHelperLine(JSON.stringify(drop))).not.toBeNull();
+    expect(parseHelperLine(JSON.stringify({ ...drop, actionId: 'rm.everything' }))).toBeNull();
+    expect(parseHelperLine(JSON.stringify({ ...drop, dropEffect: 'move' }))).toBeNull();
+    expect(parseHelperLine(JSON.stringify({ ...drop, v: 2 }))).toBeNull();
+    expect(parseHelperLine('{not json')).toBeNull();
+    expect(HelperToMainSchema.safeParse({ ...drop, files: [] }).success).toBe(false);
+  });
+
+  it('builds a configure message the helper schema accepts', () => {
+    const msg = {
+      v: 1,
+      type: 'configure',
+      enabled: true,
+      locale: 'ko',
+      geometry: DEFAULT_WHEEL_GEOMETRY,
+      tokens: wheelTokens('light', false),
+      reduceMotion: false,
+      highContrast: false,
+      modifiers: { convert: ['shift'], tools: ['alt', 'shift'] },
+      extensions: { '.pdf': 'pdf', '.jpg': 'image/jpeg' },
+      menus: [],
+      strings: { dropHint: '놓기', unsupported: '지원 안 함', multiFileUnsupported: '한 장씩', fileCount: '{n}개' },
+    };
+    expect(MainToHelperSchema.safeParse(msg).success).toBe(true);
+  });
+
+  it('measures UTF-8 lengths', () => {
+    expect(utf8ByteLength('abc')).toBe(3);
+    expect(utf8ByteLength('한')).toBe(3);
+    expect(utf8ByteLength('😀')).toBe(4);
+  });
+});
