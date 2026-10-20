@@ -44,3 +44,35 @@ Done:
 - `apps/desktop` skeleton builds with electron-vite (CJS main/preload, React renderer).
 
 Next: parallel workstreams (see docs/architecture.md ownership table).
+
+## Stage 1 — parallel workstreams (2026-10-21, in progress)
+
+Eight background workstreams, each with its own status file in
+`docs/workstreams/<name>.md`. The lead commits one workstream at a time after
+re-running its checks.
+
+| Workstream | State | Commit |
+|---|---|---|
+| core | landed: golden vectors, coords, selection, hardened queue/output/validate (221 tests) | 0e016b6 |
+| processors-convert | running | |
+| processors-edit | finishing (own review pass) | |
+| macos-helper | running | |
+| windows-helper | running (mingw compile + host tests only) | |
+| desktop-main | running | |
+| desktop-renderer | running | |
+| packaging-docs | running | |
+
+Lead-owned checks so far:
+- `tests/integration/video-flow.test.ts` reproduces the reference recording
+  through the real processor API: `Page 001.pdf` → `Page 001.jpg` (2550×3300 at
+  300 DPI) → `Page 001 Cropped.jpg` (2550×2550) → `Page 001 Cropped With
+  Background.png`; inputs unchanged, exactly four files. Passing.
+- Whole repo: `node_modules/.bin/vitest run` → 712 passed, 1 skipped (opt-in FAT32 test).
+- `node scripts/gen-golden.mjs --check` → golden file up to date.
+
+Contract follow-ups queued for the integration pass (they touch shared types
+other workstreams compile against, so they wait until everyone has landed):
+- `errors.ts`: non-retryable `FILE_EMPTY` (core currently reports empty files
+  as PDF_CORRUPT / IMAGE_CORRUPT / UNSUPPORTED_FORMAT); needs ko/en strings.
+- Done now (doc comments only): sessionId uniqueness across helper restarts,
+  `Idle` ends a session, effective minimum diameter `min(minDiameter, diameter)`.

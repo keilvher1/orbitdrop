@@ -19,6 +19,11 @@ import { ActionIdSchema, Id, LocaleSchema, MenuKeySchema, ModifierCombo, WheelMo
  *   Idle → PotentialDrag → AwaitingPayload → WheelActive → (drop | cancelled) → Idle
  * `drop` is sent at most once per sessionId and only for a real OS drop on an
  * enabled sector. Main ignores duplicate or late messages for a sessionId.
+ *
+ * A sessionId is unique for the lifetime of the app and is never reused, not
+ * even by a restarted helper (e.g. `<pid>-<counter>`): main ignores messages
+ * whose sessionId it already saw from a previous helper process. A `state`
+ * message with `Idle` ends the session; no drop follows it.
  */
 export const HELPER_PROTOCOL_VERSION = 1 as const;
 export const HELPER_MAX_LINE_BYTES = 1_048_576;

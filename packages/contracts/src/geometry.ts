@@ -32,7 +32,10 @@ export interface Rect {
 export interface WheelGeometry {
   /** Wheel diameter in DIP. The product range is 320–380. */
   readonly diameter: number;
-  /** Smallest diameter the wheel may shrink to on a tiny work area. */
+  /**
+   * Smallest diameter the wheel may shrink to on a tiny work area. The
+   * effective floor is `min(minDiameter, diameter)`.
+   */
   readonly minDiameter: number;
   /** Stroke width of the thin outer ring. */
   readonly ringWidth: number;
