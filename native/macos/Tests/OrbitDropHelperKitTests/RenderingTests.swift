@@ -66,9 +66,9 @@ final class RenderingTests: XCTestCase {
     // Transparent margin outside the disc.
     XCTAssertEqual(bmp.rgba(3, 3).a, 0)
     XCTAssertEqual(bmp.rgba(204, 2).a, 0)
-    // Active sector (JPG, to the right): opaque orange. Sample between the label and the edge.
+    // Active sector (JPG, to the right): opaque accent from the tokens. Sample between the label and the edge.
     let mid = (WheelMath.innerRadius(360) + WheelMath.sectorOuterRadius(360)) / 2
-    assertColor(bmp.rgba(204 + Int(mid) + 40, 204), (0xF2, 0x55, 0x2C, 0xFF), "active sector fill")
+    assertColor(bmp.rgba(204 + Int(mid) + 40, 204), over(t.sectorActive, RGBA(r: 0, g: 0, b: 0, a: 0)), "active sector fill")
     // Enabled, not highlighted sector (DOCX, top) over the translucent disc.
     assertColor(bmp.rgba(204 - 50, 204 - Int(mid)), over(t.sector, t.wheelDisc), "idle sector fill")
     // Dead zone between the capsule and the sectors shows the disc only.
