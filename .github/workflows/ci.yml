@@ -86,6 +86,10 @@ jobs:
       - name: Build bundles (electron-vite)
         run: pnpm build
 
+      # Playwright drives the built app through CDP (no OS input); includes the real helper.
+      - name: End-to-end tests (built app)
+        run: pnpm --filter @orbitdrop/desktop test:e2e
+
       # Ad-hoc signed, not notarized; artifacts are named *-unsigned.*. The smoke test runs the
       # app straight from each read-only mounted DMG (x64 through Rosetta 2 when available).
       - name: Package (unsigned) and smoke-test
@@ -107,6 +111,10 @@ jobs:
     name: Windows (x64 package)
     runs-on: windows-latest
     timeout-minutes: 60
+    # pwsh only fails a multi-line step on its last command; bash -e fails on any of them.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
@@ -149,6 +157,10 @@ jobs:
 
       - name: Build bundles (electron-vite)
         run: pnpm build
+
+      # helper-drop (stub helper) is skipped on win32; helper-real uses the MSVC helper built above.
+      - name: End-to-end tests (built app)
+        run: pnpm --filter @orbitdrop/desktop test:e2e
 
       # Unsigned NSIS installer (*-unsigned-setup.exe). --install-test installs it silently for
       # the current user into a temp folder, checks the HKCU uninstall entry (no HKLM, no admin),

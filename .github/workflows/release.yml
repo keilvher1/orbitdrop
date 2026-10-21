@@ -89,6 +89,10 @@ jobs:
     name: Windows release (x64)
     runs-on: windows-latest
     timeout-minutes: 90
+    # pwsh only fails a multi-line step on its last command; bash -e fails on any of them.
+    defaults:
+      run:
+        shell: bash
     env:
       WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
       WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
