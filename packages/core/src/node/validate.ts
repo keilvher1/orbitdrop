@@ -110,12 +110,11 @@ async function readHeaderWithTimeout(path: string, timeoutMs: number): Promise<U
   }
 }
 
-/** Error for a zero-byte file, by what its extension claims to be. */
+/** Error for a zero-byte file: FILE_EMPTY if its extension is one we accept. */
 function emptyFileError(displayName: string): OrbitError {
   const claimed = formatFromExtension(splitName(displayName).ext);
   const kind = claimed === undefined ? undefined : inputKindOf(claimed);
-  if (kind === 'pdf') return new OrbitError('PDF_CORRUPT', 'File is empty');
-  if (kind === 'image') return new OrbitError('IMAGE_CORRUPT', 'File is empty');
+  if (kind === 'pdf' || kind === 'image') return new OrbitError('FILE_EMPTY', 'File is empty');
   return new OrbitError('UNSUPPORTED_FORMAT', 'File is empty');
 }
 

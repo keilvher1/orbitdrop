@@ -8,6 +8,8 @@ export const ERROR_CODES = [
   'EXTENSION_MISMATCH',
   'FILE_NOT_FOUND',
   'NOT_A_FILE',
+  /** Zero-byte file with a supported extension. */
+  'FILE_EMPTY',
   'FILE_TOO_LARGE',
   'IMAGE_TOO_LARGE',
   'TOO_MANY_PAGES',

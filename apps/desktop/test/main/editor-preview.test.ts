@@ -26,6 +26,7 @@ function fakePool() {
       entry?.d.reject(new OrbitError('CANCELLED', 'Preview superseded'));
     }),
     inspect: vi.fn(async () => imageInfo(4000, 3000)),
+    clearPreviewCaches: vi.fn(),
   };
   return { pool, requests, cancelled };
 }
@@ -132,6 +133,15 @@ describe('preview ordering', () => {
     expect(cancelled.length).toBeGreaterThan(0);
     expect(store.size).toBe(0);
     await expect(editors.context(session.editorId)).rejects.toThrow();
+  });
+
+  it('asks the worker to drop its preview caches only when the last editor closes', () => {
+    const { editors, session, pool } = setup();
+    const second = editors.create({ actionId: 'tool.crop', files: [file], inputs: [input], origin: { source: 'test', sessionId: null } });
+    editors.dispose(session.editorId);
+    expect(pool.clearPreviewCaches).not.toHaveBeenCalled();
+    editors.dispose(second.editorId);
+    expect(pool.clearPreviewCaches).toHaveBeenCalledTimes(1);
   });
 });
 

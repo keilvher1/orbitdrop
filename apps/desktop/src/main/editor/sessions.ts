@@ -74,7 +74,7 @@ export interface EditorSession {
 }
 
 export interface EditorSessionsDeps {
-  readonly pool: Pick<ProcessorPool, 'preview' | 'cancelPreview' | 'inspect'>;
+  readonly pool: Pick<ProcessorPool, 'preview' | 'cancelPreview' | 'inspect'> & Partial<Pick<ProcessorPool, 'clearPreviewCaches'>>;
   readonly store: PreviewStore;
   readonly settings: () => Settings;
   readonly log?: Logger;
@@ -237,6 +237,8 @@ export class EditorSessions {
     this.deps.store.releaseOwner(editorId);
     this.sessions.delete(editorId);
     this.log.debug('editor disposed', { editorId });
+    // The aux worker's decoded sources can be large; free them once no editor needs them.
+    if (this.sessions.size === 0) this.deps.pool.clearPreviewCaches?.();
   }
 
   get size(): number {

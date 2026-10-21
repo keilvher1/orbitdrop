@@ -10,7 +10,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "typecheck": "tsc -p tsconfig.node.json && tsc -p tsconfig.web.json",
+    "typecheck": "tsc -p tsconfig.node.json && tsc -p tsconfig.web.json && tsc -p e2e/tsconfig.json",
     "package:mac": "node ../../scripts/package.mjs mac",
     "package:win": "node ../../scripts/package.mjs win",
     "test:e2e": "playwright test",

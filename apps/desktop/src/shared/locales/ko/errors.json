@@ -3,6 +3,7 @@
   "error.EXTENSION_MISMATCH": "파일 확장자와 실제 형식이 다릅니다.",
   "error.FILE_NOT_FOUND": "파일을 찾을 수 없습니다. 옮겨졌거나 삭제되었을 수 있습니다.",
   "error.NOT_A_FILE": "폴더나 특수 항목은 처리할 수 없습니다. 파일을 선택하세요.",
+  "error.FILE_EMPTY": "파일이 비어 있습니다(0바이트). 내용이 있는 파일을 선택하세요.",
   "error.FILE_TOO_LARGE": "파일이 너무 커서 처리할 수 없습니다.",
   "error.IMAGE_TOO_LARGE": "이미지의 픽셀 수가 너무 많아 처리할 수 없습니다.",
   "error.TOO_MANY_PAGES": "PDF 페이지 수가 처리 한도를 넘습니다.",

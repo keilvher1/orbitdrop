@@ -408,6 +408,11 @@ export class ProcessorPool {
     this.safePost(this.aux, { type: 'cancelPreview', previewId });
   }
 
+  /** Ask the aux worker to drop its cached preview decodes (no-op if it isn't running). */
+  clearPreviewCaches(): void {
+    this.safePost(this.aux, { type: 'clearPreviewCaches' });
+  }
+
   inspect(input: ProcessorInput, limits: ProcessingLimits): Promise<ImageInfo> {
     const requestId = newId('rq');
     return this.auxRequest<ImageInfo>('inspect', requestId, { type: 'inspect', requestId, input, limits }, this.options.inspectTimeoutMs ?? 30_000);

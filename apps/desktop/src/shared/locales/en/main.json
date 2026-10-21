@@ -61,6 +61,7 @@
   "error.EXTENSION_MISMATCH": "The extension does not match the file type",
   "error.FILE_NOT_FOUND": "File not found",
   "error.NOT_A_FILE": "Folders and special files are not supported",
+  "error.FILE_EMPTY": "The file is empty",
   "error.FILE_TOO_LARGE": "The file is too large",
   "error.IMAGE_TOO_LARGE": "The image resolution is too large",
   "error.TOO_MANY_PAGES": "The PDF has too many pages",

@@ -87,8 +87,8 @@ describe('regular files', () => {
 
   it('reports empty files by what the extension claims', async () => {
     for (const name of ['empty.pdf', 'empty.jpg', 'empty.txt', 'empty']) await writeFile(join(dir, name), '');
-    await expect(validateInputFile(join(dir, 'empty.pdf'), opts)).rejects.toMatchObject({ code: 'PDF_CORRUPT' });
-    await expect(validateInputFile(join(dir, 'empty.jpg'), opts)).rejects.toMatchObject({ code: 'IMAGE_CORRUPT' });
+    await expect(validateInputFile(join(dir, 'empty.pdf'), opts)).rejects.toMatchObject({ code: 'FILE_EMPTY' });
+    await expect(validateInputFile(join(dir, 'empty.jpg'), opts)).rejects.toMatchObject({ code: 'FILE_EMPTY' });
     await expect(validateInputFile(join(dir, 'empty.txt'), opts)).rejects.toMatchObject({ code: 'UNSUPPORTED_FORMAT' });
     await expect(validateInputFile(join(dir, 'empty'), opts)).rejects.toMatchObject({ code: 'UNSUPPORTED_FORMAT' });
   });

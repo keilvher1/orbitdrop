@@ -3,6 +3,7 @@
   "error.EXTENSION_MISMATCH": "The file extension doesn't match its actual format.",
   "error.FILE_NOT_FOUND": "The file can't be found. It may have been moved or deleted.",
   "error.NOT_A_FILE": "Folders and special items can't be processed. Choose a file.",
+  "error.FILE_EMPTY": "The file is empty (0 bytes). Choose a file with content.",
   "error.FILE_TOO_LARGE": "The file is too large to process.",
   "error.IMAGE_TOO_LARGE": "The image has too many pixels to process.",
   "error.TOO_MANY_PAGES": "The PDF has more pages than can be processed.",

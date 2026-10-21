@@ -153,10 +153,15 @@ pre-installed; report missing ones. Don't `git commit`; the lead commits.
 * Settings: `app.getPath('userData')/settings.json` (versioned, `migrateSettings`).
 * Smoke test (used by packaging to verify installed builds): the app accepts
   `--smoke-test`. It starts without windows, probes the engines in a worker, starts
-  the helper and waits up to 5 s for `ready`, converts a generated PNG to JPG in a
-  temp folder through the real job pipeline, prints one line
-  `ORBITDROP_SMOKE {"ok":bool,"probe":{…},"helper":{…},"conversion":{…}}` to stdout,
-  and exits 0 (ok) or 1.
+  the helper and waits up to 5 s for `ready`, converts a generated PNG to JPG and a
+  generated PDF to PNG in a temp folder through the real job pipeline, prints one
+  line `ORBITDROP_SMOKE {"ok":bool,"probe":{…},"helper":{…},"conversion":{…},"pdfConversion":{…}}`
+  to stdout, and exits 0 (ok, which requires both conversions) or 1.
+* Test switches (`ORBITDROP_E2E*`, `ORBITDROP_HELPER_PATH`) work in unpackaged
+  builds only; Playwright E2E runs against `out/` (packaged fuses disable
+  `--inspect` anyway).
+* Preview memory: when the last editor closes, main sends `clearPreviewCaches`
+  to the aux worker, which drops its cached decodes.
 
 ## Conventions
 

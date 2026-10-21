@@ -40,7 +40,13 @@ let apiPromise: Promise<ProcessorApi> | null = null;
 
 function api(): Promise<ProcessorApi> {
   apiPromise ??= import('@orbitdrop/processors').then(
-    (m): ProcessorApi => ({ probeEngines: m.probeEngines, runJob: m.runJob, renderPreview: m.renderPreview, inspectImage: m.inspectImage }),
+    (m): ProcessorApi => ({
+      probeEngines: m.probeEngines,
+      runJob: m.runJob,
+      renderPreview: m.renderPreview,
+      inspectImage: m.inspectImage,
+      clearPreviewCaches: m.clearPreviewCaches,
+    }),
     (error: unknown) => {
       loadError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
       process.stderr.write(`processor-host: processors failed to load: ${loadError}\n`);
@@ -170,6 +176,10 @@ async function handle(message: MainToProcessorMessage): Promise<void> {
       }
       return;
     }
+    case 'clearPreviewCaches':
+      // Nothing is cached before the processors are loaded; don't load them just to clear.
+      if (apiPromise) (await api()).clearPreviewCaches();
+      return;
     case 'shutdown':
       shutdownAndExit();
       return;

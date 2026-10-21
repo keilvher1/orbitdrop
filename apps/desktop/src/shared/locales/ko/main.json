@@ -61,6 +61,7 @@
   "error.EXTENSION_MISMATCH": "확장자와 실제 형식이 다릅니다",
   "error.FILE_NOT_FOUND": "파일을 찾을 수 없습니다",
   "error.NOT_A_FILE": "폴더나 특수 파일은 처리할 수 없습니다",
+  "error.FILE_EMPTY": "파일이 비어 있습니다",
   "error.FILE_TOO_LARGE": "파일이 너무 큽니다",
   "error.IMAGE_TOO_LARGE": "이미지 해상도가 너무 큽니다",
   "error.TOO_MANY_PAGES": "PDF 페이지가 너무 많습니다",

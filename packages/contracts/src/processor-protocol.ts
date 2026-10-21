@@ -164,6 +164,8 @@ export interface ProcessorApi {
   runJob(job: ProcessorJob, ctx: ProcessorRunContext): Promise<ProcessorResult>;
   renderPreview(request: PreviewRequest, ctx: { readonly signal: AbortSignal }): Promise<PreviewResult>;
   inspectImage(input: ProcessorInput, limits: ProcessingLimits): Promise<ImageInfo>;
+  /** Drop cached preview decodes (main asks when the last editor closes). */
+  clearPreviewCaches(): void;
 }
 
 // ------------------------------------------------- main ⇄ worker (utilityProcess) messages
@@ -175,6 +177,7 @@ export type MainToProcessorMessage =
   | { readonly type: 'cancelPreview'; readonly previewId: string }
   | { readonly type: 'inspect'; readonly requestId: string; readonly input: ProcessorInput; readonly limits: ProcessingLimits }
   | { readonly type: 'probe'; readonly requestId: string }
+  | { readonly type: 'clearPreviewCaches' }
   | { readonly type: 'shutdown' };
 
 export type ProcessorToMainMessage =
