@@ -73,6 +73,17 @@ export function sliderRanges(oriented: Size, maxEdge: number) {
   };
 }
 
+/**
+ * Largest corner radius that still changes the result: half the shorter side
+ * of the image as drawn (layout.content, i.e. after padding and the maxEdge
+ * scaling), the clamp the renderer applies (composition-layout step 5).
+ */
+export function maxCornerRadius(layout: Pick<CompositionLayout, 'content'> | null, fallback: number): number {
+  if (layout === null) return fallback;
+  const half = Math.floor(Math.min(layout.content.width, layout.content.height) / 2);
+  return Math.max(1, Math.min(COMPOSITION_LIMITS.cornerRadius.max, half));
+}
+
 function safeLayout(oriented: Size, spec: CompositionSpec): CompositionLayoutDetails | null {
   try {
     return computeCompositionLayoutDetails(oriented.width, oriented.height, spec);
@@ -210,7 +221,10 @@ export function BackgroundEditor({ ctx, title }: { readonly ctx: EditorContext; 
     setSpec(initial);
   };
 
+  // The corner slider ends where the radius stops changing anything (it follows padding and maxEdge).
+  const cornerMax = maxCornerRadius(layout, ranges.cornerRadius);
   const notes: string[] = [];
+  if (layout !== null && spec.cornerRadius > layout.cornerRadius) notes.push(t('bg.note.corners', { radius: layout.cornerRadius }));
   if (layout?.paddingExpandedByRatio) notes.push(t('bg.note.ratio'));
   if (layout?.paddingExpandedByShadow) notes.push(t('bg.note.shadow'));
   if (details?.paddingReducedByMaxEdge) notes.push(t('bg.note.reduced', { padding: details.effectivePadding }));
@@ -289,7 +303,7 @@ export function BackgroundEditor({ ctx, title }: { readonly ctx: EditorContext; 
           label={t('bg.corners')}
           value={spec.cornerRadius}
           min={COMPOSITION_LIMITS.cornerRadius.min}
-          max={ranges.cornerRadius}
+          max={cornerMax}
           inputMax={COMPOSITION_LIMITS.cornerRadius.max}
           unit={t('common.px')}
           onChange={(cornerRadius) => update({ cornerRadius })}

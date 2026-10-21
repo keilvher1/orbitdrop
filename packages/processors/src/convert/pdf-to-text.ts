@@ -97,7 +97,7 @@ export async function convertPdfToText(
   const text = assembleText(pages.map((page) => linesToText(page.lines)), options.pageSeparator);
   const data = new TextEncoder().encode(text);
   progress({ kind: 'indeterminate', stage: 'writing' });
-  const ledger = new OutputLedger();
+  const ledger = new OutputLedger(ctx.onCommitted);
   let output;
   try {
     output = await ledger.commit(dir, convertedName(input.displayName, '.txt'), job.jobId, data, ctx.signal, {

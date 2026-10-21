@@ -36,6 +36,8 @@ describe('window placement', () => {
   it('the editor starts 520 DIP wide within the 440–560 range, the Drop Zone is small and always on top', () => {
     expect(WINDOW_SPECS.editor.width).toBe(520);
     expect(WINDOW_SPECS.editor.minWidth).toBe(440);
+    // the panel is laid out at 520 DIP: users cannot resize the window around it (its content sizes it)
+    expect(WINDOW_SPECS.editor.resizable).toBe(false);
     // the renderer sizes the height to its content; short views must be able to shrink the window
     expect(WINDOW_SPECS.editor.minHeight).toBeLessThanOrEqual(240);
     expect(WINDOW_SPECS.dropzone.alwaysOnTop).toBe(true);

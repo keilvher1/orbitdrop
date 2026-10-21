@@ -3,14 +3,15 @@
  * Verifies the renderer inside the real built Electron app, through
  * desktop-main's ORBITDROP_E2E hooks (no tray, no helper, windows never take
  * focus). Clicks are delivered to pages by Playwright/CDP — no OS input.
- * Outputs are decoded with sharp; screenshots go to --out (default: a temp dir).
+ * Outputs are decoded with sharp (sizes, pixels, metadata) and PDFs re-read with
+ * pdf-lib; screenshots go to --out (default: a temp dir).
  *
  *   cd apps/desktop && ../../node_modules/.bin/electron-vite build
  *   node apps/desktop/src/renderer/dev/electron-verify.mjs [--out dir] [--prefix name-] [--only picker,crop,background,...]
  *
  * Windows appear briefly (inactive) and are closed at the end.
  */
-import { mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -72,6 +73,10 @@ async function main() {
   const photo = await makePhoto(work, 'IMG_2041.jpg', 1600, 1200);
   const png = await makePhoto(work, 'receipt.png', 900, 1200);
   const extra = await makePhoto(work, 'IMG_2042.jpg', 1200, 900);
+  const exifPhoto = join(work, 'IMG_EXIF.jpg');
+  await sharp(await readFile(photo)).withExif({ IFD0: { Make: 'OrbitDrop', Model: 'Verify', Copyright: 'test' } }).jpeg({ quality: 88 }).toFile(exifPhoto);
+  const gif = join(work, 'sticker.gif');
+  await sharp({ create: { width: 320, height: 200, channels: 3, background: '#2F5BF6' } }).gif().toFile(gif);
 
   const app = await electron.launch({
     executablePath: require('electron'),
@@ -129,6 +134,20 @@ async function main() {
     const m = await sharp(path).metadata();
     return { format: m.format, width: m.width, height: m.height, orientation: m.orientation, exif: Boolean(m.exif) };
   };
+  /** RGBA of one pixel of an image file. */
+  const pixel = async (path, x, y) => {
+    const { data, info } = await sharp(path).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const i = (Math.floor(y) * info.width + Math.floor(x)) * 4;
+    return [data[i], data[i + 1], data[i + 2], data[i + 3]];
+  };
+  const near = (a, b, tolerance) => a.slice(0, 3).every((v, i) => Math.abs(v - b[i]) <= tolerance);
+  /** Whether any pixel of a short horizontal run is close to `color` (strokes land within a few px of their position). */
+  const anyNear = async (path, xs, y, color, tolerance) => {
+    for (const x of xs) if (near(await pixel(path, x, y), color, tolerance)) return true;
+    return false;
+  };
+  const range = (from, to, step = 1) => Array.from({ length: Math.floor((to - from) / step) + 1 }, (_, i) => from + i * step);
+  const ACCENT = [242, 85, 44]; // #F2552C, the first annotation colour
   const clickSector = async (page, label) => {
     const sector = page.getByRole('menuitem', { name: label, exact: true });
     await sector.waitFor({ state: 'visible' });
@@ -155,7 +174,11 @@ async function main() {
       check('picker: PDF convert menu order DOCX, JPG, PNG, TXT', JSON.stringify(labels) === JSON.stringify(['DOCX', 'JPG', 'PNG', 'TXT']), JSON.stringify(labels));
       const box = await picker.getByRole('menuitem', { name: 'JPG', exact: true }).locator('path').boundingBox();
       await picker.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-      check('picker: window sized to content', JSON.stringify(await sizeOf(picker)) !== '{}', JSON.stringify(await sizeOf(picker)));
+      const fit = await picker.evaluate(() => {
+        const r = document.querySelector('.view').getBoundingClientRect();
+        return { w: innerWidth, h: innerHeight, cw: Math.ceil(r.width), ch: Math.ceil(r.height) };
+      });
+      check('picker: window sized to its content', Math.abs(fit.w - fit.cw) <= 1 && Math.abs(fit.h - fit.ch) <= 1, JSON.stringify(fit));
       await shot(picker, 'picker-pdf');
       await picker.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
       check('picker: closes after submit', await waitClosed(picker));
@@ -178,8 +201,12 @@ async function main() {
       await picker.keyboard.press('ArrowLeft'); // CROP
       // Enter submits; main may close the picker before the key-up arrives.
       await picker.keyboard.press('Enter').catch(() => undefined);
-      check('picker: keyboard (End, ArrowLeft, Enter) opens Crop', true);
       const editor = await windowOf('editor');
+      const opened = await editor.evaluate(async () => {
+        const ctx = await window.orbit.getWindowContext();
+        return ctx.kind === 'editor' ? (await window.orbit.getEditor(ctx.editorId)).actionId : ctx.kind;
+      });
+      check('picker: keyboard (End, ArrowLeft, Enter) opens Crop', opened === 'tool.crop', opened);
       await editor.getByRole('radio', { name: '1:1', exact: true }).click();
       await editor.waitForFunction(() => document.querySelector('.stage-canvas img')?.complete === true);
       const w = await editor.getByLabel('너비').inputValue();
@@ -189,8 +216,19 @@ async function main() {
       await editor.locator('.btn-primary').click();
       check('crop: editor closes on Apply', await waitClosed(editor));
       const job = await waitJob(known, 'tool.crop');
-      const m = await meta(join(work, 'Page 001 Cropped.jpg'));
-      check('crop output is square', job.state === 'completed' && m.width === m.height, `${job.state} ${m.width}×${m.height}`);
+      const cropped = join(work, 'Page 001 Cropped.jpg');
+      const m = await meta(cropped);
+      const page = await meta(page001);
+      // 1:1 is the centred square of the page: output (x, y) is page (x, y + offset).
+      const offset = Math.round((page.height - m.height) / 2);
+      const points = [[m.width / 2, 200], [m.width / 2, 900], [120, m.height - 60]];
+      const matches = [];
+      for (const [x, y] of points) matches.push(near(await pixel(cropped, x, y), await pixel(page001, x, y + offset), 16));
+      check(
+        'crop output: 2550×2550, the centred square of the page (pixels match)',
+        job.state === 'completed' && m.width === 2550 && m.height === 2550 && matches.every(Boolean),
+        `${job.state} ${m.width}×${m.height} offset=${offset} ${JSON.stringify(matches)}`,
+      );
     }
 
     // 3. Add Background
@@ -233,11 +271,20 @@ async function main() {
       check('compress: result view closes with Esc', await waitClosed(editor));
     }
     if (want('metadata')) {
-      const { editor } = await openTool(photo, '메타데이터');
+      const known = await jobIds();
+      const { editor } = await openTool(exifPhoto, '메타데이터');
       await editor.getByText('파일 크기').waitFor({ timeout: 20_000 });
+      const shown = await editor.getByText('OrbitDrop Verify').count();
       await shot(editor, 'metadata');
-      await editor.keyboard.press('Escape').catch(() => undefined);
-      check('metadata: opens and cancels', await waitClosed(editor));
+      await editor.getByRole('button', { name: '메타데이터 제거' }).click();
+      const job = await waitJob(known, 'tool.metadata');
+      const before = await meta(exifPhoto);
+      const after = await meta(join(work, job.outputs[0]?.name ?? 'missing'));
+      check(
+        'metadata: inspected EXIF shown; strip writes a copy without EXIF, same size',
+        shown > 0 && job.state === 'completed' && before.exif && !after.exif && after.width === before.width && after.height === before.height,
+        `camera shown=${shown} ${job.state} exif ${before.exif}→${after.exif} ${after.width}×${after.height}`,
+      );
     }
     if (want('edit')) {
       const known = await jobIds();
@@ -265,10 +312,45 @@ async function main() {
       await editor.mouse.click(box.x + box.width * 0.55, box.y + box.height * 0.12);
       await editor.keyboard.type('한글 주석 테스트');
       await editor.keyboard.press('Enter');
+      // Closing with unsaved annotations asks first (in-window); Esc keeps editing.
+      await editor.getByRole('button', { name: '취소하고 닫기' }).click();
+      const dialog = editor.getByRole('alertdialog', { name: '저장하지 않고 닫을까요?' });
+      const asked = await dialog.waitFor({ timeout: 5000 }).then(() => true, () => false);
+      await shot(editor, 'annotate-unsaved');
+      await editor.keyboard.press('Escape');
+      const kept = (await dialog.count()) === 0 && !editor.isClosed();
+      check('annotate: closing with unsaved shapes asks in the window; Esc keeps editing', asked && kept, `asked=${asked} kept=${kept}`);
       await shot(editor, 'annotate');
       await editor.locator('.btn-primary').click();
       const job = await waitJob(known, 'tool.annotate');
-      check('annotate: saved', job.state === 'completed', `${job.state} ${job.outputs[0]?.name ?? ''} ${job.error?.code ?? ''}`);
+      const out = join(work, job.outputs[0]?.name ?? 'missing');
+      const m = await meta(out);
+      // The rectangle's left edge runs along x = 10 % of the image, from 50 % to 80 % of its height.
+      const edge = await anyNear(out, range(150, 172, 2), 780, ACCENT, 48);
+      const untouched = near(await pixel(out, 1400, 300), await pixel(photo, 1400, 300), 18);
+      check(
+        'annotate: saved 1600×1200 with the rectangle drawn in the accent colour, the rest unchanged',
+        job.state === 'completed' && m.width === 1600 && m.height === 1200 && edge && untouched,
+        `${job.state} ${m.width}×${m.height} edge=${edge} untouched=${untouched}`,
+      );
+    }
+    if (want('annotate-keys')) {
+      // Keyboard only: "사각형 추가" inserts a centred rectangle; arrows move it, Option+arrows resize it.
+      const known = await jobIds();
+      const { editor } = await openTool(extra, '주석');
+      await editor.waitForFunction(() => document.querySelector('.stage-canvas img')?.complete === true);
+      await editor.getByRole('button', { name: '사각형 추가' }).click();
+      const focused = await editor.evaluate(() => document.activeElement?.getAttribute('aria-label'));
+      for (let i = 0; i < 10; i += 1) await editor.keyboard.press('ArrowRight');
+      await editor.keyboard.press('Alt+ArrowDown');
+      await shot(editor, 'annotate-keyboard');
+      await editor.locator('.btn-primary').click();
+      const job = await waitJob(known, 'tool.annotate');
+      const out = join(work, job.outputs[0]?.name ?? 'missing');
+      // 1200×900 shown at 464×348 (3 px per key): the left edge moves from ≈ 412 to ≈ 442.
+      const moved = await anyNear(out, range(430, 456, 2), 450, ACCENT, 48);
+      const notAtStart = !(await anyNear(out, range(404, 418, 2), 450, ACCENT, 48));
+      check('annotate (keyboard): inserted rectangle moved by the arrow keys is in the saved image', focused === '주석 캔버스' && job.state === 'completed' && moved && notAtStart, `focus=${focused} ${job.state} moved=${moved} oldEdgeClear=${notAtStart}`);
     }
     if (want('redact')) {
       const known = await jobIds();
@@ -284,7 +366,16 @@ async function main() {
       await shot(editor, 'redact');
       await editor.locator('.btn-primary').click();
       const job = await waitJob(known, 'tool.redact');
-      check('redact: saved', job.state === 'completed', `${job.state} ${job.error?.code ?? ''}`);
+      const out = join(work, job.outputs[0]?.name ?? 'missing');
+      const m = await meta(out);
+      // The region spans 8–30 % × 8–17 % of the image: its centre is solid black, far away nothing changed.
+      const inside = await pixel(out, 1600 * 0.19, 1200 * 0.125);
+      const outside = near(await pixel(out, 1400, 1000), await pixel(photo, 1400, 1000), 18);
+      check(
+        'redact: saved 1600×1200, the region is solid black, the rest unchanged',
+        job.state === 'completed' && m.width === 1600 && m.height === 1200 && near(inside, [0, 0, 0], 12) && outside,
+        `${job.state} ${m.width}×${m.height} inside=${inside.slice(0, 3)} outsideSame=${outside}`,
+      );
     }
     if (want('pdf')) {
       const known = await jobIds();
@@ -293,11 +384,78 @@ async function main() {
       await clickSector(picker, 'PDF');
       const editor = await windowOf('editor');
       await editor.getByText('페이지 순서').waitFor();
-      await editor.locator('.pdf-row, li').first().waitFor().catch(() => undefined);
+      // Each row gets a small thumbnail over orbit-preview:// (fitted into its 40 px box).
+      const thumbs = await editor
+        .waitForFunction(
+          () => {
+            const imgs = [...document.querySelectorAll('.pdf-thumb img')];
+            return imgs.length >= 3 && imgs.every((img) => img.complete && img.naturalWidth > 0) ? imgs.map((img) => ({ src: img.getAttribute('src'), w: img.naturalWidth, h: img.naturalHeight })) : null;
+          },
+          null,
+          { timeout: 20_000 },
+        )
+        .then((handle) => handle.jsonValue(), () => []);
+      check(
+        'images → PDF order: a thumbnail per file over orbit-preview://, at most 160 px',
+        thumbs.length === 3 && thumbs.every((t) => t.src.startsWith('orbit-preview://') && Math.max(t.w, t.h) <= 160),
+        JSON.stringify(thumbs.map((t) => [t.w, t.h])),
+      );
       await shot(editor, 'pdf-order');
       await editor.locator('.btn-primary').click();
       const job = await waitJob(known, 'convert.pdf');
-      check('images → PDF', job.state === 'completed', `${job.state} pages=${job.outputs[0]?.pages ?? '?'} ${JSON.stringify(job.error)}`);
+      let pages = [];
+      try {
+        const doc = await PDFDocument.load(await readFile(join(work, job.outputs[0]?.name ?? 'missing')));
+        pages = doc.getPages().map((page) => Math.round((page.getWidth() / page.getHeight()) * 100) / 100);
+      } catch {
+        pages = [];
+      }
+      // Files in selection order: 1600×1200, 1200×900 (4:3) and 900×1200 (3:4), one page each, at the image size.
+      check('images → PDF: 3 pages in order with the images’ proportions', job.state === 'completed' && JSON.stringify(pages) === JSON.stringify([1.33, 1.33, 0.75]), `${job.state} pages=${JSON.stringify(pages)} ${JSON.stringify(job.error)}`);
+    }
+    if (want('compress-batch')) {
+      // Several files: a real per-file estimate (an actual encode) for each, then the final sizes.
+      const known = await jobIds();
+      await hooks('openPicker', [photo, extra, png], 'tools');
+      const picker = await windowOf('picker');
+      await clickSector(picker, '압축');
+      const batch = await windowOf('editor');
+      const estimates = await batch
+        .waitForFunction(
+          () => {
+            const rows = [...document.querySelectorAll('.compress-estimate')];
+            return rows.length === 3 && rows.every((row) => !row.hasAttribute('data-pending') && /KB|MB/.test(row.textContent ?? '')) ? rows.map((row) => row.textContent) : null;
+          },
+          null,
+          { timeout: 60_000 },
+        )
+        .then((handle) => handle.jsonValue(), () => []);
+      const totals = await batch.locator('.compress-sizes').first().textContent();
+      await shot(batch, 'compress-batch');
+      check('compress (3 files): an estimate per file and totals', estimates.length === 3 && /원본 합계/.test(totals ?? '') && /예상 합계/.test(totals ?? ''), `${JSON.stringify(estimates)} ${totals}`);
+      await batch.locator('.btn-primary').click();
+      await batch.getByText('압축 결과').waitFor({ timeout: 30_000 });
+      const jobs = [];
+      for (let i = 0; i < 3; i += 1) jobs.push(await waitJob(new Set([...known, ...jobs.map((j) => j.jobId)]), 'tool.compress'));
+      const sizes = await Promise.all(jobs.map(async (j) => (await stat(join(work, j.outputs[0]?.name ?? 'missing')).catch(() => ({ size: -1 }))).size));
+      const total = await batch.getByText(/합계 .* → /).waitFor({ timeout: 10_000 }).then(() => true, () => false);
+      await shot(batch, 'compress-batch-results');
+      check(
+        'compress (3 files): every job completed, outputs on disk match their reported sizes, total shown',
+        jobs.every((j, i) => j.state === 'completed' && j.outputs[0]?.bytes === sizes[i]) && total,
+        `${jobs.map((j) => j.state)} sizes=${sizes} total=${total}`,
+      );
+      await batch.keyboard.press('Escape').catch(() => undefined);
+      await waitClosed(batch);
+    }
+    if (want('format')) {
+      // 'Keep input format' on a GIF: the processor reports PNG and the editor says so.
+      const { editor } = await openTool(gif, '압축');
+      const note = await editor.getByText('원본 형식으로 저장하면 GIF 파일은 PNG로 저장됩니다.').waitFor({ timeout: 20_000 }).then(() => true, () => false);
+      await shot(editor, 'compress-gif');
+      check('compress: “original format” on a GIF is explained as PNG', note);
+      await editor.keyboard.press('Escape').catch(() => undefined);
+      await waitClosed(editor);
     }
 
     // 5. Other windows
@@ -308,7 +466,49 @@ async function main() {
       await page.locator('.view').first().waitFor();
       await page.waitForTimeout(500);
       await shot(page, kind);
-      check(`${kind}: window renders`, true, JSON.stringify(await sizeOf(page)));
+      const content = {
+        jobs: async () => {
+          const cards = await page.locator('li.job-card').count();
+          const listed = (await hooks('jobs')).length;
+          return [cards > 0 && cards === Math.min(listed, 200), `${cards} cards / ${listed} jobs`];
+        },
+        settings: async () => {
+          const tabs = await page.getByRole('tab').count();
+          return [tabs === 6, `${tabs} tabs`];
+        },
+        dropzone: async () => [(await page.getByText('파일을 여기에 놓으세요').count()) > 0, 'prompt'],
+        about: async () => {
+          const info = await page.evaluate(() => window.orbit.getAppInfo());
+          return [(await page.getByText(`버전 ${info.version}`).count()) > 0, `version ${info.version}`];
+        },
+      };
+      const [ok, detail] = await content[kind]();
+      check(`${kind}: window shows its content`, ok, `${detail} ${JSON.stringify(await sizeOf(page))}`);
+      if (kind === 'jobs') {
+        // Retry: a job made to time out (E2E fault hook) runs again from its card, through the real processors.
+        await hooks('failNextJobs', ['TIMEOUT']);
+        const submitted = await hooks('submit', [extra], 'convert.webp');
+        const failedJob = await hooks('waitForJob', submitted.jobIds[0]);
+        const known = await jobIds();
+        const card = page.locator('li.job-card').filter({ hasText: 'IMG_2042.jpg' }).filter({ has: page.locator('.job-state', { hasText: '실패' }) });
+        await card.getByRole('button', { name: '다시 시도' }).click();
+        const retried = await waitJob(known, 'convert.webp');
+        const webp = await meta(join(work, 'IMG_2042.webp'));
+        await shot(page, 'jobs-retried');
+        check(
+          'jobs: a timed-out job is retried from its card → real WebP 1200×900',
+          failedJob.state === 'failed' && failedJob.error?.code === 'TIMEOUT' && retried.state === 'completed' && webp.format === 'webp' && webp.width === 1200 && webp.height === 900,
+          `${failedJob.state}/${failedJob.error?.code} → ${retried.state} ${webp.format} ${webp.width}×${webp.height}`,
+        );
+        // Clear finished: the list empties, every output file stays on disk.
+        const outputs = (await hooks('jobs')).flatMap((j) => j.outputs.map((o) => o.name));
+        await page.getByRole('button', { name: '끝난 작업 지우기' }).click();
+        const emptied = await page.getByText('아직 작업이 없습니다.').waitFor({ timeout: 5000 }).then(() => true, () => false);
+        const files = await readdir(work);
+        const left = (await hooks('jobs')).length;
+        await shot(page, 'jobs-cleared');
+        check('jobs: “clear finished” empties the list; all output files stay', emptied && left === 0 && outputs.length > 0 && outputs.every((name) => files.includes(name)), `jobs left=${left} outputs=${outputs.length} kept=${outputs.filter((n) => files.includes(n)).length}`);
+      }
       if (kind === 'dropzone') {
         // A File that is not on disk: preload finds no path, main is never asked, the UI explains it.
         await page.evaluate(() => {
@@ -317,8 +517,8 @@ async function main() {
           dt.items.add(new File(['x'], 'memory.jpg', { type: 'image/jpeg' }));
           for (const type of ['dragenter', 'dragover', 'drop']) target.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt }));
         });
-        const shown = await page.getByText('파일을 찾을 수 없습니다', { exact: false }).waitFor({ timeout: 5000 }).then(() => true, () => false);
-        check('dropzone: in-memory File → localized FILE_NOT_FOUND via preload', shown);
+        const shown = await page.getByText('실제 파일이 아닌 항목은 바로 처리할 수 없습니다', { exact: false }).waitFor({ timeout: 5000 }).then(() => true, () => false);
+        check('dropzone: in-memory File → localized VIRTUAL_FILE via preload', shown);
       }
       if (kind === 'settings') {
         await page.getByRole('radio', { name: 'English' }).click();
@@ -327,6 +527,27 @@ async function main() {
         check('settings: language switch applies live and persists in main', english && persisted === 'en', `persisted=${persisted}`);
         await page.getByRole('radio', { name: '한국어' }).click();
         await page.getByRole('heading', { name: '설정' }).waitFor({ timeout: 5000 }).catch(() => undefined);
+        // The wheel-size preview follows the slider at once; the value is saved (debounced).
+        await page.getByRole('tab', { name: '드래그' }).click();
+        const preview = page.locator('svg[data-diameter]');
+        const before = Number(await preview.getAttribute('data-diameter'));
+        await page.getByRole('slider', { name: '휠 크기' }).focus();
+        for (let i = 0; i < 5; i += 1) await page.keyboard.press('ArrowRight');
+        const live = Number(await preview.getAttribute('data-diameter'));
+        await page.waitForTimeout(500);
+        const saved = (await hooks('updateSettings', {}))?.globalDrag?.wheelDiameter;
+        await shot(page, 'settings-wheel-preview');
+        check('settings: wheel preview follows the slider live and the size is saved', live === before + 5 && saved === before + 5, `${before} → live ${live}, saved ${saved}`);
+        // High contrast while the OS is dark: the dark high-contrast token set (white on black).
+        await page.getByRole('tab', { name: '접근성' }).click();
+        await page.emulateMedia({ colorScheme: 'dark' });
+        await page.getByRole('radiogroup', { name: '고대비' }).getByRole('radio', { name: '켜기' }).click();
+        await page.waitForFunction(() => document.documentElement.dataset.theme === 'highContrastDark', null, { timeout: 5000 }).catch(() => undefined);
+        const theme = await page.evaluate(() => [document.documentElement.dataset.theme, getComputedStyle(document.body).backgroundColor, getComputedStyle(document.body).color]);
+        await shot(page, 'settings-hc-dark');
+        check('settings: high contrast in dark mode uses the dark high-contrast set', theme[0] === 'highContrastDark' && theme[1] === 'rgb(0, 0, 0)' && theme[2] === 'rgb(255, 255, 255)', theme.join(' '));
+        await page.getByRole('radiogroup', { name: '고대비' }).getByRole('radio', { name: '시스템 설정 따름' }).click();
+        await page.emulateMedia({ colorScheme: null });
       }
       await page.evaluate(() => window.orbit.closeWindow());
     }

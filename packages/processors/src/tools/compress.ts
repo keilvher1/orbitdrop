@@ -115,7 +115,7 @@ export async function runCompress(job: ProcessorJob, ctx: ProcessorRunContext): 
       warnings.push({ code: 'OUTPUT_LARGER_THAN_INPUT', params: { inputBytes, outputBytes: encoded.data.length } });
     }
     stage(ctx.onProgress, 'writing');
-    const output = await writeToolOutput(job, input, encoded, signal);
+    const output = await writeToolOutput(job, input, encoded, signal, ctx.onCommitted);
     return { outputs: [output], warnings };
   } catch (error) {
     throw toToolError(error, signal);

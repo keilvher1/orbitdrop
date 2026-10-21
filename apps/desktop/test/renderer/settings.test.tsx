@@ -9,6 +9,7 @@ import { PERMISSION_URLS, SettingsView } from '../../src/renderer/src/views/sett
 import { WHEEL_PREVIEW_SCALE, previewDiameter } from '../../src/renderer/src/views/settings/WheelSizePreview';
 import { sectorShape } from '../../src/renderer/src/wheel/sectorPath';
 import {
+  comboWarnings,
   isModifierSupported,
   normalizeCombo,
   sameCombo,
@@ -336,5 +337,54 @@ describe('SettingsView helper status', () => {
     const { user } = setup({ status: { state: 'running', helperVersion: '1.2.0', globalDrag: false, reason: 'no event tap' } });
     await user.click(screen.getByRole('tab', { name: '드래그' }));
     expect(await screen.findByText(/no event tap/)).toBeTruthy();
+  });
+});
+
+describe('SettingsView platform notes for modifier keys', () => {
+  it('Windows: explains the Alt+Shift and Windows-key collisions and warns on the combos that have them', async () => {
+    const { user } = setup({ platform: 'win32' });
+    await user.click(screen.getByRole('tab', { name: '드래그' }));
+    expect(screen.getByText(/Windows에서는 Alt\+Shift가 입력 언어 전환 단축키로도 쓰이고/)).toBeTruthy();
+    // The default tools combo is Alt+Shift.
+    const tools = screen.getByRole('group', { name: '도구 메뉴 키' });
+    const altShift = screen.getByText(/Alt\+Shift는 입력 언어 전환 단축키와 겹칩니다/);
+    expect(tools.getAttribute('aria-describedby')?.split(' ')).toContain(altShift.id);
+    // Adding the Windows key to the convert combo warns about Start.
+    const convert = screen.getByRole('group', { name: '변환 메뉴 키' });
+    await user.click(within(convert).getByRole('button', { name: 'Windows' }));
+    expect(screen.getByText('Windows 키를 떼면 시작 메뉴가 열릴 수 있습니다.')).toBeTruthy();
+  });
+
+  it('macOS: no Windows warnings; an Input Monitoring hint opens the allowlisted pane', async () => {
+    const { orbit, user } = setup({ platform: 'darwin' });
+    await user.click(screen.getByRole('tab', { name: '드래그' }));
+    expect(screen.queryByText(/입력 언어 전환/)).toBeNull();
+    expect(await screen.findByText(/입력 모니터링 권한이 없으면 Esc 키는 포인터가 휠 위에 있을 때만/)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: '입력 모니터링 설정 열기' }));
+    expect(orbit.openExternal).toHaveBeenCalledWith(PERMISSION_URLS.inputMonitoring);
+    expect(isAllowedExternalUrl(PERMISSION_URLS.inputMonitoring)).toBe(true);
+  });
+
+  it('macOS: when Input Monitoring is reported missing, only the status button offers it (no duplicate)', async () => {
+    const { user } = setup({ platform: 'darwin', status: { state: 'needsPermission', permissions: ['inputMonitoring'] } });
+    await user.click(screen.getByRole('tab', { name: '드래그' }));
+    await screen.findByText(/권한이 필요합니다/);
+    expect(screen.getAllByRole('button', { name: '입력 모니터링 설정 열기' })).toHaveLength(1);
+    expect(screen.queryByText(/입력 모니터링 권한이 없으면/)).toBeNull();
+  });
+
+  it('comboWarnings only applies on Windows', () => {
+    expect(comboWarnings(['alt', 'shift'], 'win32')).toEqual(['altShift']);
+    expect(comboWarnings(['shift', 'alt', 'command'], 'win32')).toEqual(['winKey']);
+    expect(comboWarnings(['command'], 'win32')).toEqual(['winKey']);
+    expect(comboWarnings(['alt', 'shift'], 'darwin')).toEqual([]);
+    expect(comboWarnings(['shift'], 'win32')).toEqual([]);
+  });
+
+  it('Windows: no Input Monitoring hint', async () => {
+    const { user } = setup({ platform: 'win32' });
+    await user.click(screen.getByRole('tab', { name: '드래그' }));
+    await screen.findByText(/실행 중/);
+    expect(screen.queryByText(/입력 모니터링 권한이 없으면/)).toBeNull();
   });
 });

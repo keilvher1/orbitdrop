@@ -308,7 +308,7 @@ export async function convertImagesToPdf(job: ProcessorJob, options: ConvertOpti
   } catch (error) {
     throw toOrbitError(error, ctx.signal);
   }
-  const ledger = new OutputLedger();
+  const ledger = new OutputLedger(ctx.onCommitted);
   const output = await ledger.commit(dir, convertedName(first.displayName, '.pdf'), job.jobId, bytes, ctx.signal, {
     format: 'pdf',
     pages: total,

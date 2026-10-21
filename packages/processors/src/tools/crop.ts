@@ -65,7 +65,7 @@ export async function runCrop(job: ProcessorJob, ctx: ProcessorRunContext): Prom
     }
 
     stage(ctx.onProgress, 'writing');
-    const output = await writeToolOutput(job, input, encoded, signal);
+    const output = await writeToolOutput(job, input, encoded, signal, ctx.onCommitted);
     return { outputs: [output], warnings };
   } catch (error) {
     throw toToolError(error, signal);

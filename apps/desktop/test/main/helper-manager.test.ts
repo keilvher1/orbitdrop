@@ -87,6 +87,17 @@ function configureMessage(enabled = true): HelperConfigureMessage {
   });
 }
 
+describe('configure strings', () => {
+  it('sends the specific unsupported texts when given (helpers fall back to `unsupported` without them)', () => {
+    const base = { settings: DEFAULT_SETTINGS, snapshot: snapshotWith(), theme: 'light' as const, reduceMotion: false, highContrast: false };
+    const strings = { dropHint: '여기에 놓기', unsupported: '지원하지 않는 파일', multiFileUnsupported: '한 번에 한 파일만', fileCount: '{n}개 파일' };
+    expect(buildConfigureMessage({ ...base, strings }).strings).toEqual(strings);
+    const specific = buildConfigureMessage({ ...base, strings: { ...strings, unsupportedFolder: '폴더는 처리할 수 없음', unsupportedNonFile: '파일이 아님', unsupportedVirtual: '먼저 '.repeat(40) } });
+    expect(specific.strings).toMatchObject({ unsupportedFolder: '폴더는 처리할 수 없음', unsupportedNonFile: '파일이 아님' });
+    expect([...specific.strings.unsupportedVirtual!].length).toBe(60); // clipped like the other texts
+  });
+});
+
 interface Harness {
   manager: HelperManager;
   children: FakeChild[];

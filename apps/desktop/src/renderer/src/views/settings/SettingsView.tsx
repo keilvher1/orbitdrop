@@ -24,6 +24,7 @@ import { AboutContent } from './AboutView';
 import { WheelSizePreview } from './WheelSizePreview';
 import {
   MODIFIER_ORDER,
+  comboWarnings,
   isModifierSupported,
   normalizeCombo,
   sameCombo,
@@ -31,6 +32,7 @@ import {
   validateIntegerInRange,
   validateModifierCombos,
   type ComboError,
+  type ComboWarning,
 } from './settingsValidation';
 import './settings.css';
 
@@ -341,6 +343,7 @@ function ModifierCombos({ settings, apply }: PanelProps) {
   const [announcement, setAnnouncement] = useState('');
   const hintId = useId();
   const macNoteId = useId();
+  const winNoteId = useId();
   const savedKey = JSON.stringify([normalizeCombo(convert), normalizeCombo(tools)]);
 
   // Follow changes saved elsewhere (or our own save coming back).
@@ -375,11 +378,17 @@ function ModifierCombos({ settings, apply }: PanelProps) {
           {t('settings.keysMacNote')}
         </p>
       ) : null}
+      {platform === 'win32' ? (
+        <p id={winNoteId} className="settings-hint">
+          {t('settings.keysWinNote')}
+        </p>
+      ) : null}
       <ModifierPicker
         field="convert"
         label={t('settings.convertKeys')}
         combo={draft.convert}
         error={validation.convert}
+        warnings={comboWarnings(draft.convert, platform)}
         hintId={hintId}
         macNoteId={macNoteId}
         platform={platform}
@@ -390,6 +399,7 @@ function ModifierCombos({ settings, apply }: PanelProps) {
         label={t('settings.toolsKeys')}
         combo={draft.tools}
         error={validation.tools}
+        warnings={comboWarnings(draft.tools, platform)}
         hintId={hintId}
         macNoteId={macNoteId}
         platform={platform}
@@ -407,6 +417,7 @@ function ModifierPicker({
   label,
   combo,
   error,
+  warnings,
   hintId,
   macNoteId,
   platform,
@@ -416,6 +427,8 @@ function ModifierPicker({
   readonly label: string;
   readonly combo: readonly ModifierKey[];
   readonly error: ComboError | null;
+  /** Works, but collides with an OS shortcut (Windows: Alt+Shift, the Windows key). */
+  readonly warnings: readonly ComboWarning[];
   readonly hintId: string;
   readonly macNoteId: string;
   readonly platform: Platform;
@@ -424,7 +437,8 @@ function ModifierPicker({
   const { t } = useEnv();
   const labelId = useId();
   const errorId = useId();
-  const describedBy = error ? `${errorId} ${hintId}` : hintId;
+  const warningId = useId();
+  const describedBy = [error ? errorId : null, warnings.length > 0 ? warningId : null, hintId].filter(Boolean).join(' ');
   return (
     <div className="settings-field">
       <span className="settings-label" id={labelId}>
@@ -462,6 +476,11 @@ function ModifierPicker({
       {error ? (
         <p id={errorId} className="field-error">
           {t(`settings.keys.error.${error}`)}
+        </p>
+      ) : null}
+      {warnings.length > 0 ? (
+        <p id={warningId} className="field-warning">
+          {warnings.map((warning) => t(`settings.keys.warn.${warning}`)).join(' ')}
         </p>
       ) : null}
     </div>
@@ -615,6 +634,15 @@ function HelperStatusPanel() {
         {actions}
       </Notice>
       {status !== null && error ? <Notice tone="danger">{t.error(error)}</Notice> : null}
+      {platform === 'darwin' && !(status?.state === 'needsPermission' && status.permissions.includes('inputMonitoring')) ? (
+        // Optional permission: global drag works without it, but Esc then closes the wheel only under the pointer.
+        <div className="settings-input-monitoring">
+          <p className="settings-hint">{t('settings.inputMonitoring.note')}</p>
+          <button type="button" className="btn btn-small" onClick={() => openPane(PERMISSION_URLS.inputMonitoring)}>
+            {t('settings.helper.openSettings', { permission: t('settings.helper.permission.inputMonitoring') })}
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }

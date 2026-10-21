@@ -559,7 +559,7 @@ export function createMockOrbit(scenario: MockScenario): OrbitApi {
     async registerDroppedFiles(files) {
       await delay(120);
       const list = Array.from(files);
-      if (list.length === 0) throw new Error('FILE_NOT_FOUND: No files from the file system were dropped');
+      if (list.length === 0) throw new Error('VIRTUAL_FILE: The dropped items are not files on disk');
       const selected = list.map((f, i) => {
         const format = formatFromExtension(f.name.slice(f.name.lastIndexOf('.')));
         const usable = format !== undefined && inputKindOf(format) !== undefined && capabilities.probe.formats[format].input;

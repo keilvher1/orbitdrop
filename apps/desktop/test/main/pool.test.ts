@@ -1,8 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { mkdtemp, readFile, readdir, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_PROCESSING_LIMITS, OrbitError, type JobProgress, type PreviewRequest, type ProcessorJob, type ProcessorResult } from '@orbitdrop/contracts';
-import { ProcessorPool, outputDirsOf } from '../../src/main/processing/pool';
+import { ProcessorPool, outputDirsOf, rollbackCommitted } from '../../src/main/processing/pool';
 import { failedProbe } from '../../src/main/processing/probe-fallback';
-import { fakeFleet, standardBehavior, type Behavior } from './fake-worker';
+import { fakeFleet, standardBehavior, type Behavior, type FakeWorker } from './fake-worker';
 import { imageInfo, probeWith, waitFor } from './helpers';
 
 const settings = { pdfDpi: 300, jpegQuality: 90, webpQuality: 85, avifQuality: 60, heicQuality: 70 } as const;
@@ -378,5 +381,111 @@ describe('outputDirsOf', () => {
     expect(outputDirsOf({ ...job('a'), outputDir: '/out' })).toEqual(['/out']);
     const merged: ProcessorJob = { ...job('m'), inputs: [job('a', '/x').inputs[0]!, job('b', '/y').inputs[0]!, job('c', '/x').inputs[0]!] };
     expect(outputDirsOf(merged)).toEqual(['/x', '/y']);
+  });
+});
+
+describe('outputs committed by a job that does not finish', () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'orbitdrop-pool-'));
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  /** Write an output like the processors do and report it like the worker host does. */
+  async function commit(worker: FakeWorker, jobId: string, name: string, content = 'page'): Promise<string> {
+    const path = join(dir, name);
+    await writeFile(path, content, { flag: 'wx' }); // never overwrites, like writeOutput
+    const info = await stat(path);
+    worker.emit({ type: 'committed', jobId, output: { path, dev: info.dev, ino: info.ino, size: info.size } });
+    return path;
+  }
+
+  it('a crash mid-job removes the pages it committed before the job fails, so the retry writes the same names', async () => {
+    const pages = ['report-p001.jpg', 'report-p002.jpg', 'report-p003.jpg'];
+    let attempt = 0;
+    const { pool } = makePool((message, worker) => {
+      if (message.type !== 'run') return;
+      attempt += 1;
+      const { jobId } = message.job;
+      void (async () => {
+        if (attempt === 1) {
+          await commit(worker, jobId, pages[0]!);
+          await commit(worker, jobId, pages[1]!);
+          worker.exit(139); // dies before page 3 and before reporting `done`
+          return;
+        }
+        // The retry: with the names free it writes every page under its own name (no "report-p001 (2).jpg").
+        const outputs = [];
+        for (const name of pages) outputs.push({ path: await commit(worker, jobId, name), format: 'jpeg' as const, bytes: 4 });
+        worker.emit({ type: 'done', jobId, result: { outputs, warnings: [] } });
+      })().catch((error: unknown) => worker.emit({ type: 'failed', jobId, error: { code: 'INTERNAL', message: String(error), retryable: false } }));
+    });
+    const crashed = await pool.run(job('pdf'), { signal: controller().signal, onProgress: () => undefined }).catch((error: unknown) => error);
+    expect(crashed).toMatchObject({ code: 'WORKER_CRASHED' });
+    expect(await readdir(dir)).toEqual([]); // rolled back before the failure was reported (i.e. before any retry)
+    const retried = await pool.run(job('pdf'), { signal: controller().signal, onProgress: () => undefined });
+    expect(retried.outputs).toHaveLength(3);
+    expect((await readdir(dir)).sort()).toEqual(pages);
+  });
+
+  it('leaves a committed file alone once it is not the same file any more', async () => {
+    const { pool } = makePool((message, worker) => {
+      if (message.type !== 'run') return;
+      void (async () => {
+        const path = await commit(worker, message.job.jobId, 'page.jpg', 'first');
+        await unlink(path);
+        await writeFile(path, 'replaced by the user'); // same name, another file
+        await commit(worker, message.job.jobId, 'other.jpg', 'second');
+        await writeFile(join(dir, 'other.jpg'), 'edited since'); // same file, another size
+        worker.exit(1);
+      })();
+    });
+    await expect(pool.run(job('j'), { signal: controller().signal, onProgress: () => undefined })).rejects.toMatchObject({ code: 'WORKER_CRASHED' });
+    expect((await readdir(dir)).sort()).toEqual(['other.jpg', 'page.jpg']);
+    expect(await readFile(join(dir, 'page.jpg'), 'utf8')).toBe('replaced by the user');
+  });
+
+  it('a worker killed after a cancel leaves none of its committed outputs', async () => {
+    const { pool, fleet } = makePool((message, worker) => {
+      if (message.type === 'run') void commit(worker, message.job.jobId, 'half.jpg'); // and then ignores `cancel`
+    });
+    const abort = controller();
+    const running = pool.run(job('stuck'), { signal: abort.signal, onProgress: () => undefined });
+    await waitFor(() => fleet.jobs()[0]?.ofType('run').length === 1);
+    await new Promise((resolve) => setTimeout(resolve, 20)); // the commit reached main
+    abort.abort(new OrbitError('CANCELLED', 'Cancelled'));
+    await expect(running).rejects.toMatchObject({ code: 'CANCELLED' });
+    await waitFor(() => fleet.jobs()[0]!.killCalls === 1, 1000, 'kill after the grace period');
+    await expect.poll(async () => readdir(dir), { timeout: 2000 }).toEqual([]);
+  });
+
+  it('a cancelled job whose worker still reports `done` has its outputs removed (it counts as cancelled)', async () => {
+    const { pool, fleet } = makePool((message, worker) => {
+      if (message.type === 'run') void commit(worker, message.job.jobId, 'late.jpg');
+      if (message.type === 'cancel') worker.emit({ type: 'done', jobId: message.jobId, result: { outputs: [{ path: join(dir, 'late.jpg'), format: 'jpeg', bytes: 4 }], warnings: [] } });
+    });
+    const abort = controller();
+    const running = pool.run(job('late'), { signal: abort.signal, onProgress: () => undefined });
+    await waitFor(() => fleet.jobs()[0]?.ofType('run').length === 1);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    abort.abort(new OrbitError('CANCELLED', 'Cancelled'));
+    await expect(running).rejects.toMatchObject({ code: 'CANCELLED' });
+    await expect.poll(async () => readdir(dir), { timeout: 2000 }).toEqual([]);
+  });
+
+  it('rollbackCommitted ignores missing files and folders', async () => {
+    await writeFile(join(dir, 'a.jpg'), 'x');
+    const info = await stat(join(dir, 'a.jpg'));
+    const folder = await stat(dir);
+    expect(
+      await rollbackCommitted([
+        { path: join(dir, 'a.jpg'), dev: info.dev, ino: info.ino, size: info.size },
+        { path: join(dir, 'missing.jpg'), dev: info.dev, ino: info.ino, size: 1 },
+        { path: dir, dev: folder.dev, ino: folder.ino, size: folder.size },
+      ]),
+    ).toBe(1);
+    expect(await readdir(dir)).toEqual([]);
   });
 });

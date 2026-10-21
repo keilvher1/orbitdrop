@@ -177,9 +177,26 @@ export interface ImageInfo {
   readonly pages: number | null;
 }
 
+/** An output file a running job has committed, reported before the job finishes (added later). */
+export interface CommittedOutput {
+  readonly path: string;
+  /** Identity at commit time (lstat): a rollback removes the file only while all three still match. */
+  readonly dev: number;
+  readonly ino: number;
+  readonly size: number;
+}
+
 export interface ProcessorRunContext {
   readonly signal: AbortSignal;
   readonly onProgress: (progress: JobProgress) => void;
+  /**
+   * Called right after each output file is committed (optional, added later).
+   * The worker host forwards it to main (`committed` message), which removes
+   * those files again when the worker dies or is killed before the job ends —
+   * a crash never leaves half a result behind, and the automatic retry does
+   * not write "name (2).ext" next to it.
+   */
+  readonly onCommitted?: (output: CommittedOutput) => void;
 }
 
 /** Public API of @orbitdrop/processors. */
@@ -207,6 +224,8 @@ export type MainToProcessorMessage =
 export type ProcessorToMainMessage =
   | { readonly type: 'ready'; readonly pid: number }
   | { readonly type: 'progress'; readonly jobId: string; readonly progress: JobProgress }
+  /** An output the job has committed so far (ProcessorRunContext.onCommitted; added later). */
+  | { readonly type: 'committed'; readonly jobId: string; readonly output: CommittedOutput }
   | { readonly type: 'done'; readonly jobId: string; readonly result: ProcessorResult }
   | { readonly type: 'failed'; readonly jobId: string; readonly error: OrbitErrorInfo }
   | { readonly type: 'cancelled'; readonly jobId: string }

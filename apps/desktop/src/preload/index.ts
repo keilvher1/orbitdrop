@@ -4,6 +4,8 @@
  *  - every call goes through a fixed channel from IPC_CHANNELS;
  *  - dropped File objects are turned into paths here with
  *    webUtils.getPathForFile and validated by main (registerDroppedFiles);
+ *    items without a file on disk (in-memory data, mail attachments, file
+ *    promises) reject with VIRTUAL_FILE;
  *  - listeners never receive the IPC event object and every subscription
  *    returns an unsubscribe function;
  *  - rejected calls reject with Error("<ErrorCode>: <message>").
@@ -56,7 +58,7 @@ const api: OrbitApi = {
   registerDroppedFiles: (files) => {
     const list = Array.from(files as ArrayLike<File>);
     const paths = list.map((file) => webUtils.getPathForFile(file)).filter((path) => typeof path === 'string' && path.length > 0);
-    if (paths.length === 0) return Promise.reject(new Error('FILE_NOT_FOUND: No files from the file system were dropped'));
+    if (paths.length === 0) return Promise.reject(new Error('VIRTUAL_FILE: The dropped items are not files on disk'));
     return invoke(IPC_CHANNELS.filesRegisterPaths, { paths: paths.slice(0, 500), source: 'dropZone' });
   },
   getSelection: (selectionId) => invoke(IPC_CHANNELS.selectionGet, { id: selectionId }),

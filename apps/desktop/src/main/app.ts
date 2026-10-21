@@ -123,6 +123,8 @@ export class OrbitApp {
   testJobScript: JobRunScript | null = null;
   /** Drops (session/batch ids) whose "needs another folder" failure already opened the Jobs window. */
   private readonly surfacedFailures = new Set<string>();
+  /** macOS workspace notification id (accessibility display options), unsubscribed on quit. */
+  private accessibilityNotification: number | null = null;
   private markStarted: () => void = () => undefined;
   /** Resolves once startUi() finished (windows, IPC, tray, helper started). */
   readonly started = new Promise<void>((resolve) => {
@@ -279,7 +281,19 @@ export class OrbitApp {
 
     this.settings.onChange((next, previous) => this.onSettingsChanged(next, previous));
     this.capabilities.onChange(() => this.helper?.reconfigure());
+    // OS appearance changes reach the helper's wheel when the settings say "system": dark mode and high
+    // contrast through nativeTheme; on macOS also Reduce motion / Increase contrast (Accessibility › Display),
+    // which nativeTheme does not report. `reconfigure` sends only when the configure message really changed.
     nativeTheme.on('updated', () => this.helper?.reconfigure());
+    if (process.platform === 'darwin') {
+      try {
+        this.accessibilityNotification = systemPreferences.subscribeWorkspaceNotification('NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification', () =>
+          this.helper?.reconfigure(),
+        );
+      } catch (error) {
+        this.log.warn('could not watch the accessibility display options', { error: describeError(error) });
+      }
+    }
 
     if (!this.options.noTray) {
       this.tray = new TrayController({
@@ -329,6 +343,8 @@ export class OrbitApp {
       if (this.sweepTimer) clearInterval(this.sweepTimer);
       this.router?.dispose();
       this.tray?.destroy();
+      if (this.accessibilityNotification !== null) systemPreferences.unsubscribeWorkspaceNotification(this.accessibilityNotification);
+      this.accessibilityNotification = null;
       const helperStopped = this.helper?.stop();
       this.jobs.cancelAll();
       await Promise.allSettled([helperStopped, this.pool.shutdown(2500, 3000)]);
@@ -612,6 +628,10 @@ export class OrbitApp {
         unsupported: this.t('helper.unsupported'),
         multiFileUnsupported: this.t('helper.multiFileUnsupported'),
         fileCount: this.t('helper.fileCount'),
+        // Folders, non-file data (text, URLs) and virtual items (file promises, mail attachments) get their own text.
+        unsupportedFolder: this.t('helper.unsupportedFolder'),
+        unsupportedNonFile: this.t('helper.unsupportedNonFile'),
+        unsupportedVirtual: this.t('helper.unsupportedVirtual'),
       },
     });
   }

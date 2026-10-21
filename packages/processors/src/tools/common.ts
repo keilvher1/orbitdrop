@@ -1,3 +1,4 @@
+import { lstat } from 'node:fs/promises';
 import { extname } from 'node:path';
 import sharp, { type Metadata, type Sharp } from 'sharp';
 import {
@@ -13,6 +14,7 @@ import {
   type ProcessorInput,
   type ProcessorJob,
   type ProcessorOutput,
+  type ProcessorRunContext,
   type ProcessorSettings,
   type ToolActionId,
   type ToolOutputFormat,
@@ -395,15 +397,30 @@ export function toolOutputName(input: ProcessorInput, actionId: ToolActionId, fo
   return toolResultName(input.displayName, ACTIONS[actionId].outputSuffix, ext);
 }
 
+/**
+ * Commit a tool's output (never overwrites) and report it through
+ * `onCommitted` (ProcessorRunContext): if the worker dies before the job ends,
+ * main removes the file again, so the automatic retry does not leave
+ * "name.ext" plus "name (2).ext" behind.
+ */
 export async function writeToolOutput(
   job: ProcessorJob,
   input: ProcessorInput,
   encoded: Pick<EncodedImage, 'data' | 'format' | 'width' | 'height'>,
   signal?: AbortSignal,
+  onCommitted?: ProcessorRunContext['onCommitted'],
 ): Promise<ProcessorOutput> {
   throwIfCancelled(signal);
   const name = toolOutputName(input, job.actionId as ToolActionId, encoded.format);
   const path = await writeBytes(outputDirFor(job, input), name, job.jobId, encoded.data, signal);
+  if (onCommitted) {
+    try {
+      const info = await lstat(path);
+      onCommitted({ path, dev: info.dev, ino: info.ino, size: info.size });
+    } catch {
+      // cannot identify the file: main will not remove it
+    }
+  }
   return { path, format: encoded.format, bytes: encoded.data.length, width: encoded.width, height: encoded.height };
 }
 

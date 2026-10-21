@@ -1,5 +1,7 @@
+import { lstat, unlink } from 'node:fs/promises';
 import {
   OrbitError,
+  type CommittedOutput,
   type EngineProbe,
   type ImageInfo,
   type JobProgress,
@@ -34,10 +36,15 @@ import { newId } from '../util/ids';
  *    the grace period it is killed (and restarted on demand).
  *  - Crash: a worker exiting during a job fails the job with WORKER_CRASHED
  *    (the JobQueue retries once) after its temp files were cleaned up with
- *    `cleanupTempFiles(dir, jobId)`. Cleanup finishes before the retry starts,
- *    because the retry reuses the job id as temp-file tag; if the output folder
- *    does not answer within `cleanupTimeoutMs` the slot is freed anyway and the
- *    job fails without an automatic retry (OUTPUT_WRITE_FAILED).
+ *    `cleanupTempFiles(dir, jobId)` and the outputs it had already committed
+ *    (reported as `committed` messages) were removed again — only files whose
+ *    device, inode and size still match, nothing else. Both finish before the
+ *    retry starts, because the retry reuses the job id as temp-file tag and
+ *    must find the output names free (no "page-p001 (2).jpg"); if the output
+ *    folder does not answer within `cleanupTimeoutMs` the slot is freed anyway
+ *    and the job fails without an automatic retry (OUTPUT_WRITE_FAILED). The
+ *    same rollback runs when a worker is killed after a cancel or timeout, and
+ *    when a cancelled job's worker still reports `done`.
  *  - Shutdown waits (bounded) for worker exits and for those cleanups.
  */
 
@@ -85,6 +92,8 @@ type SlotState = 'stopped' | 'starting' | 'ready' | 'stopping';
 interface ActiveJob {
   readonly jobId: string;
   readonly dirs: readonly string[];
+  /** Outputs the worker reported as committed (removed again if the job does not finish normally). */
+  readonly committed: CommittedOutput[];
   readonly onProgress: (progress: JobProgress) => void;
   readonly resolve: (result: ProcessorResult) => void;
   readonly reject: (error: Error) => void;
@@ -149,6 +158,27 @@ export function outputDirsOf(job: ProcessorJob): string[] {
 
 async function defaultCleanup(dirs: readonly string[], jobId: string): Promise<void> {
   await Promise.all(dirs.map((dir) => cleanupTempFiles(dir, jobId).catch(() => 0)));
+}
+
+/**
+ * Remove outputs a job committed before its worker died: only regular files
+ * whose device, inode and size are still those reported at commit time (a
+ * file the user replaced or edited since is left alone). Returns how many
+ * were removed; errors are ignored (the file is gone or not removable).
+ */
+export async function rollbackCommitted(outputs: readonly CommittedOutput[]): Promise<number> {
+  let removed = 0;
+  for (const output of outputs) {
+    try {
+      const info = await lstat(output.path);
+      if (!info.isFile() || info.dev !== output.dev || info.ino !== output.ino || info.size !== output.size) continue;
+      await unlink(output.path);
+      removed += 1;
+    } catch {
+      // already gone or not removable: leave it
+    }
+  }
+  return removed;
 }
 
 function isMessage(value: unknown): value is ProcessorToMainMessage {
@@ -248,6 +278,7 @@ export class ProcessorPool {
       const active: ActiveJob = {
         jobId: job.jobId,
         dirs: outputDirsOf(job),
+        committed: [],
         onProgress: ctx.onProgress,
         resolve,
         reject,
@@ -551,6 +582,7 @@ export class ProcessorPool {
         }
         return;
       case 'progress':
+      case 'committed':
       case 'done':
       case 'failed':
       case 'cancelled': {
@@ -560,11 +592,18 @@ export class ProcessorPool {
           if (!active.aborted) active.onProgress(message.progress);
           return;
         }
+        if (message.type === 'committed') {
+          active.committed.push(message.output);
+          return;
+        }
         if (message.type === 'done') {
           slot.crashes = 0;
           if (active.aborted) {
-            // Finished just as it was cancelled: the files exist, but the job already counts as cancelled.
-            this.log.info('job finished after it was cancelled; result not registered', { jobId: active.jobId, outputs: message.result.outputs.length });
+            // Finished just as it was cancelled: the job already counts as cancelled, so its files go again.
+            const outputs = [...active.committed];
+            void rollbackCommitted(outputs).then((removed) =>
+              this.log.info('job finished after it was cancelled; its outputs were removed', { jobId: active.jobId, outputs: message.result.outputs.length, removed }),
+            );
           }
           this.finishJob(slot, active, () => active.resolve(message.result));
         } else if (message.type === 'failed') {
@@ -645,7 +684,13 @@ export class ProcessorPool {
     active.timeoutTimer = null;
     active.detach();
     const cleanup = this.options.cleanup ?? defaultCleanup;
-    const finished = cleanup(active.dirs, active.jobId).then(
+    // Committed outputs first (their names must be free for the retry), then the job's temp files.
+    const finished = rollbackCommitted(active.committed)
+      .then((removed) => {
+        if (removed > 0) this.log.info('outputs of an interrupted job removed', { jobId: active.jobId, removed });
+        return cleanup(active.dirs, active.jobId);
+      })
+      .then(
       () => true,
       (error: unknown) => {
         this.log.warn('temp cleanup failed', { jobId: active.jobId, error: describeError(error) });

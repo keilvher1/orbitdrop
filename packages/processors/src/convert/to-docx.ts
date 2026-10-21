@@ -76,7 +76,7 @@ export async function convertPdfToDocx(
   }
   throwIfCancelled(ctx.signal);
   progress({ kind: 'indeterminate', stage: 'writing' });
-  const ledger = new OutputLedger();
+  const ledger = new OutputLedger(ctx.onCommitted);
   const output = await ledger.commit(dir, convertedName(input.displayName, '.docx'), job.jobId, data, ctx.signal, {
     format: 'docx',
     pages: pages.length,
@@ -132,7 +132,7 @@ export async function convertImageToDocx(
   }
   throwIfCancelled(ctx.signal);
   progress({ kind: 'indeterminate', stage: 'writing' });
-  const ledger = new OutputLedger();
+  const ledger = new OutputLedger(ctx.onCommitted);
   const output = await ledger.commit(dir, convertedName(input.displayName, '.docx'), job.jobId, data, ctx.signal, {
     format: 'docx',
     pages: 1,

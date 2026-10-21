@@ -207,7 +207,7 @@ export async function runMetadata(job: ProcessorJob, ctx: ProcessorRunContext): 
     if (result.data.length === 0) throw new OrbitError('INTERNAL', 'Empty result');
     const warnings = result.flattened ? [{ code: 'ALPHA_FLATTENED' as const, params: { background: '#FFFFFF' } }] : [];
     stage(ctx.onProgress, 'writing');
-    const output = await writeToolOutput(job, input, result, signal);
+    const output = await writeToolOutput(job, input, result, signal, ctx.onCommitted);
     return { outputs: [output], warnings };
   } catch (error) {
     throw toToolError(error, signal);

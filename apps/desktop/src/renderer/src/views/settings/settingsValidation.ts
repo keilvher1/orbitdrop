@@ -26,6 +26,22 @@ export function isModifierSupported(key: ModifierKey, platform: Platform | undef
   return platform !== 'darwin' || !MAC_UNSUPPORTED_MODIFIERS.includes(key);
 }
 
+export type ComboWarning = 'altShift' | 'winKey';
+
+/**
+ * Combos that work but collide with Windows shortcuts (warnings, not errors):
+ * Alt+Shift also switches the input language, and releasing the Windows key
+ * (stored as 'command') opens Start. Nothing to warn about elsewhere.
+ */
+export function comboWarnings(combo: readonly ModifierKey[], platform: Platform | undefined): ComboWarning[] {
+  if (platform !== 'win32') return [];
+  const keys = normalizeCombo(combo);
+  const warnings: ComboWarning[] = [];
+  if (keys.length === 2 && keys.includes('alt') && keys.includes('shift')) warnings.push('altShift');
+  if (keys.includes('command')) warnings.push('winKey');
+  return warnings;
+}
+
 export interface ComboValidation {
   readonly convert: ComboError | null;
   readonly tools: ComboError | null;

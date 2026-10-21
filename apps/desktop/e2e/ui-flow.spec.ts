@@ -61,11 +61,20 @@ test('Crop 1:1 in the crop editor', async () => {
   await editor.locator('.btn-primary').click();
   const job = await waitForNewJob(launched.app, known, 'tool.crop');
   expect(job.state).toBe('completed');
-  const meta = await imageMeta(join(launched.work, 'Page 001 Cropped.jpg'));
-  expect(meta.format).toBe('jpeg');
-  expect(meta.width).toBe(meta.height);
-  expect(meta.width).toBeGreaterThan(1000);
-  expect(meta.width).toBeLessThanOrEqual(2550);
+  const cropped = join(launched.work, 'Page 001 Cropped.jpg');
+  // 1:1 on a 2550×3300 page is its centred 2550×2550 square: output (x, y) = page (x, y + 375).
+  expect(await imageMeta(cropped)).toEqual({ format: 'jpeg', width: 2550, height: 2550 });
+  for (const [x, y] of [
+    [1275, 150], // inside the orange title block (page rows 300–800)
+    [1275, 1200], // body text area
+    [100, 2490], // near the bottom-left corner
+  ] as const) {
+    const out = await pixel(cropped, x, y);
+    const page = await pixel(jpg, x, y + 375);
+    for (let c = 0; c < 3; c += 1) expect(Math.abs(out[c]! - page[c]!), `pixel (${x}, ${y}) channel ${c}`).toBeLessThanOrEqual(16);
+  }
+  const orange = await pixel(cropped, 1275, 150);
+  expect(orange[0]! - orange[2]!).toBeGreaterThan(120); // the title block is really there (red ≫ blue)
 });
 
 test('Add Background → PNG in the background editor', async () => {

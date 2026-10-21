@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import './setup';
 import { BACKGROUND_PRESETS, CompositionSpecSchema, CropOptionsSchema, DEFAULT_SETTINGS, type CompositionSpec, type SubmitActionResult } from '@orbitdrop/contracts';
-import { computeCompositionLayout } from '@orbitdrop/core';
+import { computeCompositionLayout, computeCompositionLayoutDetails } from '@orbitdrop/core';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { presetBackgroundStyle } from '../../src/renderer/src/views/editor/background/backgroundCss';
-import { BackgroundEditor, readCompositionDefaults, sliderRanges } from '../../src/renderer/src/views/editor/background/BackgroundEditor';
+import { BackgroundEditor, maxCornerRadius, readCompositionDefaults, sliderRanges } from '../../src/renderer/src/views/editor/background/BackgroundEditor';
 import { CropEditor } from '../../src/renderer/src/views/editor/crop/CropEditor';
 import { createFakeOrbit, deferred, renderWithEnv, sampleEditorContext, sampleImageInfo } from './helpers';
 
@@ -290,5 +290,26 @@ describe('Add Background editor', () => {
     await userEvent.setup().click(screen.getByRole('radio', { name: 'JPEG' }));
     expect(screen.getByRole('spinbutton', { name: '품질' })).toBeTruthy();
     expect(screen.getByText('JPEG는 투명도를 담을 수 없어 불투명한 배경으로 저장됩니다.')).toBeTruthy();
+  });
+});
+
+describe('BackgroundEditor corner radius', () => {
+  it('the slider ends at half the shorter side of the image as drawn, and a larger radius is explained', async () => {
+    const image = sampleImageInfo({ width: 2550, height: 2550, orientedWidth: 2550, orientedHeight: 2550 });
+    const spec = { background: { kind: 'preset', presetId: 'ember' }, padding: 600, cornerRadius: 1500, shadow: 0, ratio: 'auto', maxEdge: 2400, format: 'png', quality: 92 } as const;
+    const ctx = sampleEditorContext('tool.addBackground', { image, defaults: spec });
+    renderWithEnv(<BackgroundEditor ctx={ctx} title="배경 추가" />);
+    const details = computeCompositionLayoutDetails(2550, 2550, spec);
+    const half = Math.floor(Math.min(details.layout.content.width, details.layout.content.height) / 2);
+    expect(half).toBe(600); // 2400 − 2 × 600 = 1200 px of image → at most 600 px of radius
+    const slider = screen.getByRole('slider', { name: '모서리' });
+    expect(slider.getAttribute('max')).toBe(String(half));
+    expect(screen.getByText(`모서리 반경은 이미지 크기에 맞춰 ${details.layout.cornerRadius}px로 적용됩니다.`)).toBeTruthy();
+  });
+
+  it('maxCornerRadius follows the content rect and falls back without a layout', () => {
+    expect(maxCornerRadius({ content: { x: 0, y: 0, width: 1000, height: 601 } }, 50)).toBe(300);
+    expect(maxCornerRadius(null, 50)).toBe(50);
+    expect(maxCornerRadius({ content: { x: 0, y: 0, width: 1, height: 1 } }, 50)).toBe(1);
   });
 });

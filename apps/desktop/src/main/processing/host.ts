@@ -119,7 +119,12 @@ async function handle(message: MainToProcessorMessage): Promise<void> {
       const progress = progressForwarder(job.jobId);
       try {
         const processors = await api();
-        const result = await processors.runJob(job, { signal: controller.signal, onProgress: (p) => progress.push(p) });
+        const result = await processors.runJob(job, {
+          signal: controller.signal,
+          onProgress: (p) => progress.push(p),
+          // Main keeps the list: if this process dies before `done`, main removes these files itself.
+          onCommitted: (output) => send({ type: 'committed', jobId: job.jobId, output }),
+        });
         progress.flush();
         // Resolved means the outputs were committed: report them even if a cancel arrived meanwhile.
         send({ type: 'done', jobId: job.jobId, result });

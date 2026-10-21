@@ -67,7 +67,7 @@ export async function convertImageToImage(
   throwIfCancelled(ctx.signal);
 
   progress({ kind: 'indeterminate', stage: 'writing' });
-  const ledger = new OutputLedger();
+  const ledger = new OutputLedger(ctx.onCommitted);
   const output = await ledger.commit(
     dir,
     convertedName(input.displayName, FORMAT_INFO[target].extension),

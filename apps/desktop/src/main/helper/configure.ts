@@ -16,6 +16,10 @@ export interface HelperStrings {
   readonly unsupported: string;
   readonly multiFileUnsupported: string;
   readonly fileCount: string;
+  /** Specific centre texts for unsupported drags (the helpers fall back to `unsupported`). */
+  readonly unsupportedFolder?: string;
+  readonly unsupportedNonFile?: string;
+  readonly unsupportedVirtual?: string;
 }
 
 export interface ConfigureInputs {
@@ -69,6 +73,9 @@ export function buildConfigureMessage(inputs: ConfigureInputs): HelperConfigureM
       unsupported: clip(inputs.strings.unsupported, 60),
       multiFileUnsupported: clip(inputs.strings.multiFileUnsupported, 60),
       fileCount: clip(inputs.strings.fileCount, 60),
+      ...(inputs.strings.unsupportedFolder !== undefined ? { unsupportedFolder: clip(inputs.strings.unsupportedFolder, 60) } : {}),
+      ...(inputs.strings.unsupportedNonFile !== undefined ? { unsupportedNonFile: clip(inputs.strings.unsupportedNonFile, 60) } : {}),
+      ...(inputs.strings.unsupportedVirtual !== undefined ? { unsupportedVirtual: clip(inputs.strings.unsupportedVirtual, 60) } : {}),
     },
   };
   return HelperConfigureSchema.parse(message) as HelperConfigureMessage;

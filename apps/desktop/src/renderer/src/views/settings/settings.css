@@ -291,3 +291,16 @@
   background: var(--c-warning-bg);
   color: var(--c-warning-text);
 }
+
+/* A modifier combo that works but collides with an OS shortcut (Windows). */
+.field-warning {
+  color: var(--c-warning-text);
+  font-size: 12px;
+}
+
+.settings-input-monitoring {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}

@@ -122,7 +122,7 @@ export async function convertPdfToImages(
   progress({ kind: 'indeterminate', stage: 'decoding' });
   const engine = await loadPdfEngine();
   const pdf = await openPdf(bytes, engine, { maxImagePixels: job.limits.maxInputPixels });
-  const ledger = new OutputLedger();
+  const ledger = new OutputLedger(ctx.onCommitted);
   try {
     const total = pdf.numPages;
     if (total < 1) throw new OrbitError('PDF_CORRUPT', 'PDF has no pages');

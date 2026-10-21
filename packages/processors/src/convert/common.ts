@@ -4,6 +4,7 @@ import {
   OrbitError,
   formatFromExtension,
   parseActionOptions,
+  type CommittedOutput,
   type ConvertOptions,
   type ConvertTarget,
   type FileFormat,
@@ -95,9 +96,15 @@ interface CommittedFile {
  * fails or is cancelled calls `rollback()`, which removes exactly the files
  * this job created — and only if they are still the same files (device, inode
  * and size unchanged since commit). Nothing else is ever deleted.
+ *
+ * Each commit is also reported through `onCommitted` (ProcessorRunContext):
+ * main keeps the same list, so it can do this rollback itself when the worker
+ * dies or is killed before it could (a crash mid-job, a kill after a cancel).
  */
 export class OutputLedger {
   readonly #files: CommittedFile[] = [];
+
+  constructor(private readonly onCommitted?: (output: CommittedOutput) => void) {}
 
   async commit(
     dir: string,
@@ -117,6 +124,7 @@ export class OutputLedger {
     }
     const output: ProcessorOutput = { ...describe, path, bytes: data.byteLength };
     this.#files.push({ output, identity });
+    if (identity) this.onCommitted?.({ path, ...identity });
     return output;
   }
 

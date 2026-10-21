@@ -152,7 +152,7 @@ export async function runAnnotate(job: ProcessorJob, ctx: ProcessorRunContext): 
     const warnings: JobWarning[] = [...fontWarnings];
     if (encoded.flattened && (await regionHasTransparency(image))) warnings.push({ code: 'ALPHA_FLATTENED', params: { background: '#FFFFFF' } });
     stage(ctx.onProgress, 'writing');
-    const output = await writeToolOutput(job, input, encoded, signal);
+    const output = await writeToolOutput(job, input, encoded, signal, ctx.onCommitted);
     return { outputs: [output], warnings };
   } catch (error) {
     throw toToolError(error, signal);

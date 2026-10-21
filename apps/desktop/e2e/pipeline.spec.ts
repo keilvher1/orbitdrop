@@ -245,7 +245,7 @@ test('the renderer cannot navigate, open windows, open arbitrary URLs or pass ba
   expect(results.opened).toBe(true);
   expect(results.external).toBe(false);
   expect(results.badId).toMatch(/^INVALID_OPTIONS: /);
-  expect(results.fake).toMatch(/^FILE_NOT_FOUND: /);
+  expect(results.fake).toMatch(/^VIRTUAL_FILE: /); // an in-memory File has no path on disk
   expect(results.permission).toBe('denied');
   await jobsPage.evaluate(() => {
     window.location.href = 'https://example.com/';
