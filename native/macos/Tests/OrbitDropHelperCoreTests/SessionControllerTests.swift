@@ -14,9 +14,11 @@ final class SessionControllerTests: XCTestCase {
     var view: WheelViewModel?
     var timers: [SessionTimer: (ms: Int, token: String)] = [:]
 
-    init(config: HelperConfig = DefaultConfig.config(locale: .en), displays: [Display] = [SessionControllerTests.mainDisplay]) {
+    /// `settleMs` 0 shows the wheel on the completing press (the 40 ms settle has its own tests).
+    init(config: HelperConfig = DefaultConfig.config(locale: .en), displays: [Display] = [SessionControllerTests.mainDisplay], settleMs: Int = 0) {
       let counter = Counter()
       controller = DragSessionController(displays: displays, makeSessionId: { counter.next() })
+      controller.modifierSettleMs = settleMs
       _ = controller.handle(.configure(config))
     }
 
@@ -142,11 +144,13 @@ final class SessionControllerTests: XCTestCase {
   }
 
   func testComboHeldBeforeTheMouseDownDoesNotOpenTheWheel() {
+    // The observer's real sequence: the mouse-down carries the modifiers held at that moment
+    // (e.g. Shift-click to extend a Finder selection), then movement, then the pasteboard change.
     var h = Harness()
-    h.send(.modifiersChanged([.shift]))  // e.g. Shift-click to extend a Finder selection
-    h.send(.mouseDown(at(-10, 0)))
+    h.send(.mouseDown(at(-10, 0), held: [.shift]))
     h.send(.mouseDragged(center))
     h.send(.dragPasteboardChanged)
+    h.send(.modifiersChanged([.shift]))  // a poll reporting the unchanged set is not a press
     XCTAssertEqual(h.controller.phase, .potentialDrag)
     XCTAssertNil(h.view)
     // Pressing the combo again during the drag opens it.
@@ -275,7 +279,7 @@ final class SessionControllerTests: XCTestCase {
     h.send(.modifiersChanged([.shift]))
     h.send(.draggingEntered(items: [.nonFile], point: center, sourceAllowsCopy: true))
     XCTAssertEqual(h.view?.content, .unsupported)
-    XCTAssertEqual(h.view?.capsule, CapsuleContent(text: "Not supported", style: .reject))
+    XCTAssertEqual(h.view?.capsule, CapsuleContent(text: "Not a file", style: .reject), "strings.unsupportedNonFile")
     XCTAssertEqual(h.states.last, StateMessage(sessionId: "s1", state: .wheelActive, mode: .convert, menuKey: .some(nil), fileCount: 0))
     for p in [at(120, 0), at(0, 120), center] {
       XCTAssertEqual(h.send(.draggingUpdated(point: p, sourceAllowsCopy: true)).operation, .none)
@@ -595,7 +599,7 @@ final class SessionControllerTests: XCTestCase {
     let modifierSets: [Set<ModifierKey>] = [[], [.shift], [.alt, .shift], [.alt], [.command, .shift], [.control]]
 
     for _ in 0..<1500 {
-      var h = Harness()
+      var h = Harness(settleMs: 40)
       var lastOpWasCopyAllowed = true
       for _ in 0..<70 {
         let event: SessionEvent
@@ -668,6 +672,133 @@ final class SessionControllerTests: XCTestCase {
       }
       XCTAssertEqual(ended, announced, "every announced session ended exactly once")
     }
+  }
+
+  // MARK: Unsupported texts, settle, no-enter, layout
+
+  func testUnsupportedDragsUseTheSpecificStrings() {
+    for (items, expected) in [([DragItem.file(path: "/Users/me/Folder", isDirectory: true)], "Folders aren't supported"), ([.promise], "Not a file on disk"), ([.nonFile], "Not a file"), ([.file(path: "/a/notes.txt", isDirectory: false)], "Not supported")] {
+      var h = Harness()
+      h.beginDrag()
+      h.send(.modifiersChanged([.shift]))
+      h.send(.draggingEntered(items: items, point: center, sourceAllowsCopy: true))
+      XCTAssertEqual(h.view?.capsule, CapsuleContent(text: expected, style: .reject), "\(items)")
+    }
+    // A folder found only by the off-main stat (no trailing slash) switches to the folder text.
+    var h = Harness()
+    h.beginDrag()
+    h.send(.modifiersChanged([.shift]))
+    h.send(.draggingEntered(items: [.file(path: "/Users/me/Bundle.pdf", isDirectory: false)], point: center, sourceAllowsCopy: true))
+    h.send(.fileInfo(sessionId: "s1", totalBytes: nil, containsDirectory: true))
+    XCTAssertEqual(h.view?.capsule.text, "Folders aren't supported")
+    // Without the optional strings (older main), everything falls back to `unsupported`.
+    var old = DefaultConfig.config(locale: .en)
+    old.strings = HelperStrings(dropHint: "Drop here", unsupported: "Not supported", multiFileUnsupported: "One", fileCount: "{n} files")
+    var g = Harness(config: old)
+    g.beginDrag()
+    g.send(.modifiersChanged([.shift]))
+    g.send(.draggingEntered(items: [.promise], point: center, sourceAllowsCopy: true))
+    XCTAssertEqual(g.view?.capsule.text, "Not supported")
+  }
+
+  func testModifiersMustSettleBeforeTheWheelAppears() {
+    // Shift then Option 10 ms later: tools directly, no convert flash.
+    var h = Harness(settleMs: 40)
+    h.beginDrag()
+    h.send(.modifiersChanged([.shift]))
+    XCTAssertEqual(h.controller.phase, .potentialDrag)
+    XCTAssertEqual(h.timers[.modifierSettle]?.ms, 40)
+    XCTAssertNil(h.view)
+    h.send(.modifiersChanged([.alt, .shift]))
+    h.fire(.modifierSettle)
+    XCTAssertEqual(h.controller.currentMode, .tools)
+    XCTAssertEqual(h.states.map(\.mode), [.tools], "one AwaitingPayload, already in tools mode")
+
+    // Released inside the window: nothing appears.
+    var r = Harness(settleMs: 40)
+    r.beginDrag()
+    r.send(.modifiersChanged([.shift]))
+    r.send(.modifiersChanged([]))
+    XCTAssertNil(r.timers[.modifierSettle], "pending activation abandoned")
+    XCTAssertEqual(r.controller.phase, .potentialDrag)
+    XCTAssertTrue(r.messages.isEmpty)
+
+    // Stable Shift: convert after the settle.
+    var c = Harness(settleMs: 40)
+    c.beginDrag()
+    c.send(.modifiersChanged([.shift]))
+    c.fire(.modifierSettle)
+    XCTAssertEqual(c.controller.phase, .awaitingPayload)
+    XCTAssertEqual(c.controller.currentMode, .convert)
+  }
+
+  func testNeutralWheelWithoutDragEnterIsHidden() {
+    var h = Harness()
+    h.beginDrag()
+    h.send(.modifiersChanged([.shift]))
+    h.send(.mouseDragged(at(3, 0)))
+    XCTAssertNil(h.timers[.noEnter], "a few points of travel are not enough")
+    h.send(.mouseDragged(at(60, 20)))
+    XCTAssertEqual(h.timers[.noEnter]?.ms, 400)
+    h.fire(.noEnter)
+    XCTAssertEqual(h.cancels, [.invalidPayload])
+    XCTAssertNil(h.view)
+
+    // A drag-enter in time cancels it.
+    var g = Harness()
+    g.beginDrag()
+    g.send(.modifiersChanged([.shift]))
+    g.send(.mouseDragged(at(60, 20)))
+    g.send(.draggingEntered(items: pdf, point: at(60, 20), sourceAllowsCopy: true))
+    XCTAssertNil(g.timers[.noEnter])
+    XCTAssertEqual(g.controller.phase, .wheelActive)
+    // Travel outside the disc never arms it.
+    var o = Harness()
+    o.beginDrag()
+    o.send(.modifiersChanged([.shift]))
+    o.send(.mouseDragged(at(400, 0)))
+    XCTAssertNil(o.timers[.noEnter])
+  }
+
+  func testPanelLayoutKeepsTheCaptionOnScreen() {
+    var h = Harness()
+    h.beginDrag()
+    h.send(.modifiersChanged([.shift]))
+    let layout = h.view!.presentation.layout
+    XCTAssertEqual(layout.captionPlacement, .below)
+    XCTAssertEqual(layout.frame, Rect(x: 520, y: 320, width: 360, height: 392), "disc bounding square + 6 pt gap + 26 pt caption")
+    XCTAssertEqual(layout.discCenter, Point(x: 180, y: 180))
+    XCTAssertEqual(h.controller.layout?.global(Point(x: 180, y: 180)), center)
+    // Pushed against the bottom of the work area: the caption goes above the disc.
+    var b = Harness()
+    b.beginDrag(at: Point(x: 690, y: 975), to: Point(x: 700, y: 978))
+    b.send(.modifiersChanged([.shift]))
+    let bottom = b.view!.presentation.layout
+    XCTAssertEqual(b.view!.presentation.placement.center.y, 982 - 188)
+    XCTAssertEqual(bottom.captionPlacement, .above)
+    XCTAssertEqual(bottom.discCenter, Point(x: 180, y: 212))
+    XCTAssertEqual(bottom.frame.maxY, 982 - 8, "the panel ends with the disc")
+    // Too small for either side: no caption, the capsule alone shows the choice.
+    let tiny = WheelPanelLayout.make(placement: WheelMath.placeWheel(activation: Point(x: 100, y: 100), workArea: Rect(x: 0, y: 0, width: 400, height: 260)), workArea: Rect(x: 0, y: 0, width: 400, height: 260))
+    XCTAssertEqual(tiny.captionPlacement, .none)
+    XCTAssertNil(tiny.captionRect)
+  }
+
+  func testCaptionAndAnnouncementFollowTheArmedChoice() {
+    var h = Harness()
+    h.beginDrag()
+    h.send(.modifiersChanged([.shift]))
+    h.send(.draggingEntered(items: png, point: center, sourceAllowsCopy: true))
+    XCTAssertNil(h.view?.caption)
+    XCTAssertNil(h.view?.announcement)
+    h.send(.draggingUpdated(point: at(0, -120), sourceAllowsCopy: true))
+    XCTAssertEqual(h.view?.caption, CapsuleContent(text: "JPG", style: .action))
+    XCTAssertEqual(h.view?.announcement, "JPG")
+    h.send(.draggingUpdated(point: at(120, 0), sourceAllowsCopy: true))  // HEIC, disabled
+    XCTAssertEqual(h.view?.caption, CapsuleContent(text: "No HEIC encoder in this build", style: .reject))
+    XCTAssertEqual(h.view?.announcement, "HEIC: No HEIC encoder in this build")
+    h.send(.draggingUpdated(point: center, sourceAllowsCopy: true))
+    XCTAssertNil(h.view?.caption)
   }
 
   func testReduceMotionHidesWithoutAnimation() {

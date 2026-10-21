@@ -295,8 +295,8 @@ final class HelperProcessTests: XCTestCase {
     let result = try run(["--render-snapshot", out.path, "--menu", "image/jpeg", "--mode", "tools", "--highlight", "5", "--scale", "2", "--locale", "ko"])
     XCTAssertEqual(result.status, 0)
     let size = try XCTUnwrap(imageSize(out))
-    XCTAssertEqual(size.0, 816)
-    XCTAssertEqual(size.1, 816)
+    XCTAssertEqual(size.0, 816, "(360 disc + 2·24 shadow margin) · 2")
+    XCTAssertEqual(size.1, 880, "(360 disc + 6 gap + 26 caption strip + 2·24 margin) · 2")
     XCTAssertEqual(try run(["--render-snapshot", out.path, "--menu", "image/svg", "--mode", "tools"]).status, 2)
   }
 }

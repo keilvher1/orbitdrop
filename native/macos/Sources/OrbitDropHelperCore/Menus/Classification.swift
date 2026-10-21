@@ -7,9 +7,10 @@
 // silently skip files.
 
 /// One pasteboard item of the drag, already reduced to what classification needs.
+/// Read once in draggingEntered; performDragOperation reuses it (no second read).
 public enum DragItem: Sendable, Equatable {
   /// A file URL resolved to an absolute path. `isDirectory` comes from the URL
-  /// itself (trailing slash) so no file-system access happens in the drag callback.
+  /// itself (trailing slash) so no file-system access is needed to see a folder.
   case file(path: String, isDirectory: Bool)
   /// A file promise (e.g. Photos, Mail attachments) without a real file yet.
   case promise
@@ -21,12 +22,12 @@ public enum Payload: Sendable, Equatable {
   /// Supported files: the menu key and the owned path strings (in drag order).
   case files(key: MenuKey, paths: [String])
   /// Not acceptable. `fileCount` counts the file items that were present.
-  case unsupported(fileCount: Int)
+  case unsupported(fileCount: Int, reason: UnsupportedReason)
 
   public var fileCount: Int {
     switch self {
     case .files(_, let paths): return paths.count
-    case .unsupported(let count): return count
+    case .unsupported(let count, _): return count
     }
   }
 
@@ -38,6 +39,11 @@ public enum Payload: Sendable, Equatable {
   public var paths: [String] {
     if case .files(_, let paths) = self { return paths }
     return []
+  }
+
+  public var unsupportedReason: UnsupportedReason? {
+    if case .unsupported(_, let reason) = self { return reason }
+    return nil
   }
 }
 
@@ -120,15 +126,28 @@ public enum Classifier {
       if case .file = item { return count + 1 }
       return count
     }
-    guard !items.isEmpty, items.count <= HelperProtocol.maxFiles else { return .unsupported(fileCount: fileCount) }
+    guard !items.isEmpty else { return .unsupported(fileCount: 0, reason: .nonFile) }
+    guard items.count <= HelperProtocol.maxFiles else { return .unsupported(fileCount: fileCount, reason: .tooMany) }
+    // The most specific reason wins: items without a file on disk, then folders, then non-file data.
+    var hasPromise = false
+    var hasFolder = false
+    var hasNonFile = false
     var paths: [String] = []
     for item in items {
-      // Folders (also caught by the trailing-separator rule), promises and non-file items.
-      guard case .file(let path, let isDirectory) = item, !isDirectory else { return .unsupported(fileCount: fileCount) }
-      guard path.hasPrefix("/"), path.unicodeScalars.count <= HelperProtocol.maxPathLength else { return .unsupported(fileCount: fileCount) }
-      paths.append(path)
+      switch item {
+      case .promise: hasPromise = true
+      case .nonFile: hasNonFile = true
+      case .file(let path, let isDirectory):
+        if isDirectory || path.unicodeScalars.last.map(isSeparator) == true { hasFolder = true }
+        paths.append(path)
+      }
     }
-    guard let key = menuKeyForPaths(paths, extensions: extensions) else { return .unsupported(fileCount: fileCount) }
+    if hasPromise { return .unsupported(fileCount: fileCount, reason: .virtual) }
+    if hasFolder { return .unsupported(fileCount: fileCount, reason: .folder) }
+    if hasNonFile { return .unsupported(fileCount: fileCount, reason: .nonFile) }
+    guard paths.allSatisfy({ $0.hasPrefix("/") && $0.unicodeScalars.count <= HelperProtocol.maxPathLength }),
+      let key = menuKeyForPaths(paths, extensions: extensions)
+    else { return .unsupported(fileCount: fileCount, reason: .unknownType) }
     return .files(key: key, paths: paths)
   }
 

@@ -27,7 +27,7 @@ final class PasteboardTests: XCTestCase {
       .file(path: "/Users/someone/문서/Page 001 😀 #1%.pdf", isDirectory: false),
       .file(path: "/Users/someone/Folder.pdf/", isDirectory: true),
     ])
-    XCTAssertEqual(Classifier.classify(items, extensions: DefaultConfig.extensions), .unsupported(fileCount: 2), "a folder makes the drag unsupported")
+    XCTAssertEqual(Classifier.classify(items, extensions: DefaultConfig.extensions), .unsupported(fileCount: 2, reason: .folder), "a folder makes the drag unsupported")
     XCTAssertEqual(Classifier.classify(Array(items.prefix(1)), extensions: DefaultConfig.extensions), .files(key: .pdf, paths: ["/Users/someone/문서/Page 001 😀 #1%.pdf"]))
   }
 

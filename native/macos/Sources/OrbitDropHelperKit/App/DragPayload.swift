@@ -3,9 +3,11 @@ import Darwin
 import Foundation
 import OrbitDropHelperCore
 
-/// Reads the drag pasteboard into owned values. Called only from
-/// draggingEntered / performDragOperation — never from the global observers,
-/// which look at nothing but the drag pasteboard's change count.
+/// Reads the drag pasteboard into owned values. Called once per session, from the
+/// first draggingEntered (re-entries and performDragOperation reuse the result) —
+/// never from the global observers, which look only at the drag pasteboard's change
+/// count. The only file-system call is resolving a file-reference URL
+/// (file:///.file/id=…) to a path, which Finder does not normally use.
 public enum PasteboardReader {
   /// Types a file promise can arrive under (no real file exists yet → unsupported).
   public static let promiseTypes: Set<String> = {

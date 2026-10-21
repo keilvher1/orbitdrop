@@ -3,8 +3,8 @@ import Darwin
 import Foundation
 import OrbitDropHelperCore
 
-/// Session ids: `m<pid>-<counter>-<random>` — unique across helper processes, as
-/// main's DragSessionTracker requires, and within ^[A-Za-z0-9_-]{1,64}$.
+/// Session ids: `m<pid>-<random>-<counter>` — unique across helper processes (even when the OS
+/// reuses a pid), as main's DragSessionTracker requires, and within ^[A-Za-z0-9_-]{1,64}$.
 final class SessionIdGenerator: @unchecked Sendable {
   private let lock = NSLock()
   private var counter = 0
@@ -34,35 +34,54 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
     public var readStdin = true
     /// Order the panel front when a wheel is shown (false in tests: nothing appears on screen).
     public var presentWindows = true
-    /// Exit the process on shutdown / EOF (false in tests).
+    /// Exit the process on stop / EOF (false in tests).
     public var exitProcess = true
-    /// Install the global mouse monitor when enabled (false in tests, which inject events
-    /// with `simulateObserved` so real clicks on the machine cannot interfere).
+    /// Install the global mouse monitor when enabled (false in tests that inject events with
+    /// `simulateObserved`; tests that drive the real observer pass a fake `inputSource` instead).
     public var observeGlobally = true
+    /// Where mouse/modifier/pasteboard state comes from (nil = the real system source).
+    public var inputSource: DragInputSource?
+    /// OS "Reduce motion" (read when NSWorkspace posts accessibilityDisplayOptionsDidChange).
+    public var reduceMotionProvider: @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    /// Input Monitoring status (TCC). Queried off the main thread and cached, never in an event callback.
+    public var inputMonitoringProvider: @Sendable () -> Bool = { SystemInfo.inputMonitoringGranted }
+    /// Posts a VoiceOver announcement (nil = NSAccessibility announcement when VoiceOver runs).
+    public var announcer: (@MainActor (String) -> Void)?
     public init() {}
   }
 
   public static let debugLogging = ProcessInfo.processInfo.environment["ORBITDROP_HELPER_DEBUG"] == "1"
+  /// How often the cached Input Monitoring status is refreshed while observing.
+  static let permissionRefreshInterval: TimeInterval = 60
 
   private let options: Options
   private var writer: StdoutWriter!
   private var reader: StdinReader?
   private var controller: DragSessionController
-  private let observer = GlobalDragObserver()
+  private let observer: GlobalDragObserver
   private var panel: WheelPanel?
   private(set) var wheelView: WheelView?
   private var timers: [SessionTimer: Timer] = [:]
   private var appearTimer: Timer?
+  private var permissionTimer: Timer?
   private var visibilityGeneration = 0
   private var terminating = false
   private var activity: NSObjectProtocol?
   private var signalSources: [DispatchSourceSignal] = []
   private var notificationTokens: [(NotificationCenter, NSObjectProtocol)] = []
+  private var lastAnnouncement: String?
+  /// Cached TCC status; drives Escape polling.
+  private var inputMonitoringGranted = false {
+    didSet { observer.escapePollingAllowed = inputMonitoringGranted }
+  }
+  /// Set when the OS turns Reduce Motion on after main's last `configure`; cleared by the next one.
+  private(set) var osReduceMotionOverride = false
 
   public init(options: Options = Options()) {
     self.options = options
     let ids = SessionIdGenerator()
     controller = DragSessionController(makeSessionId: { ids.next() })
+    observer = GlobalDragObserver(source: options.inputSource ?? SystemDragInputSource())
     super.init()
     writer = StdoutWriter(fd: options.outputFD) { [weak self] in
       DispatchQueue.main.async { MainActor.assumeIsolated { self?.terminate(reason: "stdout closed") } }
@@ -82,6 +101,8 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
   public func start() {
     installNotifications()
     installSignalHandlers()
+    controller.displays = SystemInfo.displays()
+    refreshPermissionCache()
     if options.readStdin {
       let reader = StdinReader(
         onLine: { [weak self] line in DispatchQueue.main.async { MainActor.assumeIsolated { self?.handleLine(line) } } },
@@ -91,7 +112,7 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
       self.reader = reader
       reader.start()
     }
-    let available = GlobalDragObserver.canInstallMonitor()
+    let available = SystemDragInputSource.canInstallMonitor()
     writer.send(.ready(ReadyMessage(
       helperVersion: HelperInfo.version, platform: HelperInfo.platform, arch: HelperInfo.arch, osVersion: SystemInfo.osVersion,
       pid: Int64(ProcessInfo.processInfo.processIdentifier), globalDragAvailable: available,
@@ -128,8 +149,10 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
     switch message {
     case .configure(let config):
       controller.displays = SystemInfo.displays()
+      osReduceMotionOverride = false  // main's value wins again until the OS changes it
       apply(controller.handle(.configure(config)))
       setObserving(config.enabled)
+      refreshPermissionCache()
       warnAboutModifiers(config)
       debug("configured (enabled=\(config.enabled), menus=\(config.menus.count), extensions=\(config.extensions.count))")
     case .cancelSession(let id):
@@ -137,9 +160,11 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
     case .ping(let nonce):
       writer.send(.pong(nonce: nonce))
     case .shutdown:
-      terminate(reason: "shutdown requested")
+      terminate(reason: "stop requested")
     case .queryPermissions:
-      writer.send(.permissions(SystemInfo.permissions()))
+      let items = SystemInfo.permissions()
+      inputMonitoringGranted = items.first { $0.name == .inputMonitoring }?.granted ?? false
+      writer.send(.permissions(items))
     }
   }
 
@@ -154,15 +179,20 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
 
   private func setObserving(_ enabled: Bool) {
     if enabled {
+      // Create the (hidden) panel and register its drag types now, not during the first drag.
+      _ = ensurePanel()
       guard options.observeGlobally, !observer.isRunning else { return }
       if observer.start() {
         beginActivity()
+        startPermissionRefresh()
       } else {
         writer.send(.error(code: "GLOBAL_MONITOR_UNAVAILABLE", message: "NSEvent global mouse monitor could not be installed", fatal: false))
       }
     } else {
       observer.stop()
       endActivity()
+      permissionTimer?.invalidate()
+      permissionTimer = nil
     }
   }
 
@@ -177,11 +207,30 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
     activity = nil
   }
 
+  /// TCC is asked off the main thread and only rarely (start, configure, every 60 s while
+  /// observing) — never from a mouse/drag callback.
+  private func refreshPermissionCache() {
+    let provider = options.inputMonitoringProvider
+    DispatchQueue.global(qos: .utility).async { [weak self] in
+      let granted = provider()
+      DispatchQueue.main.async { MainActor.assumeIsolated { self?.inputMonitoringGranted = granted } }
+    }
+  }
+
+  private func startPermissionRefresh() {
+    guard permissionTimer == nil else { return }
+    let timer = Timer(timeInterval: Self.permissionRefreshInterval, repeats: true) { [weak self] _ in
+      MainActor.assumeIsolated { self?.refreshPermissionCache() }
+    }
+    timer.tolerance = 5
+    RunLoop.main.add(timer, forMode: .common)
+    permissionTimer = timer
+  }
+
   // MARK: Observer → controller
 
   func handleObserved(_ event: SessionEvent) {
     guard !terminating else { return }
-    if case .mouseDown = event { controller.displays = SystemInfo.displays() }
     apply(controller.handle(event))
   }
 
@@ -191,11 +240,23 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
   }
 
   public var sessionPhase: SessionPhase { controller.phase }
+  /// Test hooks.
+  var observerForTests: GlobalDragObserver { observer }
+  var cachedInputMonitoringGranted: Bool { inputMonitoringGranted }
+  public private(set) var lastShowAnimated = false
+  public private(set) var lastHideAnimated = false
 
   // MARK: Commands
 
   private func apply(_ output: SessionOutput) {
+    let captionBefore = wheelView?.model?.caption != nil
     for command in output.commands { execute(command) }
+    if let panel, panel.isVisible || !options.presentWindows, (wheelView?.model?.caption != nil) != captionBefore {
+      // The caption pill changes the alpha shape: redraw now and let the window server recompute its shadow.
+      wheelView?.display()
+      panel.invalidateShadow()
+    }
+    announceIfNeeded()
   }
 
   private func execute(_ command: SessionCommand) {
@@ -242,12 +303,37 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
     timers[kind] = timer
   }
 
+  /// Test hook: fire a pending session timer now.
+  func fireTimerForTests(_ kind: SessionTimer) -> Bool {
+    guard let timer = timers[kind] else { return false }
+    timer.fire()
+    return true
+  }
+
+  // MARK: Accessibility
+
+  /// Announces the armed choice to VoiceOver once per change (not on every drag-over update).
+  private func announceIfNeeded() {
+    let text = wheelView?.model?.announcement
+    guard text != lastAnnouncement else { return }
+    lastAnnouncement = text
+    guard let text else { return }
+    if let announcer = options.announcer {
+      announcer(text)
+    } else if NSWorkspace.shared.isVoiceOverEnabled {
+      let element: Any = wheelView ?? NSApp as Any
+      NSAccessibility.post(element: element, notification: .announcementRequested, userInfo: [
+        .announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue,
+      ])
+    }
+  }
+
   // MARK: Panel
 
   private func ensurePanel() -> (WheelPanel, WheelView) {
     if let panel, let wheelView { return (panel, wheelView) }
     let panel = WheelPanel()
-    let view = WheelView(frame: NSRect(x: 0, y: 0, width: 408, height: 408))
+    let view = WheelView(frame: NSRect(x: 0, y: 0, width: 360, height: 392))
     view.host = self
     panel.contentView = view
     self.panel = panel
@@ -255,28 +341,38 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
     return (panel, view)
   }
 
+  /// Test hook: the panel exists (created hidden when observation was enabled).
+  var panelForTests: NSPanel? { panel }
+
+  private var reduceMotionNow: Bool { osReduceMotionOverride }
+
   private func show(_ presentation: WheelPresentation) {
     let (panel, view) = ensurePanel()
     visibilityGeneration += 1
     appearTimer?.invalidate()
     appearTimer = nil
-    let frame = Coords.globalRectToAppKit(presentation.placement.windowFrame, primaryFrame: SystemInfo.primaryFrame)
+    let frame = Coords.globalRectToAppKit(presentation.layout.frame, primaryFrame: SystemInfo.primaryFrame)
     panel.setFrame(SystemInfo.nsRect(frame), display: false)
     view.frame = NSRect(x: 0, y: 0, width: frame.width, height: frame.height)
     view.model = WheelViewModel(presentation: presentation, capsule: CapsuleContent(text: "", style: .hint))
-    let animate = !presentation.reduceMotion && presentation.tokens.appearMs > 0
-    view.appear = animate ? 0 : 1
+    view.appear = 1
+    let animate = !(presentation.reduceMotion || reduceMotionNow) && presentation.tokens.appearMs > 0
+    lastShowAnimated = animate
     // A zero-duration animator set replaces a fade-out still running from the previous drop.
+    // The fade starts at 0.2, never 0, so the panel is a drag destination from its first frame.
+    let startAlpha: CGFloat = animate ? 0.2 : 1
     NSAnimationContext.runAnimationGroup { context in
       context.duration = 0
-      panel.animator().alphaValue = animate ? 0 : 1
+      panel.animator().alphaValue = startAlpha
     }
-    panel.alphaValue = animate ? 0 : 1
+    panel.alphaValue = startAlpha
+    view.display()  // draw now so the window server shadow follows the disc
+    panel.invalidateShadow()
     if options.presentWindows { panel.orderFrontRegardless() }
-    if animate { runAppear(duration: presentation.tokens.appearMs / 1000) }
+    if animate { runAppear(from: startAlpha, duration: presentation.tokens.appearMs / 1000) }
   }
 
-  private func runAppear(duration: Double) {
+  private func runAppear(from startAlpha: CGFloat, duration: Double) {
     let start = CACurrentMediaTime()
     let generation = visibilityGeneration
     let timer = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] t in
@@ -284,8 +380,7 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
         guard let self, self.visibilityGeneration == generation, let panel = self.panel else { return true }
         let progress = min(1, (CACurrentMediaTime() - start) / max(duration, 0.001))
         let eased = 1 - pow(1 - progress, 3)
-        panel.alphaValue = CGFloat(eased)
-        self.wheelView?.appear = CGFloat(eased)
+        panel.alphaValue = startAlpha + (1 - startAlpha) * CGFloat(eased)
         if progress >= 1 { self.appearTimer = nil }
         return progress >= 1
       }
@@ -300,7 +395,9 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
     visibilityGeneration += 1
     appearTimer?.invalidate()
     appearTimer = nil
-    let duration = animated ? (wheelView?.model?.presentation.tokens.disappearMs ?? 0) / 1000 : 0
+    let animate = animated && !reduceMotionNow
+    lastHideAnimated = animate
+    let duration = animate ? (wheelView?.model?.presentation.tokens.disappearMs ?? 0) / 1000 : 0
     guard panel.isVisible, duration > 0, options.presentWindows else {
       hideNow()
       return
@@ -321,12 +418,13 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
     panel?.orderOut(nil)
     panel?.alphaValue = 1
     wheelView?.model = nil
+    lastAnnouncement = nil
   }
 
   /// Test hook: the model currently drawn (nil when hidden).
   public var currentModel: WheelViewModel? { wheelView?.model }
 
-  /// Test hook: the drop-target view (exists once a wheel was shown).
+  /// Test hook: the drop-target view (exists once observation was enabled).
   public var dropTargetView: NSView? { wheelView }
 
   /// Test hook: wait until queued output was written.
@@ -336,8 +434,12 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
   // MARK: WheelDropHost
 
   private func global(_ local: CGPoint) -> Point {
-    let origin = controller.placement?.windowFrame ?? Rect(x: 0, y: 0, width: 0, height: 0)
-    return Point(x: origin.x + Double(local.x), y: origin.y + Double(local.y))
+    let point = Point(x: Double(local.x), y: Double(local.y))
+    return controller.layout?.global(point) ?? point
+  }
+
+  func wheelNeedsPayload() -> Bool {
+    controller.payload == nil
   }
 
   func wheelDraggingEntered(items: [DragItem], local: CGPoint, allowsCopy: Bool) -> NSDragOperation {
@@ -360,8 +462,8 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
     controller.lastOperation == .copy
   }
 
-  func wheelPerformDrop(items: [DragItem], local: CGPoint, allowsCopy: Bool) -> Bool {
-    let output = controller.handle(.performDrop(items: items, point: global(local), sourceAllowsCopy: allowsCopy))
+  func wheelPerformDrop(local: CGPoint, allowsCopy: Bool) -> Bool {
+    let output = controller.handle(.performDrop(items: nil, point: global(local), sourceAllowsCopy: allowsCopy))
     apply(output)
     return output.dropAccepted
   }
@@ -380,10 +482,20 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
       }
       notificationTokens.append((workspace, token))
     }
+    let motion = workspace.addObserver(forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+      MainActor.assumeIsolated { self?.accessibilityDisplayOptionsChanged() }
+    }
+    notificationTokens.append((workspace, motion))
     let token = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
       MainActor.assumeIsolated { self?.screensChanged() }
     }
     notificationTokens.append((NotificationCenter.default, token))
+  }
+
+  /// The OS Reduce Motion setting changed. If it is on now, follow it until main sends the next
+  /// `configure` (main's resolved value — which honours an explicit "on" — wins again then).
+  func accessibilityDisplayOptionsChanged() {
+    osReduceMotionOverride = options.reduceMotionProvider()
   }
 
   private func screensChanged() {

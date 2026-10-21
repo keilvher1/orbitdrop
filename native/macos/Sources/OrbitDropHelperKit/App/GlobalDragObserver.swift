@@ -2,129 +2,199 @@ import AppKit
 import CoreGraphics
 import OrbitDropHelperCore
 
-/// Observes other apps' drags without any privacy permission:
-///  - `NSEvent.addGlobalMonitorForEvents` for left mouse down/dragged/up only
-///    (mouse events need no Accessibility/Input Monitoring; no key events are monitored),
-///  - `NSEvent.modifierFlags`, polled at 60 Hz only while the button is down or a session is open,
-///  - `NSPasteboard(name: .drag).changeCount` to confirm that a real OS drag began
-///    (its contents are never read here),
-///  - `NSEvent.pressedMouseButtons` as a fallback for a missed mouse-up.
-/// The Escape key is polled only when Input Monitoring was already granted by the
-/// user (CGPreflightListenEventAccess, never requested). Callbacks only update state
-/// and return; no file access, no blocking I/O.
+/// Global mouse button events the observer listens to.
+public enum GlobalMouseEvent: Sendable, Equatable {
+  case down, dragged, up
+}
+
+/// Everything the observer reads from the system, injectable so tests can replay
+/// the exact event sequences AppKit produces (no synthesized input, no real monitor).
+@MainActor
+public protocol DragInputSource: AnyObject {
+  /// Currently held shift/alt/control/command (`NSEvent.modifierFlags`).
+  var heldModifiers: Set<ModifierKey> { get }
+  /// Left button state from the hardware (`NSEvent.pressedMouseButtons`).
+  var leftButtonDown: Bool { get }
+  /// `NSPasteboard(name: .drag).changeCount` — never its contents.
+  var dragPasteboardChangeCount: Int { get }
+  /// Pointer in global DIP.
+  var pointer: Point { get }
+  /// Escape key state; only queried when Input Monitoring was already granted.
+  var escapeKeyDown: Bool { get }
+  /// Installs the global left-mouse monitor; false if AppKit refused.
+  func installMouseMonitor(_ handler: @escaping @MainActor (GlobalMouseEvent) -> Void) -> Bool
+  func removeMouseMonitor()
+  /// Starts/stops the 60 Hz poll (only runs while the button is down or a session is open).
+  func startTicks(_ tick: @escaping @MainActor () -> Void)
+  func stopTicks()
+}
+
+/// The real source: NSEvent global monitor (mouse events only — they need no Accessibility
+/// or Input Monitoring permission; no key events are monitored), polled modifier flags and
+/// button state, and the drag pasteboard's change count.
+@MainActor
+public final class SystemDragInputSource: DragInputSource {
+  private var monitor: Any?
+  private var timer: Timer?
+
+  public init() {}
+
+  public var heldModifiers: Set<ModifierKey> { SystemInfo.modifiers(NSEvent.modifierFlags) }
+  public var leftButtonDown: Bool { (NSEvent.pressedMouseButtons & 1) != 0 }
+  public var dragPasteboardChangeCount: Int { NSPasteboard(name: .drag).changeCount }
+  public var pointer: Point { SystemInfo.pointer }
+  public var escapeKeyDown: Bool { CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(53)) }
+
+  public func installMouseMonitor(_ handler: @escaping @MainActor (GlobalMouseEvent) -> Void) -> Bool {
+    if monitor != nil { return true }
+    monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]) { event in
+      let kind: GlobalMouseEvent
+      switch event.type {
+      case .leftMouseDown: kind = .down
+      case .leftMouseDragged: kind = .dragged
+      case .leftMouseUp: kind = .up
+      default: return
+      }
+      MainActor.assumeIsolated { handler(kind) }
+    }
+    return monitor != nil
+  }
+
+  public func removeMouseMonitor() {
+    if let monitor { NSEvent.removeMonitor(monitor) }
+    monitor = nil
+  }
+
+  public func startTicks(_ tick: @escaping @MainActor () -> Void) {
+    guard timer == nil else { return }
+    let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { _ in MainActor.assumeIsolated { tick() } }
+    t.tolerance = 0.004
+    RunLoop.main.add(t, forMode: .common)
+    timer = t
+  }
+
+  public func stopTicks() {
+    timer?.invalidate()
+    timer = nil
+  }
+
+  /// Probe used for `ready.globalDrag.available`: install and remove a monitor.
+  public static func canInstallMonitor() -> Bool {
+    guard let probe = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown], handler: { _ in }) else { return false }
+    NSEvent.removeMonitor(probe)
+    return true
+  }
+}
+
+/// Turns the input source into SessionEvents. Callbacks only update state and return:
+/// no file access, no blocking I/O, no TCC queries (the Escape permission is a cached
+/// value the app refreshes off the event path).
 @MainActor
 final class GlobalDragObserver {
   var onEvent: ((SessionEvent) -> Void)?
   /// Whether polling must continue after the button is released (a session/wheel is open).
   var sessionNeedsPolling: () -> Bool = { false }
   var wheelVisible: () -> Bool = { false }
+  /// Cached Input Monitoring status (CGPreflightListenEventAccess, refreshed by the app).
+  var escapePollingAllowed = false
 
-  private var monitor: Any?
-  private var timer: Timer?
+  let source: DragInputSource
+  private(set) var isRunning = false
+  private var polling = false
   private var buttonDown = false
   private var dragBaseline = 0
   private var dragConfirmed = false
   private var lastModifiers: Set<ModifierKey> = []
   private var escapeDown = false
-  private var escapePollingAllowed = false
 
-  var isRunning: Bool { monitor != nil }
+  init(source: DragInputSource) {
+    self.source = source
+  }
 
   /// Installs the global monitor. Returns false if AppKit refused (reported to main).
   func start() -> Bool {
-    if monitor != nil { return true }
-    monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]) { [weak self] event in
-      let type = event.type
-      MainActor.assumeIsolated { self?.handle(type) }
-    }
-    return monitor != nil
+    if isRunning { return true }
+    isRunning = source.installMouseMonitor { [weak self] event in self?.handle(event) }
+    return isRunning
   }
 
   func stop() {
-    if let monitor { NSEvent.removeMonitor(monitor) }
-    monitor = nil
+    source.removeMouseMonitor()
     stopPolling()
+    isRunning = false
     buttonDown = false
     dragConfirmed = false
   }
 
-  /// Probe used for `ready.globalDrag.available`: install and remove a monitor.
-  static func canInstallMonitor() -> Bool {
-    guard let probe = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown], handler: { _ in }) else { return false }
-    NSEvent.removeMonitor(probe)
-    return true
-  }
-
-  private func handle(_ type: NSEvent.EventType) {
-    switch type {
-    case .leftMouseDown:
+  func handle(_ event: GlobalMouseEvent) {
+    switch event {
+    case .down:
       buttonDown = true
-      dragBaseline = NSPasteboard(name: .drag).changeCount
+      dragBaseline = source.dragPasteboardChangeCount
       dragConfirmed = false
-      escapePollingAllowed = SystemInfo.inputMonitoringGranted
-      emit(.mouseDown(SystemInfo.pointer))
-      emitModifiers(force: true)
+      escapeDown = false
+      // The modifiers held right now travel with the mouse-down as a baseline, atomically:
+      // a combo that was already held cannot be mistaken for a press during the drag.
+      let held = source.heldModifiers
+      lastModifiers = held
+      emit(.mouseDown(source.pointer, held: held))
       startPolling()
-    case .leftMouseDragged:
+    case .dragged:
       if !buttonDown {
         buttonDown = true
-        dragBaseline = NSPasteboard(name: .drag).changeCount
+        dragBaseline = source.dragPasteboardChangeCount
         startPolling()
       }
       checkDragPasteboard()
       emitModifiers()
-      emit(.mouseDragged(SystemInfo.pointer))
-    case .leftMouseUp:
+      emit(.mouseDragged(source.pointer))
+    case .up:
       if buttonDown {
         buttonDown = false
-        emit(.mouseUp(SystemInfo.pointer))
+        emit(.mouseUp(source.pointer))
       }
-    default:
-      break
     }
   }
 
   private func checkDragPasteboard() {
     guard buttonDown, !dragConfirmed else { return }
-    if NSPasteboard(name: .drag).changeCount != dragBaseline {
+    if source.dragPasteboardChangeCount != dragBaseline {
       dragConfirmed = true
       emit(.dragPasteboardChanged)
     }
   }
 
-  private func emitModifiers(force: Bool = false) {
-    let held = SystemInfo.modifiers(NSEvent.modifierFlags)
-    if force || held != lastModifiers {
+  private func emitModifiers() {
+    let held = source.heldModifiers
+    if held != lastModifiers {
       lastModifiers = held
       emit(.modifiersChanged(held))
     }
   }
 
   private func startPolling() {
-    guard timer == nil else { return }
-    let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
-      MainActor.assumeIsolated { self?.poll() }
-    }
-    t.tolerance = 0.004
-    RunLoop.main.add(t, forMode: .common)
-    timer = t
+    guard !polling else { return }
+    polling = true
+    source.startTicks { [weak self] in self?.poll() }
   }
 
   private func stopPolling() {
-    timer?.invalidate()
-    timer = nil
+    guard polling else { return }
+    polling = false
+    source.stopTicks()
   }
 
-  private func poll() {
+  /// One 60 Hz tick (public for tests driving a fake source).
+  func poll() {
     emitModifiers()
     checkDragPasteboard()
-    if buttonDown && (NSEvent.pressedMouseButtons & 1) == 0 {
+    if buttonDown && !source.leftButtonDown {
       // The monitor can miss the mouse-up of another app's drag loop; the hardware state cannot lie.
       buttonDown = false
-      emit(.mouseUp(SystemInfo.pointer))
+      emit(.mouseUp(source.pointer))
     }
     if escapePollingAllowed && wheelVisible() {
-      let down = CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(53))
+      let down = source.escapeKeyDown
       if down && !escapeDown { emit(.escape) }
       escapeDown = down
     }

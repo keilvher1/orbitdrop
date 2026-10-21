@@ -13,10 +13,13 @@ public enum Snapshot {
     case desktop
   }
 
-  /// Renders `model` at `scale` pixels per point. The image is the whole panel content (disc + margin).
-  public static func render(_ model: WheelViewModel, scale: Double = 2, backdrop: Backdrop = .none) -> CGImage? {
-    let frame = model.presentation.placement.windowFrame
-    let size = CGSize(width: frame.width, height: frame.height)
+  /// Renders `model` at `scale` pixels per point: the panel content (disc + caption strip)
+  /// centered in a `margin`-point border that shows the painted stand-in for the window
+  /// server's shadow. `margin: 0, shadow: false` gives exactly the live panel's pixels.
+  public static func render(_ model: WheelViewModel, scale: Double = 2, backdrop: Backdrop = .none, margin: Double? = nil, shadow: Bool = true) -> CGImage? {
+    let panel = model.presentation.layout.frame
+    let border = margin ?? model.presentation.geometry.windowMargin
+    let size = CGSize(width: panel.width + 2 * border, height: panel.height + 2 * border)
     let width = Int((size.width * scale).rounded(.up))
     let height = Int((size.height * scale).rounded(.up))
     guard width > 0, height > 0,
@@ -29,7 +32,8 @@ public enum Snapshot {
     ctx.translateBy(x: 0, y: CGFloat(height))
     ctx.scaleBy(x: scale, y: -scale)
     if backdrop == .desktop { drawDesktop(ctx, size: size) }
-    WheelRenderer.draw(model, in: ctx, size: size)
+    ctx.translateBy(x: border, y: border)
+    WheelRenderer.draw(model, in: ctx, size: CGSize(width: panel.width, height: panel.height), drawShadow: shadow)
     return ctx.makeImage()
   }
 

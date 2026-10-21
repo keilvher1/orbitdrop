@@ -4,23 +4,31 @@ import OrbitDropHelperCore
 /// The single wheel window: borderless, transparent, non-activating, above normal
 /// windows, on every Space and over full-screen apps. It never becomes key or main,
 /// so showing it during another app's drag never steals focus or ends the drag.
+///
+/// Hit shape: the panel is only the disc's bounding square plus the caption strip
+/// (WheelPanelLayout), the view leaves every pixel outside the disc and the caption
+/// pill at alpha 0, and `ignoresMouseEvents` is deliberately never assigned. In that
+/// default state the window server passes events — and drag destination lookup —
+/// through fully transparent pixels of a non-opaque window (assigning it `false`
+/// would make the whole rectangle opaque to drags). The shadow is the window
+/// server's (`hasShadow`), drawn outside the window and never hit-testable.
 final class WheelPanel: NSPanel {
   init() {
-    super.init(contentRect: NSRect(x: 0, y: 0, width: 408, height: 408), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+    // defer: false — created (hidden) when observation starts, not in the middle of the first drag.
+    super.init(contentRect: NSRect(x: 0, y: 0, width: 360, height: 392), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     isFloatingPanel = true
     level = .popUpMenu
     collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
     hidesOnDeactivate = false
     isOpaque = false
     backgroundColor = .clear
-    hasShadow = false  // the renderer draws its own soft shadow inside the margin
+    hasShadow = true  // follows the alpha shape; recomputed with invalidateShadow() after redraws
     isReleasedWhenClosed = false
     animationBehavior = .none
     becomesKeyOnlyIfNeeded = true
     worksWhenModal = true
     isMovable = false
     isExcludedFromWindowsMenu = true
-    ignoresMouseEvents = false  // must stay false: drag destinations need a hit-testable window
     title = "OrbitDrop"
   }
 
@@ -31,11 +39,14 @@ final class WheelPanel: NSPanel {
 /// Receives the drag callbacks of the wheel view (implemented by HelperApp).
 @MainActor
 protocol WheelDropHost: AnyObject {
+  /// True until the session has classified its payload: only then is the pasteboard read.
+  func wheelNeedsPayload() -> Bool
   func wheelDraggingEntered(items: [DragItem], local: CGPoint, allowsCopy: Bool) -> NSDragOperation
   func wheelDraggingUpdated(local: CGPoint, allowsCopy: Bool) -> NSDragOperation
   func wheelDraggingExited(pointerInsideDisc: Bool, buttonDown: Bool)
   func wheelPrepareForDragOperation() -> Bool
-  func wheelPerformDrop(items: [DragItem], local: CGPoint, allowsCopy: Bool) -> Bool
+  /// Drop with the payload captured at drag-enter (no second pasteboard read or path resolution).
+  func wheelPerformDrop(local: CGPoint, allowsCopy: Bool) -> Bool
   func wheelDraggingEnded()
 }
 
@@ -83,9 +94,10 @@ final class WheelView: NSView {
   override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
     guard let host else { return [] }
     sender.animatesToDestination = false
-    let items = PasteboardReader.items(sender.draggingPasteboard)
+    // The only pasteboard read of a session: paths become owned Strings here and are reused
+    // for the drop. Re-entries after an exit do not read again.
+    let items = host.wheelNeedsPayload() ? PasteboardReader.items(sender.draggingPasteboard) : []
     let operation = host.wheelDraggingEntered(items: items, local: localPoint(sender), allowsCopy: sender.draggingSourceOperationMask.contains(.copy))
-    if operation == .copy { sender.numberOfValidItemsForDrop = items.count }
     return operation
   }
 
@@ -103,9 +115,8 @@ final class WheelView: NSView {
 
   override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
     guard let host else { return false }
-    // Paths are copied into owned Strings here, before this callback returns.
-    let items = PasteboardReader.items(sender.draggingPasteboard)
-    return host.wheelPerformDrop(items: items, local: localPoint(sender), allowsCopy: sender.draggingSourceOperationMask.contains(.copy))
+    // No pasteboard or file-system access here: the paths were copied out at drag-enter.
+    return host.wheelPerformDrop(local: localPoint(sender), allowsCopy: sender.draggingSourceOperationMask.contains(.copy))
   }
 
   override func concludeDragOperation(_ sender: (any NSDraggingInfo)?) {}
@@ -127,8 +138,6 @@ final class WheelView: NSView {
     guard let window, let model else { return false }
     let inWindow = window.convertPoint(fromScreen: NSEvent.mouseLocation)
     let local = convert(inWindow, from: nil)
-    let dx = Double(local.x - bounds.midX)
-    let dy = Double(local.y - bounds.midY)
-    return (dx * dx + dy * dy).squareRoot() <= model.presentation.placement.diameter / 2
+    return model.presentation.layout.isOnDisc(Point(x: Double(local.x), y: Double(local.y)), diameter: model.presentation.placement.diameter)
   }
 }

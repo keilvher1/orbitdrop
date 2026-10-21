@@ -247,24 +247,37 @@ function fnv1a(state, x) {
 }
 
 // ------------------------------------------------------------------ configure messages
+/** Helper strings from apps/desktop/src/shared/locales/<locale>/main.json (flat "helper.*" keys). */
 function localeStrings(locale) {
   const file = join(root, 'apps/desktop/src/shared/locales', locale, 'main.json');
   const fallback = {
-    ko: { dropHint: '여기에 놓기', unsupported: '지원하지 않는 항목', multiFileUnsupported: '한 번에 한 파일만', fileCount: '파일 {n}개' },
+    ko: { dropHint: '여기에 놓기', unsupported: '지원하지 않는 파일', multiFileUnsupported: '한 번에 한 파일만', fileCount: '{n}개 파일' },
     en: { dropHint: 'Drop here', unsupported: 'Not supported', multiFileUnsupported: 'One file at a time', fileCount: '{n} files' },
   }[locale];
-  if (!existsSync(file)) return fallback;
+  // The optional, more specific texts (helper-protocol.ts); main may not send them yet.
+  const specific = {
+    ko: { unsupportedFolder: '폴더는 지원하지 않음', unsupportedNonFile: '파일이 아닌 항목', unsupportedVirtual: '디스크에 없는 항목' },
+    en: { unsupportedFolder: "Folders aren't supported", unsupportedNonFile: 'Not a file', unsupportedVirtual: 'Not a file on disk' },
+  }[locale];
+  let json = {};
   try {
-    const json = JSON.parse(readFileSync(file, 'utf8'));
-    const helper = json.helper ?? json.wheel ?? {};
-    return {
-      dropHint: helper.dropHint ?? fallback.dropHint,
-      unsupported: helper.unsupported ?? fallback.unsupported,
-      multiFileUnsupported: helper.multiFileUnsupported ?? fallback.multiFileUnsupported,
-      fileCount: helper.fileCount ?? fallback.fileCount,
-    };
+    if (existsSync(file)) json = JSON.parse(readFileSync(file, 'utf8'));
   } catch {
-    return fallback;
+    json = {};
+  }
+  const pick = (key) => json[`helper.${key}`] ?? json.helper?.[key];
+  const base = Object.fromEntries(Object.entries(fallback).map(([key, value]) => [key, pick(key) ?? value]));
+  const extra = Object.fromEntries(Object.entries(specific).map(([key, value]) => [key, pick(key) ?? value]));
+  return { base, extra };
+}
+
+/** desktop-main's own builder, so the fixture is exactly what main sends (falls back to a local copy). */
+async function mainConfigureBuilder() {
+  try {
+    const mod = await import(pathToFileURL(join(root, 'apps/desktop/src/main/helper/configure.ts')).href);
+    return typeof mod.buildConfigureMessage === 'function' ? mod.buildConfigureMessage : null;
+  } catch {
+    return null;
   }
 }
 
@@ -287,22 +300,33 @@ function probe() {
 }
 
 const configures = {};
+const buildConfigureMessage = await mainConfigureBuilder();
+console.log(buildConfigureMessage ? 'configure: built with apps/desktop/src/main/helper/configure.ts' : 'configure: desktop-main builder unavailable, using the local copy');
 for (const locale of ['ko', 'en']) {
   const snapshot = core.buildCapabilitySnapshot(probe());
-  const message = {
-    v: 1,
-    type: 'configure',
-    enabled: true,
-    locale,
-    geometry: { ...contracts.DEFAULT_WHEEL_GEOMETRY },
-    tokens: contracts.wheelTokens('light', false),
-    reduceMotion: false,
-    highContrast: false,
-    modifiers: { convert: contracts.DEFAULT_SETTINGS.globalDrag.convertModifiers, tools: contracts.DEFAULT_SETTINGS.globalDrag.toolsModifiers },
-    extensions: core.helperExtensionMap(snapshot),
-    menus: core.buildHelperMenus(snapshot, locale),
-    strings: localeStrings(locale),
-  };
+  const { base, extra } = localeStrings(locale);
+  let message;
+  if (buildConfigureMessage) {
+    const settings = { ...contracts.DEFAULT_SETTINGS, locale };
+    message = buildConfigureMessage({ settings, snapshot, theme: 'light', reduceMotion: false, highContrast: false, strings: base });
+  } else {
+    message = {
+      v: 1,
+      type: 'configure',
+      enabled: true,
+      locale,
+      geometry: { ...contracts.DEFAULT_WHEEL_GEOMETRY },
+      tokens: contracts.wheelTokens('light', false),
+      reduceMotion: false,
+      highContrast: false,
+      modifiers: { convert: contracts.DEFAULT_SETTINGS.globalDrag.convertModifiers, tools: contracts.DEFAULT_SETTINGS.globalDrag.toolsModifiers },
+      extensions: core.helperExtensionMap(snapshot),
+      menus: core.buildHelperMenus(snapshot, locale),
+      strings: base,
+    };
+  }
+  // Include the optional specific strings (main will send them after this helper lands).
+  message = { ...message, strings: { ...message.strings, ...extra } };
   contracts.HelperConfigureSchema.parse(message);
   configures[locale] = message;
   write(`configure-${locale}.json`, message);
@@ -419,6 +443,17 @@ for (const locale of ['ko', 'en']) {
   mutate('configure: dropHint 60', (m) => (m.strings.dropHint = 'h'.repeat(60)));
   mutate('configure: dropHint 61', (m) => (m.strings.dropHint = 'h'.repeat(61)));
   mutate('configure: fileCount empty', (m) => (m.strings.fileCount = ''));
+  mutate('configure: optional unsupported strings absent', (m) => {
+    delete m.strings.unsupportedFolder;
+    delete m.strings.unsupportedNonFile;
+    delete m.strings.unsupportedVirtual;
+  });
+  mutate('configure: unsupportedFolder 60', (m) => (m.strings.unsupportedFolder = 'f'.repeat(60)));
+  mutate('configure: unsupportedFolder 61', (m) => (m.strings.unsupportedFolder = 'f'.repeat(61)));
+  mutate('configure: unsupportedNonFile null', (m) => (m.strings.unsupportedNonFile = null));
+  mutate('configure: unsupportedVirtual number', (m) => (m.strings.unsupportedVirtual = 1));
+  mutate('configure: unsupportedVirtual empty', (m) => (m.strings.unsupportedVirtual = ''));
+  mutate('configure: unknown unsupported string key', (m) => (m.strings.unsupportedOther = 'x'));
   mutate('configure: v 2', (m) => (m.v = 2));
   mutate('configure: v string', (m) => (m.v = '1'));
   mutate('configure: v missing', (m) => delete m.v);

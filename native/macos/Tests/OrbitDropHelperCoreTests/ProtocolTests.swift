@@ -51,6 +51,10 @@ final class ProtocolTests: XCTestCase {
       XCTAssertEqual(config.extensions[".jpeg"], .image(.jpeg))
       XCTAssertEqual(config.tokens.sectorActive, RGBA(hex: "#D4441C"))
       XCTAssertEqual(config.tokens.labelWeight, 700)
+      // Optional specific unsupported texts (helper-protocol.ts, 88a209b).
+      XCTAssertFalse((config.strings.unsupportedFolder ?? "").isEmpty)
+      XCTAssertFalse((config.strings.unsupportedNonFile ?? "").isEmpty)
+      XCTAssertFalse((config.strings.unsupportedVirtual ?? "").isEmpty)
       // Reference order from the recording, as built by buildHelperMenus.
       XCTAssertEqual(config.menu(for: .pdf)?.convert.map(\.actionId), [.convertDocx, .convertJpeg, .convertPng, .convertTxt])
       XCTAssertEqual(config.menu(for: .image(.jpeg))?.convert.map(\.label), ["PNG", "WEBP", "HEIC", "TIFF", "AVIF", "BMP", "PDF", "DOCX"])

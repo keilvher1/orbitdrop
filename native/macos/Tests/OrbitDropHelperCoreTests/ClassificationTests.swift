@@ -40,21 +40,39 @@ final class ClassificationTests: XCTestCase {
   }
 
   func testAnythingUnknownMakesTheWholeDragUnsupported() {
-    XCTAssertEqual(Classifier.classify([], extensions: ext), .unsupported(fileCount: 0))
-    XCTAssertEqual(Classifier.classify([file("/x/a.txt")], extensions: ext), .unsupported(fileCount: 1))
-    XCTAssertEqual(Classifier.classify([file("/x/a.pdf"), file("/x/notes.docx")], extensions: ext), .unsupported(fileCount: 2))
-    XCTAssertEqual(Classifier.classify([file("/x/Folder.pdf", dir: true)], extensions: ext), .unsupported(fileCount: 1), "folder")
-    XCTAssertEqual(Classifier.classify([file("/x/a.pdf"), .promise], extensions: ext), .unsupported(fileCount: 1), "file promise")
-    XCTAssertEqual(Classifier.classify([.nonFile], extensions: ext), .unsupported(fileCount: 0), "text drag")
-    XCTAssertEqual(Classifier.classify([file("relative.pdf")], extensions: ext), .unsupported(fileCount: 1))
-    XCTAssertEqual(Classifier.classify(Array(repeating: file("/x/a.pdf"), count: 201), extensions: ext), .unsupported(fileCount: 201))
+    XCTAssertEqual(Classifier.classify([], extensions: ext), .unsupported(fileCount: 0, reason: .nonFile))
+    XCTAssertEqual(Classifier.classify([file("/x/a.txt")], extensions: ext), .unsupported(fileCount: 1, reason: .unknownType))
+    XCTAssertEqual(Classifier.classify([file("/x/a.pdf"), file("/x/notes.docx")], extensions: ext), .unsupported(fileCount: 2, reason: .unknownType))
+    XCTAssertEqual(Classifier.classify([file("/x/Folder.pdf", dir: true)], extensions: ext), .unsupported(fileCount: 1, reason: .folder), "folder")
+    XCTAssertEqual(Classifier.classify([file("/x/a.pdf"), .promise], extensions: ext), .unsupported(fileCount: 1, reason: .virtual), "file promise")
+    XCTAssertEqual(Classifier.classify([.nonFile], extensions: ext), .unsupported(fileCount: 0, reason: .nonFile), "text drag")
+    XCTAssertEqual(Classifier.classify([file("relative.pdf")], extensions: ext), .unsupported(fileCount: 1, reason: .unknownType))
+    XCTAssertEqual(Classifier.classify(Array(repeating: file("/x/a.pdf"), count: 201), extensions: ext), .unsupported(fileCount: 201, reason: .tooMany))
     XCTAssertEqual(Classifier.classify(Array(repeating: file("/x/a.pdf"), count: 200), extensions: ext).menuKey, .pdf)
     // Only extensions present in the configure map count (a build without a HEIC decoder omits .heic).
     var noHeic = ext
     noHeic[".heic"] = nil
-    XCTAssertEqual(Classifier.classify([file("/x/a.heic")], extensions: noHeic), .unsupported(fileCount: 1))
+    XCTAssertEqual(Classifier.classify([file("/x/a.heic")], extensions: noHeic), .unsupported(fileCount: 1, reason: .unknownType))
     // Extension entries naming multi-file keys are never used.
-    XCTAssertEqual(Classifier.classify([file("/x/a.zzz")], extensions: [".zzz": .images]), .unsupported(fileCount: 1))
+    XCTAssertEqual(Classifier.classify([file("/x/a.zzz")], extensions: [".zzz": .images]), .unsupported(fileCount: 1, reason: .unknownType))
+  }
+
+  func testUnsupportedReasonPrecedenceAndTexts() {
+    // Virtual items beat folders, folders beat non-file data, anything else is generic.
+    XCTAssertEqual(Classifier.classify([.promise, file("/x/F", dir: true), .nonFile], extensions: ext).unsupportedReason, .virtual)
+    XCTAssertEqual(Classifier.classify([file("/x/F", dir: true), .nonFile], extensions: ext).unsupportedReason, .folder)
+    XCTAssertEqual(Classifier.classify([file("/x/a.pdf"), .nonFile], extensions: ext).unsupportedReason, .nonFile)
+    XCTAssertEqual(Classifier.classify([file("/x/folder.png/")], extensions: ext).unsupportedReason, .folder, "trailing separator is a folder")
+    let full = DefaultConfig.strings(locale: .en)
+    XCTAssertEqual(full.unsupportedText(.folder), "Folders aren't supported")
+    XCTAssertEqual(full.unsupportedText(.nonFile), "Not a file")
+    XCTAssertEqual(full.unsupportedText(.virtual), "Not a file on disk")
+    XCTAssertEqual(full.unsupportedText(.unknownType), "Not supported")
+    XCTAssertEqual(full.unsupportedText(.tooMany), "Not supported")
+    XCTAssertEqual(full.unsupportedText(nil), "Not supported")
+    // Main omits the optional strings (or sends ""): fall back to `unsupported`.
+    let minimal = HelperStrings(dropHint: "d", unsupported: "U", multiFileUnsupported: "m", fileCount: "{n}", unsupportedNonFile: "")
+    for reason in UnsupportedReason.allCases { XCTAssertEqual(minimal.unsupportedText(reason), "U") }
   }
 
   func testMultiFileDisablesNonBatchSectors() {
@@ -79,7 +97,7 @@ final class ClassificationTests: XCTestCase {
   func testEmptyMenuForModeIsNil() {
     let config = DefaultConfig.config(locale: .en)
     XCTAssertNil(Classifier.sectors(for: .files(key: .pdf, paths: ["/a.pdf"]), mode: .tools, config: config))
-    XCTAssertNil(Classifier.sectors(for: .unsupported(fileCount: 1), mode: .convert, config: config))
+    XCTAssertNil(Classifier.sectors(for: .unsupported(fileCount: 1, reason: .unknownType), mode: .convert, config: config))
     XCTAssertEqual(Classifier.sectors(for: .files(key: .pdf, paths: ["/a.pdf"]), mode: .convert, config: config)?.map(\.label), ["DOCX", "JPG", "PNG", "TXT"])
     XCTAssertEqual(Classifier.sectors(for: .files(key: .mixed, paths: ["/a.pdf", "/b.png"]), mode: .convert, config: config)?.map(\.actionId), [.convertDocx, .convertJpeg, .convertPng])
   }
@@ -94,7 +112,7 @@ final class ClassificationTests: XCTestCase {
     XCTAssertEqual(ByteFormat.short(1_234_567), "1.2 MB")
     XCTAssertEqual(ByteFormat.short(3_450_000_000), "3.45 GB")
     XCTAssertEqual(ByteFormat.short(3_050_000_000), "3.05 GB")
-    XCTAssertEqual(HelperStrings(dropHint: "", unsupported: "", multiFileUnsupported: "", fileCount: "파일 {n}개").fileCountText(3), "파일 3개")
+    XCTAssertEqual(HelperStrings(dropHint: "", unsupported: "", multiFileUnsupported: "", fileCount: "{n}개 파일").fileCountText(3), "3개 파일")
   }
 
   func testModifierMatchingIsExact() {

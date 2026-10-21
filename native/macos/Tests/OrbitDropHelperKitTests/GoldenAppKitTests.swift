@@ -5,8 +5,9 @@ import XCTest
 @testable import OrbitDropHelperKit
 
 /// coords.mac golden pointers through the real AppKit conversion chain the drop
-/// target uses: AppKit screen point → window base point (y up) → WheelView.convert
-/// (flipped view, y down) → global DIP (logical window origin + local) → hit-test.
+/// target uses: AppKit screen point → window base point of the panel (y up) →
+/// WheelView.convert (flipped view, y down) → global DIP (WheelPanelLayout.global,
+/// as HelperApp does) → hit-test.
 @MainActor
 final class GoldenAppKitTests: XCTestCase {
   static let repoRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -32,8 +33,11 @@ final class GoldenAppKitTests: XCTestCase {
         var gw = geometry
         gw.diameter = num(wheel["diameter"])
         let activation = Coords.appKitPointToGlobal(point(wheel["activationAppKit"]), primaryFrame: primary)
-        let placement = try XCTUnwrap(Coords.placeWheelOnDisplays(activation, displays, gw)).placement
-        let frameAppKit = Coords.globalRectToAppKit(placement.windowFrame, primaryFrame: primary)
+        let placed = try XCTUnwrap(Coords.placeWheelOnDisplays(activation, displays, gw))
+        let placement = placed.placement
+        // The production panel: disc bounding square + caption strip (WheelPanelLayout), not windowFrame.
+        let panelLayout = WheelPanelLayout.make(placement: placement, workArea: displays[placed.displayIndex].workArea)
+        let frameAppKit = Coords.globalRectToAppKit(panelLayout.frame, primaryFrame: primary)
         // The panel is never ordered on screen; conversion only needs the view hierarchy.
         let window = NSWindow(contentRect: NSRect(x: frameAppKit.x, y: frameAppKit.y, width: frameAppKit.width, height: frameAppKit.height), styleMask: .borderless, backing: .buffered, defer: true)
         let view = WheelView(frame: NSRect(x: 0, y: 0, width: frameAppKit.width, height: frameAppKit.height))
@@ -42,7 +46,7 @@ final class GoldenAppKitTests: XCTestCase {
           let appKit = point(pointer["appKit"])
           let windowPoint = NSPoint(x: appKit.x - frameAppKit.x, y: appKit.y - frameAppKit.y)
           let local = view.convert(windowPoint, from: nil)
-          let global = Point(x: placement.windowFrame.x + Double(local.x), y: placement.windowFrame.y + Double(local.y))
+          let global = panelLayout.global(Point(x: Double(local.x), y: Double(local.y)))
           let hit = WheelMath.hitTest(dx: global.x - placement.center.x, dy: global.y - placement.center.y, sectorCount: Int(num(pointer["sectorCount"])), diameter: placement.diameter, gw)
           let expected: WheelHit
           switch pointer["zone"] as! String {

@@ -1,8 +1,10 @@
 // The helper's drag-session state machine:
 //
 //   Idle ──(button down + movement ≥ threshold + drag-pasteboard change)──▶ PotentialDrag
-//   PotentialDrag ──(a modifier press during the drag completes a configured combo)──▶ AwaitingPayload
-//        neutral wheel shown at the pointer, clamped into the visible frame; center fixed for the session
+//   PotentialDrag ──(a modifier press during the drag completes a configured combo, then the
+//        modifiers stay stable for modifierSettleMs)──▶ AwaitingPayload
+//        neutral wheel shown at the pointer, clamped into the visible frame; center fixed for the session.
+//        Modifiers held at the mouse-down are a baseline (mouseDown carries them), never a press.
 //   AwaitingPayload ──(draggingEntered: items classified, menu frozen)──▶ WheelActive
 //   WheelActive ──(performDrop on an enabled, armed sector, source allows Copy)──▶ `drop` sent, wheel hidden, Idle
 //   any wheel state ──(Esc, drag ended elsewhere, rejected release, sleep, parent EOF, cancelSession)──▶ `cancelled`, hidden, Idle
@@ -29,6 +31,10 @@ public struct DragSessionController {
   public var releaseGraceElsewhereMs = 150
   /// Delay before treating "exited while the pointer is still over the wheel" as the end of the drag.
   public var exitCheckMs = 150
+  /// Modifiers must be stable this long after the completing press before the wheel appears (0 = at once).
+  public var modifierSettleMs = 40
+  /// Neutral wheel: hide it when the pointer moved over the disc but no draggingEntered arrived this long.
+  public var noEnterMs = 400
 
   public private(set) var config: HelperConfig?
 
@@ -62,6 +68,8 @@ public struct DragSessionController {
   /// True while the glue should poll modifiers / buttons (button held or a session open).
   public var needsPolling: Bool { isEnabled && (buttonDown || session != nil) }
   public var placement: WheelPlacement? { session?.placement }
+  /// Native panel layout of the open wheel (frame, disc center, caption strip).
+  public var layout: WheelPanelLayout? { session?.layout }
   public var currentMode: WheelMode? { session?.mode }
   public var payload: Payload? { session?.payload }
   public var content: WheelContent? { session?.content }
@@ -78,7 +86,7 @@ public struct DragSessionController {
         resetTracking()
       }
 
-    case .mouseDown(let point):
+    case .mouseDown(let point, let heldAtDown):
       guard isEnabled else { break }
       if session != nil { end(.dragEnded, &out) }  // the previous mouse-up was missed
       buttonDown = true
@@ -87,7 +95,9 @@ public struct DragSessionController {
       moved = false
       dragConfirmed = false
       suppressedUntilRelease = false
-      pendingMode = nil  // a combo already held at the press does not count
+      // Baseline, not a press: a combo already held at the mouse-down does not count.
+      held = heldAtDown
+      pendingMode = nil
 
     case .mouseDragged(let point):
       guard isEnabled else { break }
@@ -101,6 +111,15 @@ public struct DragSessionController {
           moved = true
         }
         startPotentialDragIfReady(&out)
+      } else if let s = session, s.phase == .awaitingPayload, !s.noEnterTimerStarted, let placement = s.placement {
+        // The pointer travels over the neutral wheel but AppKit sends no draggingEntered:
+        // the drag carries nothing we registered for. Give it noEnterMs, then hide.
+        let onDisc = JSMath.hypot(point.x - placement.center.x, point.y - placement.center.y) <= placement.diameter / 2
+        let travelled = JSMath.hypot(point.x - s.activation.x, point.y - s.activation.y) >= max(8, 2 * s.geometry.armDistance)
+        if onDisc && travelled {
+          session?.noEnterTimerStarted = true
+          out.commands.append(.startTimer(.noEnter, milliseconds: noEnterMs, token: s.id))
+        }
       }
 
     case .dragPasteboardChanged:
@@ -113,13 +132,20 @@ public struct DragSessionController {
       held = newHeld
       guard let cfg = config, cfg.enabled else { break }
       let matched = (session?.config ?? cfg).mode(forHeld: newHeld)
-      if matched == nil { pendingMode = nil }
+      if matched == nil {
+        pendingMode = nil
+        // A release during the settle window abandons the pending activation.
+        if session?.phase == .potentialDrag, session?.settling == true {
+          session?.settling = false
+          out.commands.append(.cancelTimer(.modifierSettle))
+        }
+      }
       guard !pressed.isEmpty, let mode = matched else { break }
       switch session?.phase ?? .idle {
       case .idle:
         if buttonDown && !suppressedUntilRelease { pendingMode = mode }
       case .potentialDrag:
-        activate(mode, &out)
+        scheduleActivation(mode, &out)
       case .awaitingPayload, .wheelActive:
         if mode != session?.mode { switchMode(to: mode, &out) }
       }
@@ -130,6 +156,9 @@ public struct DragSessionController {
       if s.exitPending != nil {
         s.exitPending = nil
         out.commands.append(.cancelTimer(.exitCheck))
+      }
+      if s.noEnterTimerStarted {
+        out.commands.append(.cancelTimer(.noEnter))
       }
       session = s
       if s.payload == nil {
@@ -215,7 +244,7 @@ public struct DragSessionController {
     case .fileInfo(let id, let totalBytes, let containsDirectory):
       guard var s = session, s.id == id, case .files = s.payload else { break }
       if containsDirectory {
-        s.payload = .unsupported(fileCount: s.payload?.fileCount ?? 0)
+        s.payload = .unsupported(fileCount: s.payload?.fileCount ?? 0, reason: .folder)
         s.menuCache = [:]
         session = s
         applyContentForMode(&out)
@@ -232,6 +261,13 @@ public struct DragSessionController {
         end(s.exitPending ?? (s.inside ? (s.lastReject ?? .dragEnded) : .dragEnded), &out)
       case .exitCheck:
         if !s.inside, let reason = s.exitPending { end(reason, &out) }
+      case .modifierSettle:
+        guard s.phase == .potentialDrag, s.settling else { break }
+        session?.settling = false
+        // Use the combo held now: a second key inside the window picks the other mode directly.
+        if let mode = s.config.mode(forHeld: held) { activate(mode, &out) }
+      case .noEnter:
+        if s.phase == .awaitingPayload { end(.invalidPayload, &out) }
       }
 
     case .invalidate(let reason):
@@ -247,9 +283,20 @@ public struct DragSessionController {
     session = Session(id: makeSessionId(), config: cfg, activation: pointer ?? pressPoint ?? .zero)
     // A combo completed after the mouse-down but before the drag was confirmed activates now.
     if let mode = pendingMode, cfg.mode(forHeld: held) == mode {
-      activate(mode, &out)
+      scheduleActivation(mode, &out)
     }
     pendingMode = nil
+  }
+
+  /// Show the wheel once the modifiers have been stable for `modifierSettleMs`.
+  private mutating func scheduleActivation(_ mode: WheelMode, _ out: inout SessionOutput) {
+    guard let s = session, s.phase == .potentialDrag else { return }
+    if modifierSettleMs <= 0 {
+      activate(mode, &out)
+      return
+    }
+    session?.settling = true
+    out.commands.append(.startTimer(.modifierSettle, milliseconds: modifierSettleMs, token: s.id))
   }
 
   private mutating func activate(_ mode: WheelMode, _ out: inout SessionOutput) {
@@ -258,9 +305,11 @@ public struct DragSessionController {
     guard let placed = Coords.placeWheelOnDisplays(at, displays, s.config.geometry) else { return }
     var geometry = s.config.geometry
     geometry.diameter = placed.placement.diameter
+    let layout = WheelPanelLayout.make(placement: placed.placement, workArea: displays[placed.displayIndex].workArea)
     s.phase = .awaitingPayload
     s.mode = mode
     s.placement = placed.placement
+    s.layout = layout
     s.geometry = geometry
     s.activation = at
     s.armOrigin = at
@@ -271,7 +320,7 @@ public struct DragSessionController {
     s.capsule = hint
     session = s
     out.commands.append(.showWheel(WheelPresentation(
-      placement: placed.placement, geometry: geometry, tokens: s.config.tokens,
+      placement: placed.placement, layout: layout, geometry: geometry, tokens: s.config.tokens,
       highContrast: s.config.highContrast, reduceMotion: s.config.reduceMotion, mode: mode
     )))
     out.commands.append(.setCapsule(hint))
@@ -414,8 +463,7 @@ public struct DragSessionController {
     if s.phase == .awaitingPayload || s.phase == .wheelActive {
       out.commands.append(.hide(animated: !s.config.reduceMotion))
     }
-    out.commands.append(.cancelTimer(.releaseGrace))
-    out.commands.append(.cancelTimer(.exitCheck))
+    for timer in SessionTimer.allCases { out.commands.append(.cancelTimer(timer)) }
     session = nil
     moved = false
     dragConfirmed = false
@@ -440,7 +488,9 @@ public struct DragSessionController {
     case .neutral:
       return CapsuleContent(text: s.config.strings.dropHint, style: .hint)
     case .unsupported:
-      return CapsuleContent(text: s.config.strings.unsupported, style: .reject)
+      // Folder / non-file data / virtual item get their specific text when main provided one;
+      // a supported payload with nothing to offer in this mode (PDF in tools) uses the generic text.
+      return CapsuleContent(text: s.config.strings.unsupportedText(s.payload?.unsupportedReason), style: .reject)
     case .sectors:
       guard case .files(let key, let paths)? = s.payload else { return CapsuleContent(text: s.config.strings.dropHint, style: .hint) }
       if paths.count > 1 { return CapsuleContent(text: s.config.strings.fileCountText(paths.count), style: .info) }
@@ -475,6 +525,10 @@ private struct Session {
   var phase: SessionPhase = .potentialDrag
   var mode: WheelMode?
   var placement: WheelPlacement?
+  var layout: WheelPanelLayout?
+  /// A combo was completed; waiting for `modifierSettle` before activating.
+  var settling = false
+  var noEnterTimerStarted = false
   var geometry: WheelGeometry
   var activation: Point
   var armOrigin: Point

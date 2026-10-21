@@ -112,9 +112,15 @@ public enum DefaultConfig {
   public static func strings(locale: HelperLocale) -> HelperStrings {
     switch locale {
     case .ko:
-      return HelperStrings(dropHint: "여기에 놓기", unsupported: "지원하지 않는 항목", multiFileUnsupported: "한 번에 한 파일만", fileCount: "파일 {n}개")
+      return HelperStrings(
+        dropHint: "여기에 놓기", unsupported: "지원하지 않는 파일", multiFileUnsupported: "한 번에 한 파일만", fileCount: "{n}개 파일",
+        unsupportedFolder: "폴더는 지원하지 않음", unsupportedNonFile: "파일이 아닌 항목", unsupportedVirtual: "디스크에 없는 항목"
+      )
     case .en:
-      return HelperStrings(dropHint: "Drop here", unsupported: "Not supported", multiFileUnsupported: "One file at a time", fileCount: "{n} files")
+      return HelperStrings(
+        dropHint: "Drop here", unsupported: "Not supported", multiFileUnsupported: "One file at a time", fileCount: "{n} files",
+        unsupportedFolder: "Folders aren't supported", unsupportedNonFile: "Not a file", unsupportedVirtual: "Not a file on disk"
+      )
     }
   }
 

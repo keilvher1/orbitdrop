@@ -200,9 +200,9 @@ const t0 = performance.now();
   let pngOk = false;
   if (snap.status === 0 && existsSync(png)) {
     const head = readFileSync(png).subarray(0, 24);
-    pngOk = head.toString('latin1', 1, 4) === 'PNG' && head.readUInt32BE(16) === 408 && head.readUInt32BE(20) === 408 && statSync(png).size > 5000;
+    pngOk = head.toString('latin1', 1, 4) === 'PNG' && head.readUInt32BE(16) === 408 && head.readUInt32BE(20) === 440 && statSync(png).size > 5000;
   }
-  check('--render-snapshot writes a 408×408 PNG', pngOk, snap.stderr.trim());
+  check('--render-snapshot writes a 408×440 PNG (disc + caption strip + shadow margin)', pngOk, snap.stderr.trim());
 }
 
 const failed = results.filter((r) => !r.ok);

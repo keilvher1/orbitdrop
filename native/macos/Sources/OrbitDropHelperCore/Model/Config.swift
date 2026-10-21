@@ -247,18 +247,55 @@ public struct HelperMenu: Sendable, Equatable {
   }
 }
 
+/// Why a drag cannot be accepted (selects the specific `strings.unsupported*` text).
+public enum UnsupportedReason: String, Sendable, Equatable, CaseIterable {
+  /// A folder (or package) among the items.
+  case folder
+  /// Text, web URLs, image data… — no file at all.
+  case nonFile
+  /// Items without a file on disk yet: file promises (Photos, Mail attachments, …).
+  case virtual
+  /// Files of a type this build cannot read, relative/over-long paths.
+  case unknownType
+  /// More than HelperProtocol.maxFiles items.
+  case tooMany
+}
+
 /// `configure.strings`.
 public struct HelperStrings: Sendable, Equatable {
   public var dropHint: String
   public var unsupported: String
   public var multiFileUnsupported: String
   public var fileCount: String
+  /// Optional specific texts (helper-protocol.ts); `unsupported` is used when absent.
+  public var unsupportedFolder: String?
+  public var unsupportedNonFile: String?
+  public var unsupportedVirtual: String?
 
-  public init(dropHint: String, unsupported: String, multiFileUnsupported: String, fileCount: String) {
+  public init(
+    dropHint: String, unsupported: String, multiFileUnsupported: String, fileCount: String,
+    unsupportedFolder: String? = nil, unsupportedNonFile: String? = nil, unsupportedVirtual: String? = nil
+  ) {
     self.dropHint = dropHint
     self.unsupported = unsupported
     self.multiFileUnsupported = multiFileUnsupported
     self.fileCount = fileCount
+    self.unsupportedFolder = unsupportedFolder
+    self.unsupportedNonFile = unsupportedNonFile
+    self.unsupportedVirtual = unsupportedVirtual
+  }
+
+  /// Center text for an unsupported drag: the specific string when main sent one, else `unsupported`.
+  public func unsupportedText(_ reason: UnsupportedReason?) -> String {
+    let specific: String?
+    switch reason {
+    case .folder?: specific = unsupportedFolder
+    case .nonFile?: specific = unsupportedNonFile
+    case .virtual?: specific = unsupportedVirtual
+    case .unknownType?, .tooMany?, nil: specific = nil
+    }
+    if let specific, !specific.isEmpty { return specific }
+    return unsupported
   }
 
   /// "{n} files" with every `{n}` replaced by the count.

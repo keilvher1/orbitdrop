@@ -4,14 +4,20 @@ import CoreText
 import OrbitDropHelperCore
 
 /// Draws the wheel for a `WheelViewModel` into a CoreGraphics context whose user
-/// space is y-down with the origin at the top-left of the wheel window (a flipped
+/// space is y-down with the origin at the top-left of the wheel panel (a flipped
 /// NSView, or a bitmap context with a flip transform). The same code renders the
 /// live panel and `--render-snapshot`, so screenshots show exactly what users see.
+///
+/// Hit shape: the live panel paints nothing outside the disc and the caption pill
+/// (alpha stays 0 there), so drags pass through to the window underneath. Its shadow
+/// comes from the window server (`hasShadow`); `drawShadow` paints an equivalent one
+/// only for offscreen snapshots, which have no window server.
 public enum WheelRenderer {
   /// - Parameters:
-  ///   - size: window content size in points (diameter + 2·windowMargin).
-  ///   - appear: 0…1 appear animation progress (scales 0.92 → 1 about the center).
-  public static func draw(_ model: WheelViewModel, in ctx: CGContext, size: CGSize, appear: CGFloat = 1) {
+  ///   - size: panel content size in points (`presentation.layout.frame`).
+  ///   - appear: 0…1 appear progress (scales 0.92 → 1 about the disc center; snapshots/tests).
+  ///   - drawShadow: paint the soft shadow outside the disc (snapshots only).
+  public static func draw(_ model: WheelViewModel, in ctx: CGContext, size: CGSize, appear: CGFloat = 1, drawShadow: Bool = false) {
     let p = model.presentation
     let g = p.geometry
     let t = p.tokens
@@ -20,7 +26,7 @@ public enum WheelRenderer {
     let radius = diameter / 2
     let ri = WheelMath.innerRadius(diameter, g)
     let ro = WheelMath.sectorOuterRadius(diameter, g)
-    let center = CGPoint(x: size.width / 2, y: size.height / 2)
+    let center = CGPoint(x: p.layout.discCenter.x, y: p.layout.discCenter.y)
 
     ctx.saveGState()
     defer { ctx.restoreGState() }
@@ -32,15 +38,21 @@ public enum WheelRenderer {
     ctx.setShouldAntialias(true)
     ctx.setAllowsAntialiasing(true)
     ctx.interpolationQuality = .high
+    let deviceScale = deviceScaleFactor(ctx)
+
+    // Secondary hint outside the ring (panel-local coordinates).
+    if let caption = model.caption, let rect = p.layout.captionRect {
+      drawCaption(ctx, caption, in: CGRect(x: rect.x, y: rect.y, width: rect.width, height: rect.height), t: t, highContrast: hc, shadow: drawShadow ? deviceScale : nil)
+    }
+
     ctx.translateBy(x: center.x, y: center.y)
     let scale = 0.92 + 0.08 * min(max(appear, 0), 1)
     if scale != 1 { ctx.scaleBy(x: scale, y: scale) }
-    let deviceScale = deviceScaleFactor(ctx)
 
-    // Soft drop shadow, drawn only outside the disc so it never shows through the
-    // translucent disc (offsets are in device space, y up: negative = down).
+    // Snapshot-only soft shadow, outside the disc so it never shows through the translucent
+    // disc (offsets are in device space, y up: negative = down). The live panel uses hasShadow.
     let discRect = CGRect(x: -radius, y: -radius, width: diameter, height: diameter)
-    if t.wheelShadow.a > 0 && !hc {
+    if drawShadow && t.wheelShadow.a > 0 && !hc {
       ctx.saveGState()
       let outside = CGMutablePath()
       outside.addRect(CGRect(x: -size.width, y: -size.height, width: size.width * 2, height: size.height * 2))
@@ -53,6 +65,10 @@ public enum WheelRenderer {
       ctx.fillEllipse(in: discRect)
       ctx.restoreGState()
     }
+    // Invisible floor (alpha 1/255): the whole disc — gaps and dead zone included — stays in the
+    // window's hit shape even if a theme made the disc token transparent.
+    ctx.setFillColor(CGColor(gray: 0, alpha: 1.0 / 255.0))
+    ctx.fillEllipse(in: discRect)
     ctx.setFillColor(cg(t.wheelDisc))
     ctx.fillEllipse(in: discRect)
 
@@ -175,6 +191,38 @@ public enum WheelRenderer {
       }
     }
     return path
+  }
+
+  // MARK: Caption (secondary hint)
+
+  /// One-line pill centered in the caption strip: the armed choice (or why it is refused),
+  /// readable even when the drag image covers the sector and the capsule.
+  static func drawCaption(_ ctx: CGContext, _ caption: CapsuleContent, in strip: CGRect, t: WheelTokens, highContrast hc: Bool, shadow deviceScale: CGFloat?) {
+    let hPad = 12.0
+    let size = min(13, max(10, t.capsuleTextSize - 3))
+    let weight = max(t.labelWeight, 600)
+    let line = fittedLine(caption.text, size: size, minSize: 10, weight: weight, color: t.capsuleText, maxWidth: Double(strip.width) - 2 * hPad, kern: 0)
+    let metrics = lineMetrics(line)
+    let width = min(Double(strip.width), max(56, metrics.width + 2 * hPad))
+    let rect = CGRect(x: Double(strip.midX) - width / 2, y: Double(strip.minY), width: width, height: Double(strip.height))
+    let path = CGPath(roundedRect: rect, cornerWidth: rect.height / 2, cornerHeight: rect.height / 2, transform: nil)
+    ctx.saveGState()
+    if let deviceScale, t.wheelShadow.a > 0, !hc {
+      ctx.setShadow(offset: CGSize(width: 0, height: -2 * deviceScale), blur: 6 * deviceScale, color: cg(t.wheelShadow))
+    }
+    ctx.addPath(path)
+    // Opaque pill: it is part of the panel's hit shape (a drop on it is a cancel by design).
+    let fill = caption.style == .reject ? t.capsuleReject : t.capsule
+    ctx.setFillColor(cg(fill.withAlpha(1)))
+    ctx.fillPath()
+    ctx.restoreGState()
+    if hc {
+      ctx.addPath(path)
+      ctx.setStrokeColor(cg(t.sectorText))
+      ctx.setLineWidth(1.5)
+      ctx.strokePath()
+    }
+    drawLine(ctx, line, centerX: Double(rect.midX), top: Double(rect.midY) - metrics.height / 2, metrics: metrics)
   }
 
   // MARK: Capsule

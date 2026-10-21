@@ -17,12 +17,20 @@ public enum SessionTimer: String, Sendable, Hashable, CaseIterable {
   case releaseGrace
   /// After draggingExited while the pointer is still over the wheel: the drag ended (Esc, rejected release).
   case exitCheck
+  /// A combo was completed during a drag: wait until the modifiers are stable before showing the wheel
+  /// (Shift then Option pressed 10 ms apart opens tools directly, without a convert flash).
+  case modifierSettle
+  /// The neutral wheel is up and the pointer moved over it, but no draggingEntered came: the drag
+  /// carries nothing the wheel can receive (e.g. a window-tab drag) — hide it.
+  case noEnter
 }
 
 public enum SessionEvent: Sendable, Equatable {
   case configure(HelperConfig)
-  /// Global left mouse button pressed (point in global DIP).
-  case mouseDown(Point)
+  /// Global left mouse button pressed (point in global DIP) with the modifiers held at that
+  /// moment. `held` is a baseline, not a press: a combo already held at the mouse-down never
+  /// opens the wheel (only a press during the drag does).
+  case mouseDown(Point, held: Set<ModifierKey> = [])
   case mouseDragged(Point)
   /// Global mouse-up (monitor event or the pressed-buttons poll). Only ever cleans up.
   case mouseUp(Point)
@@ -106,6 +114,8 @@ public enum WheelContent: Sendable, Equatable {
 /// Everything the renderer needs that is fixed when the wheel appears.
 public struct WheelPresentation: Sendable, Equatable {
   public var placement: WheelPlacement
+  /// The native panel: disc bounding box + caption strip (see WheelPanelLayout).
+  public var layout: WheelPanelLayout
   /// Session geometry with `diameter` = the placed diameter.
   public var geometry: WheelGeometry
   public var tokens: WheelTokens
@@ -113,8 +123,9 @@ public struct WheelPresentation: Sendable, Equatable {
   public var reduceMotion: Bool
   public var mode: WheelMode
 
-  public init(placement: WheelPlacement, geometry: WheelGeometry, tokens: WheelTokens, highContrast: Bool, reduceMotion: Bool, mode: WheelMode) {
+  public init(placement: WheelPlacement, layout: WheelPanelLayout? = nil, geometry: WheelGeometry, tokens: WheelTokens, highContrast: Bool, reduceMotion: Bool, mode: WheelMode) {
     self.placement = placement
+    self.layout = layout ?? WheelPanelLayout.make(placement: placement, workArea: nil)
     self.geometry = geometry
     self.tokens = tokens
     self.highContrast = highContrast
@@ -165,6 +176,23 @@ public struct WheelViewModel: Sendable, Equatable {
     self.content = content
     self.highlight = highlight
     self.capsule = capsule
+  }
+
+  /// The secondary hint drawn outside the ring (below or above the disc): the current choice
+  /// — the armed sector's label, or why it cannot be used — so it stays readable when the drag
+  /// image covers the sector and the capsule. Nil when nothing is selected or there is no room.
+  public var caption: CapsuleContent? {
+    guard presentation.layout.captionRect != nil, let highlight, highlight.style != .hover, !capsule.text.isEmpty else { return nil }
+    return capsule
+  }
+
+  /// Text VoiceOver should announce for the current state (the armed choice), nil otherwise.
+  public var announcement: String? {
+    guard let highlight, highlight.style != .hover, !capsule.text.isEmpty else { return nil }
+    let sectors = content.sectors
+    guard sectors.indices.contains(highlight.index) else { return capsule.text }
+    let label = sectors[highlight.index].label
+    return highlight.style == .active ? label : (label == capsule.text ? label : "\(label): \(capsule.text)")
   }
 
   /// Applies a visual command; returns true when something visible changed.

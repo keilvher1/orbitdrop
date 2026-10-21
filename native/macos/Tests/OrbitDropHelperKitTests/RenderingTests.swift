@@ -244,6 +244,22 @@ final class RenderingTests: XCTestCase {
     XCTAssertGreaterThan(light, 15, "white CROP label on the dark rejected fill")
   }
 
+  /// #16: the secondary hint sits in the strip below the disc, only while a sector is armed.
+  func testSnapshotShowsTheCaptionBelowTheDisc() throws {
+    let (bmp, model) = try render(["--menu", "pdf", "--mode", "convert", "--highlight", "1", "--locale", "en"])
+    XCTAssertEqual(bmp.height, 440, "24 margin + 360 disc + 6 gap + 26 caption + 24 margin")
+    XCTAssertEqual(model.caption, CapsuleContent(text: "JPG", style: .action))
+    let t = model.presentation.tokens
+    // Left part of the pill (the "JPG" glyphs are centered at x = 204).
+    assertColor(bmp.rgba(180, 24 + 366 + 13), over(t.capsule.withAlpha(1), RGBA(r: 0, g: 0, b: 0, a: 0)), "caption pill")
+    var dark = 0
+    for x in 190...218 where bmp.rgba(x, 24 + 366 + 13).r < 120 { dark += 1 }
+    XCTAssertGreaterThan(dark, 2, "caption text drawn")
+    let (plain, plainModel) = try render(["--menu", "pdf", "--mode", "convert", "--locale", "en"])
+    XCTAssertNil(plainModel.caption, "nothing armed: no caption")
+    XCTAssertLessThan(plain.rgba(180, 24 + 366 + 13).a, 60, "only the painted disc shadow")
+  }
+
   func testSymbolsExistForEveryIcon() {
     for icon in IconId.allCases {
       XCTAssertNotNil(SymbolIcons.image(for: icon, pointSize: 20, weight: .bold, color: RGBA(r: 0, g: 0, b: 0)), "\(icon) → \(SymbolIcons.symbolName(for: icon))")
