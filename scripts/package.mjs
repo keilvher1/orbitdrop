@@ -635,11 +635,21 @@ if (target === 'win' && opts.installTest && !opts.dir) {
 
 // ── 11. report ───────────────────────────────────────────────────────────────
 mkdirSync(RELEASE, { recursive: true });
+/** Source the packages were built from, so a recorded artifact can be traced to a commit. */
+function sourceRevision() {
+  const git = (args) => spawnSync('git', args, { cwd: ROOT, encoding: 'utf8' });
+  const head = git(['rev-parse', 'HEAD']);
+  if (head.status !== 0) return null;
+  const dirty = git(['status', '--porcelain', '--untracked-files=no']).stdout.trim() !== '';
+  return { commit: head.stdout.trim(), dirty };
+}
+const source = sourceRevision();
 for (const r of results) {
   const file = join(RELEASE, `build-report-${r.os}-${r.arch}.json`);
-  writeFileSync(file, `${JSON.stringify({ generatedAt: new Date().toISOString(), version: desktopPkg.version, host: `${process.platform}-${process.arch}`, ...r }, null, 2)}\n`);
+  writeFileSync(file, `${JSON.stringify({ generatedAt: new Date().toISOString(), version: desktopPkg.version, host: `${process.platform}-${process.arch}`, source, ...r }, null, 2)}\n`);
 }
 step('summary');
+console.log(`  source: ${source ? `${source.commit.slice(0, 12)}${source.dirty ? ' + uncommitted changes' : ''}` : 'unknown (no git)'}`);
 for (const r of results) {
   console.log(`  ${r.os}-${r.arch}: ${r.ok ? 'built' : 'BUILD FAILED'} · ${r.signing.mode}${r.labels.length ? ` · labels: ${r.labels.join(', ')}` : ''}`);
   if (r.app) console.log(`    app: ${r.app.path} (${mb(r.app.bytes)})`);
