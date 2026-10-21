@@ -1,0 +1,197 @@
+/* Radial menu. Colours: design tokens (wheel*, sector*, capsule*). */
+
+.wheel {
+  position: relative;
+  flex: none;
+  animation: od-wheel-appear var(--motion-wheel-appear) var(--motion-easing) both;
+}
+
+@keyframes od-wheel-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.wheel-hit {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  cursor: default;
+  touch-action: none;
+}
+
+.wheel-hit:focus-visible {
+  outline: none;
+}
+
+.wheel-svg {
+  display: block;
+  overflow: visible;
+}
+
+.wheel-disc {
+  fill: var(--c-wheel-disc);
+  stroke: var(--c-wheel-ring);
+  filter: drop-shadow(0 10px 22px var(--c-wheel-shadow));
+}
+
+.wheel[data-focus-ring='true'] .wheel-hit:focus .wheel-disc {
+  stroke: var(--c-focus-ring);
+  stroke-width: 3px;
+}
+
+.wheel-sector path {
+  fill: var(--c-sector);
+  transition: fill var(--motion-sector) var(--motion-easing);
+}
+
+.wheel-text {
+  fill: var(--c-sector-text);
+  font-weight: var(--font-wheel-label-weight);
+  letter-spacing: var(--font-wheel-label-tracking);
+  pointer-events: none;
+}
+
+.wheel-icon {
+  color: var(--c-sector-icon);
+  pointer-events: none;
+}
+
+/* High contrast: sectors share the disc colour, so outline them with the ring colour. */
+:root[data-theme='highContrast'] .wheel-sector path {
+  stroke: var(--c-wheel-ring);
+  stroke-width: 1.5px;
+}
+
+.wheel-sector[data-enabled='true'][data-active='true'] path {
+  fill: var(--c-sector-active);
+}
+
+.wheel-sector[data-enabled='true'][data-active='true'] .wheel-text {
+  fill: var(--c-sector-active-text);
+}
+
+.wheel-sector[data-enabled='true'][data-active='true'] .wheel-icon {
+  color: var(--c-sector-active-text);
+}
+
+.wheel-sector[data-enabled='false'] path {
+  fill: var(--c-sector-disabled);
+}
+
+.wheel-sector[data-enabled='false'] .wheel-text,
+.wheel-sector[data-enabled='false'] .wheel-icon {
+  fill: var(--c-sector-disabled-text);
+  color: var(--c-sector-disabled-text);
+}
+
+.wheel-sector[data-enabled='false'][data-active='true'] path {
+  fill: var(--c-sector-hover);
+  stroke: var(--c-sector-disabled-text);
+  stroke-width: 1.5px;
+  stroke-dasharray: 5 4;
+}
+
+/* Keyboard focus: ring around the highlighted sector in addition to the fill. */
+.wheel[data-keyboard='true'] .wheel-hit:focus-visible .wheel-sector[data-active='true'] path,
+.wheel[data-keyboard='true'] .wheel-hit:focus .wheel-sector[data-active='true'] path {
+  stroke: var(--c-focus-ring);
+  stroke-width: 2.5px;
+  stroke-dasharray: none;
+}
+
+.wheel[data-busy='true'] .wheel-hit {
+  cursor: progress;
+}
+
+.wheel-capsule {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--c-capsule);
+  color: var(--c-capsule-text);
+  font-size: var(--font-capsule-size);
+  font-weight: var(--font-capsule-weight);
+  line-height: 1.2;
+  text-align: center;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  transition: background-color var(--motion-sector) var(--motion-easing);
+}
+
+.wheel-capsule-text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+}
+
+.wheel-capsule[data-tone='reject'] {
+  padding: 6px 12px;
+  border-radius: 18px;
+  background: var(--c-capsule-reject);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.wheel-capsule[data-tone='busy'] {
+  font-size: 13px;
+}
+
+@media (forced-colors: active) {
+  .wheel-disc {
+    fill: Canvas;
+    stroke: CanvasText;
+    filter: none;
+  }
+
+  .wheel-sector path {
+    fill: Canvas;
+    stroke: CanvasText;
+    stroke-width: 1px;
+  }
+
+  .wheel-text {
+    fill: CanvasText;
+  }
+
+  .wheel-icon {
+    color: CanvasText;
+  }
+
+  .wheel-sector[data-enabled='true'][data-active='true'] path {
+    fill: Highlight;
+  }
+
+  .wheel-sector[data-enabled='true'][data-active='true'] .wheel-text,
+  .wheel-sector[data-enabled='true'][data-active='true'] .wheel-icon {
+    fill: HighlightText;
+    color: HighlightText;
+  }
+
+  .wheel-sector[data-enabled='false'] .wheel-text,
+  .wheel-sector[data-enabled='false'] .wheel-icon {
+    fill: GrayText;
+    color: GrayText;
+  }
+
+  .wheel-capsule {
+    forced-color-adjust: none;
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+}

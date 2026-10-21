@@ -1,0 +1,22 @@
+.adjust-transform {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.adjust-transform .btn-tool {
+  width: 34px;
+  padding: 0;
+}
+
+.adjust-divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 2px;
+  background: var(--c-border);
+}
+
+.adjust-rotation {
+  margin-left: 4px;
+  font-size: 12px;
+}

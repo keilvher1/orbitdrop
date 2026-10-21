@@ -1,0 +1,187 @@
+import {
+  ACTIONS,
+  baseMenuOrder,
+  type ActionId,
+  type FileSelection,
+  type OrbitErrorInfo,
+  type SubmitActionResult,
+  type WheelMenu,
+  type WheelMode,
+} from '@orbitdrop/contracts';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useEnv } from '../../app/env';
+import { Notice, Spinner } from '../../components/Notice';
+import { Segmented } from '../../components/Segmented';
+import { formatBytes } from '../../i18n/format';
+import { Wheel } from '../../wheel/Wheel';
+import './picker.css';
+import { asErrorInfo } from '../../app/errors';
+
+export interface SelectionWheelProps {
+  readonly selection: FileSelection;
+  readonly initialMode: WheelMode;
+  readonly diameter: number;
+  /** Called after main accepted the action (jobs queued or editor opened). */
+  readonly onSubmitted: (result: Exclude<SubmitActionResult, { kind: 'rejected' }>) => void;
+  readonly onEscape?: () => void;
+  readonly autoFocus?: boolean;
+}
+
+/** Usable files are those main did not flag with a problem. */
+export function usableFiles(selection: FileSelection) {
+  return selection.files.filter((f) => f.problem === undefined);
+}
+
+/**
+ * File summary + wheel + mode toggle (변환 / 도구). The wheel comes before the
+ * toggle in the tab order so Tab moves from the wheel to the toggle.
+ */
+export function SelectionWheel({ selection, initialMode, diameter, onSubmitted, onEscape, autoFocus = true }: SelectionWheelProps) {
+  const { orbit, t, platform, settings } = useEnv();
+  const key = selection.menuKey;
+  const toolsAvailable = key !== null && baseMenuOrder(key, 'tools').length > 0;
+  const [mode, setMode] = useState<WheelMode>(initialMode === 'tools' && !toolsAvailable ? 'convert' : initialMode);
+  const [menu, setMenu] = useState<WheelMenu | null>(null);
+  const [menuError, setMenuError] = useState<OrbitErrorInfo | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<OrbitErrorInfo | null>(null);
+  const [active, setActive] = useState<number | null>(null);
+  const instructionsId = useId();
+
+  useEffect(() => {
+    if (key === null) return undefined;
+    let cancelled = false;
+    setMenu(null);
+    setMenuError(null);
+    orbit.getMenu(selection.selectionId, mode).then(
+      (next) => {
+        if (!cancelled) setMenu(next);
+      },
+      (reason: unknown) => {
+        if (!cancelled) setMenuError(asErrorInfo(reason));
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [orbit, selection.selectionId, key, mode, settings.locale]);
+
+  const usable = useMemo(() => usableFiles(selection), [selection]);
+  const unusable = selection.files.length - usable.length;
+  const totalBytes = usable.reduce((sum, f) => sum + f.bytes, 0);
+  const sizeText = formatBytes(totalBytes, t.locale, platform);
+  const first = usable[0] ?? selection.files[0];
+
+  const submit = useCallback(
+    async (actionId: ActionId) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const result = await orbit.submitAction({ selectionId: selection.selectionId, actionId });
+        if (result.kind === 'rejected') {
+          setError(result.error);
+          setBusy(false);
+          return;
+        }
+        onSubmitted(result);
+      } catch (reason) {
+        setError(asErrorInfo(reason));
+        setBusy(false);
+      }
+    },
+    [orbit, selection.selectionId, onSubmitted],
+  );
+
+  if (key === null) {
+    return <UnsupportedSelection selection={selection} />;
+  }
+
+  const sectors = menu?.sectors ?? [];
+  const activeSector = active === null ? undefined : sectors[active];
+  let hint = t('wheel.instructions');
+  if (activeSector !== undefined) {
+    hint = activeSector.enabled ? t.text(ACTIONS[activeSector.actionId].title) : (activeSector.reason ?? t('wheel.unavailable'));
+  } else if (menu !== null && sectors.length === 0) {
+    hint = mode === 'tools' ? t('picker.noTools') : t('wheel.empty');
+  }
+
+  return (
+    <div className="selection-wheel">
+      <p className="selection-summary tabular" title={first?.name}>
+        {usable.length > 1
+          ? t('picker.summaryMulti', { name: first?.name ?? '', more: t.plural('common.moreFiles', usable.length - 1), size: sizeText })
+          : t('picker.summary', { name: first?.name ?? '', size: sizeText })}
+      </p>
+      {unusable > 0 ? (
+        <Notice tone="warning" live="off">
+          {t.plural('picker.someUnusable', unusable)}
+        </Notice>
+      ) : null}
+      <div className="selection-wheel-stage">
+        {menu === null && menuError === null ? (
+          <div className="selection-wheel-placeholder" style={{ width: diameter, height: diameter }}>
+            <Spinner size={18} label={t('common.loading')} />
+          </div>
+        ) : (
+          <Wheel
+            sectors={sectors}
+            diameter={diameter}
+            label={mode === 'convert' ? t('wheel.label.convert') : t('wheel.label.tools')}
+            centerText={usable.length > 1 ? t.plural('common.files', usable.length) : sizeText}
+            onActivate={(sector) => void submit(sector.actionId)}
+            onEscape={onEscape}
+            onActiveChange={setActive}
+            busy={busy}
+            autoFocus={autoFocus}
+            describedBy={instructionsId}
+          />
+        )}
+      </div>
+      <span id={instructionsId} className="visually-hidden">
+        {t('wheel.instructions')}
+      </span>
+      <Segmented<WheelMode>
+        label={t('mode.label')}
+        size="large"
+        value={mode}
+        onChange={(next) => {
+          setError(null);
+          setMode(next);
+        }}
+        options={[
+          { value: 'convert', label: t('mode.convert') },
+          { value: 'tools', label: t('mode.tools'), disabled: !toolsAvailable },
+        ]}
+      />
+      <p className="selection-hint" aria-hidden="true">
+        {hint}
+      </p>
+      {menuError ? <Notice tone="danger">{t.error(menuError)}</Notice> : null}
+      {error ? (
+        <Notice tone="danger" onDismiss={() => setError(null)} dismissLabel={t('common.dismiss')}>
+          <strong>{t('picker.rejected')}</strong> {t.error(error)}
+        </Notice>
+      ) : null}
+    </div>
+  );
+}
+
+export function UnsupportedSelection({ selection }: { readonly selection: FileSelection }) {
+  const { t } = useEnv();
+  return (
+    <div className="selection-unsupported">
+      <Notice tone="warning">
+        <strong>{t('picker.unsupportedTitle')}</strong>
+        <div>{t('picker.unsupportedHint')}</div>
+      </Notice>
+      <ul className="problem-list">
+        {selection.files.map((file) => (
+          <li key={file.fileId}>
+            <span className="problem-name">{file.name}</span>
+            <span className="muted">{file.problem ? t.error(file.problem) : t.error('UNSUPPORTED_FORMAT')}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

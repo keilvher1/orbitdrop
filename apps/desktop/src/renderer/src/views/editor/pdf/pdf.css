@@ -1,0 +1,87 @@
+.pdf-help {
+  font-size: 12px;
+}
+
+.pdf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 340px;
+  margin: 0;
+  padding: 2px;
+  overflow: auto;
+  list-style: none;
+}
+
+.pdf-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 14px 54px 16px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 4px 6px 4px 8px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-control);
+  background: var(--c-surface);
+  cursor: grab;
+}
+
+.pdf-row:focus-visible {
+  outline-offset: 0;
+}
+
+.pdf-row[data-dragging='true'] {
+  opacity: 0.45;
+}
+
+.pdf-row[data-drop='before']::before,
+.pdf-row[data-drop='after']::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  left: 4px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--c-accent);
+}
+
+.pdf-row[data-drop='before']::before {
+  top: -4px;
+}
+
+.pdf-row[data-drop='after']::after {
+  bottom: -4px;
+}
+
+.pdf-grip,
+.pdf-icon {
+  color: var(--c-text-muted);
+}
+
+.pdf-page {
+  color: var(--c-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pdf-name {
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pdf-size {
+  font-size: 11px;
+}
+
+.pdf-buttons {
+  display: flex;
+  gap: 2px;
+}
+
+.pdf-buttons .btn-icon {
+  width: 24px;
+  height: 24px;
+}

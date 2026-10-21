@@ -1,0 +1,132 @@
+/* Redact editor. Colours: design tokens only (region fills use the region's own colour). */
+
+.redact-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.redact-region {
+  position: absolute;
+  border: 1.5px dashed rgb(255 255 255 / 95%);
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 55%),
+    inset 0 0 0 1px rgb(0 0 0 / 35%);
+}
+
+.redact-region[data-selected='true'] {
+  border: 2px solid var(--c-accent);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 85%);
+}
+
+.redact-draft {
+  border-color: var(--c-accent);
+  background: rgb(255 255 255 / 12%);
+}
+
+.redact-badge {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  padding: 1px;
+  border-radius: 3px;
+  background: rgb(0 0 0 / 55%);
+  color: #ffffff;
+}
+
+.redact-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border: 1.5px solid var(--c-accent);
+  border-radius: 2px;
+  background: var(--c-selection-handle);
+}
+
+.redact-handle[data-handle='nw'] {
+  top: 0;
+  left: 0;
+}
+
+.redact-handle[data-handle='n'] {
+  top: 0;
+  left: 50%;
+}
+
+.redact-handle[data-handle='ne'] {
+  top: 0;
+  left: 100%;
+}
+
+.redact-handle[data-handle='e'] {
+  top: 50%;
+  left: 100%;
+}
+
+.redact-handle[data-handle='se'] {
+  top: 100%;
+  left: 100%;
+}
+
+.redact-handle[data-handle='s'] {
+  top: 100%;
+  left: 50%;
+}
+
+.redact-handle[data-handle='sw'] {
+  top: 100%;
+  left: 0;
+}
+
+.redact-handle[data-handle='w'] {
+  top: 50%;
+  left: 0;
+}
+
+.redact-surface {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+}
+
+.redact-surface:focus-visible {
+  outline: 2px solid var(--c-focus-ring);
+  outline-offset: -2px;
+}
+
+.redact-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.redact-list-item {
+  gap: 6px;
+}
+
+.redact-list-style {
+  opacity: 0.75;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.redact-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+@media (forced-colors: active) {
+  .redact-region {
+    forced-color-adjust: none;
+    border-color: Highlight;
+  }
+
+  .redact-handle {
+    forced-color-adjust: none;
+    border-color: Highlight;
+    background: Canvas;
+  }
+}

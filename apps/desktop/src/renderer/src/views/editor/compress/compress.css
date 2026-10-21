@@ -1,0 +1,133 @@
+.compress-sizes {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+}
+
+.compress-size {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 72px;
+  padding: 8px 10px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-control);
+  background: var(--c-surface);
+}
+
+.compress-size-label {
+  color: var(--c-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.compress-size strong {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.compress-size strong[data-stale='true'] {
+  opacity: 0.55;
+}
+
+.compress-size strong[data-tone='good'] {
+  color: var(--c-success);
+}
+
+.compress-size strong[data-tone='warning'] {
+  color: var(--c-warning-text);
+}
+
+.compress-first,
+.compress-hint {
+  font-size: 11px;
+}
+
+.compress-expect {
+  color: var(--c-text-muted);
+  font-size: 12px;
+}
+
+.compress-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 420px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.compress-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-control);
+  background: var(--c-surface);
+}
+
+.compress-result-name,
+.compress-output-name {
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.compress-output-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--c-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.compress-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.compress-bar {
+  flex: 1;
+  height: 6px;
+  accent-color: var(--c-accent);
+}
+
+.compress-bar-indeterminate {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--c-surface-muted);
+}
+
+.compress-bar-indeterminate span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 35%;
+  border-radius: 3px;
+  background: var(--c-accent);
+  animation: od-compress-indeterminate 1.2s var(--motion-easing) infinite;
+}
+
+:root[data-reduce-motion='true'] .compress-bar-indeterminate span {
+  width: 100%;
+  opacity: 0.35;
+}
+
+@keyframes od-compress-indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(290%);
+  }
+}

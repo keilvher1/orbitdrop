@@ -1,0 +1,44 @@
+.bg-swatches {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.bg-swatches .swatch-grid {
+  flex: 1;
+  max-width: calc(9 * 28px + 8 * 6px);
+}
+
+.bg-swatch-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 6px;
+  border-left: 1px solid var(--c-border);
+}
+
+.bg-custom {
+  overflow: hidden;
+}
+
+.bg-custom.is-selected {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+  color: #ffffff;
+}
+
+.bg-custom:focus-within {
+  outline: 2px solid var(--c-focus-ring);
+  outline-offset: 2px;
+}
+
+.bg-image-name {
+  overflow: hidden;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bg-hint {
+  font-size: 11px;
+}

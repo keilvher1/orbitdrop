@@ -1,0 +1,152 @@
+.crop-layer {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.crop-selection {
+  position: absolute;
+  border: 2px solid var(--c-accent);
+  box-shadow: 0 0 0 9999px var(--c-mask);
+  cursor: move;
+}
+
+.crop-selection:focus-visible {
+  outline: 2px solid var(--c-focus-ring);
+  outline-offset: 3px;
+}
+
+/* Rule-of-thirds guides while dragging. */
+.crop-grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background-image:
+    linear-gradient(to right, transparent calc(33.333% - 0.5px), rgb(255 255 255 / 70%) calc(33.333% - 0.5px), rgb(255 255 255 / 70%) calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px)),
+    linear-gradient(to right, transparent calc(66.666% - 0.5px), rgb(255 255 255 / 70%) calc(66.666% - 0.5px), rgb(255 255 255 / 70%) calc(66.666% + 0.5px), transparent calc(66.666% + 0.5px)),
+    linear-gradient(to bottom, transparent calc(33.333% - 0.5px), rgb(255 255 255 / 70%) calc(33.333% - 0.5px), rgb(255 255 255 / 70%) calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px)),
+    linear-gradient(to bottom, transparent calc(66.666% - 0.5px), rgb(255 255 255 / 70%) calc(66.666% - 0.5px), rgb(255 255 255 / 70%) calc(66.666% + 0.5px), transparent calc(66.666% + 0.5px));
+  pointer-events: none;
+  transition: opacity var(--motion-sector) ease;
+}
+
+.crop-layer[data-dragging='true'] .crop-grid {
+  opacity: 1;
+}
+
+.crop-handle {
+  position: absolute;
+  z-index: 1;
+  border: 1.5px solid var(--c-selection-handle);
+  border-radius: 3px;
+  background: var(--c-accent);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 30%);
+}
+
+/* Corners: squares; edges: short bars (as in the reference panel). Hit areas are padded with an outline. */
+.crop-handle[data-handle='nw'],
+.crop-handle[data-handle='ne'],
+.crop-handle[data-handle='se'],
+.crop-handle[data-handle='sw'] {
+  width: 13px;
+  height: 13px;
+}
+
+.crop-handle[data-handle='nw'] {
+  top: -8px;
+  left: -8px;
+  cursor: nwse-resize;
+}
+
+.crop-handle[data-handle='ne'] {
+  top: -8px;
+  right: -8px;
+  cursor: nesw-resize;
+}
+
+.crop-handle[data-handle='se'] {
+  right: -8px;
+  bottom: -8px;
+  cursor: nwse-resize;
+}
+
+.crop-handle[data-handle='sw'] {
+  bottom: -8px;
+  left: -8px;
+  cursor: nesw-resize;
+}
+
+.crop-handle[data-handle='n'],
+.crop-handle[data-handle='s'] {
+  left: calc(50% - 12px);
+  width: 24px;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+.crop-handle[data-handle='n'] {
+  top: -5px;
+}
+
+.crop-handle[data-handle='s'] {
+  bottom: -5px;
+}
+
+.crop-handle[data-handle='e'],
+.crop-handle[data-handle='w'] {
+  top: calc(50% - 12px);
+  width: 8px;
+  height: 24px;
+  cursor: ew-resize;
+}
+
+.crop-handle[data-handle='e'] {
+  right: -5px;
+}
+
+.crop-handle[data-handle='w'] {
+  left: -5px;
+}
+
+/* Larger invisible hit area around each handle. */
+.crop-handle::after {
+  position: absolute;
+  inset: -7px;
+  content: '';
+}
+
+.crop-size {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.crop-dim {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--c-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.crop-dim .num-input {
+  width: 80px;
+}
+
+.crop-error {
+  margin-left: 94px;
+}
+
+@media (forced-colors: active) {
+  .crop-selection {
+    border-color: Highlight;
+  }
+
+  .crop-handle {
+    forced-color-adjust: none;
+    background: Highlight;
+    border-color: Canvas;
+  }
+}

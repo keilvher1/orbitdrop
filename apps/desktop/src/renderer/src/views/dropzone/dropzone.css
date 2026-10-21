@@ -1,0 +1,68 @@
+.dropzone-body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 2px 16px 16px;
+}
+
+.drop-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 150px;
+  padding: 18px 12px;
+  border: 2px dashed var(--c-border);
+  border-radius: var(--radius-panel);
+  background: var(--c-surface);
+  color: var(--c-text);
+  text-align: center;
+  transition:
+    border-color var(--motion-sector) var(--motion-easing),
+    background-color var(--motion-sector) var(--motion-easing);
+}
+
+.drop-area[data-active='true'] {
+  border-color: var(--c-accent);
+  border-style: solid;
+  background: var(--c-surface-muted);
+}
+
+.drop-icon {
+  color: var(--c-accent);
+}
+
+.drop-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.drop-sub {
+  color: var(--c-text-muted);
+  font-size: 12px;
+}
+
+.dropzone-open {
+  align-self: center;
+}
+
+.dropzone-status {
+  min-height: 0;
+}
+
+.dropzone-back {
+  align-self: flex-start;
+  margin-left: -6px;
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}

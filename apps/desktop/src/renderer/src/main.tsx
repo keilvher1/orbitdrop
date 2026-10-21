@@ -1,9 +1,10 @@
-import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
+import './zod-jitless';
+import './styles/base.css';
+import { bootstrap } from './app/bootstrap';
 
-// Placeholder; replaced by the renderer implementation.
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <p>OrbitDrop</p>
-  </StrictMode>,
-);
+// window.orbit is provided by the preload script (contextBridge). The renderer
+// is sandboxed: no Node APIs, no remote resources, only this API.
+const container = document.getElementById('root');
+if (container !== null) {
+  void bootstrap(container, (window as Partial<Window>).orbit);
+}

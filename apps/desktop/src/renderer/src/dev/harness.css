@@ -1,0 +1,59 @@
+.harness-gallery {
+  max-width: 720px;
+  padding: 24px 32px 48px;
+  user-select: text;
+}
+
+.harness-gallery h1 {
+  margin-bottom: 16px;
+  font-size: 18px;
+}
+
+.harness-gallery h2 {
+  margin: 18px 0 6px;
+  color: var(--c-text-muted);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.harness-gallery ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.harness-gallery a {
+  color: var(--c-accent-pressed);
+  font-weight: 600;
+}
+
+.harness-gallery .harness-alt {
+  color: var(--c-text-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.harness-toasts {
+  position: fixed;
+  right: 8px;
+  bottom: 8px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 60vw;
+  pointer-events: none;
+}
+
+.harness-toast {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgb(20 20 20 / 85%);
+  color: #ffffff;
+  font: 11px/1.3 ui-monospace, Menlo, monospace;
+  word-break: break-all;
+}

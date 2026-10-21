@@ -1,0 +1,215 @@
+.editor-view {
+  width: var(--editor-width);
+}
+
+.editor-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 2px 16px 4px;
+}
+
+.editor-error {
+  padding: 8px 16px 0;
+}
+
+.editor-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px 16px;
+}
+
+.editor-footer-spacer {
+  flex: 1;
+}
+
+.editor-footnote {
+  margin: 10px 16px -4px;
+  overflow: hidden;
+  color: var(--c-text-muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.editor-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.editor-section-title {
+  color: var(--c-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.editor-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  color: var(--c-text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.editor-meta strong {
+  color: var(--c-text);
+  font-weight: 600;
+}
+
+.editor-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.editor-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ----------------------------------------------------------------- stage */
+
+.stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  border-radius: var(--radius-panel);
+  background: var(--c-preview-bg);
+}
+
+.stage-canvas {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  border-radius: 3px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 18%);
+}
+
+.stage-canvas > img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.checker {
+  background-color: var(--c-checker-a);
+  background-image:
+    linear-gradient(45deg, var(--c-checker-b) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--c-checker-b) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--c-checker-b) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--c-checker-b) 75%);
+  background-position:
+    0 0,
+    0 6px,
+    6px -6px,
+    -6px 0;
+  background-size: 12px 12px;
+}
+
+.stage-busy {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--c-surface);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 18%);
+  color: var(--c-text-muted);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.stage-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--c-text-muted);
+}
+
+/* ----------------------------------------------------------- swatches */
+
+.swatch-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.swatch {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgb(0 0 0 / 14%);
+  border-radius: var(--radius-swatch);
+  cursor: pointer;
+  transition: transform var(--motion-sector) var(--motion-easing);
+}
+
+.swatch:hover {
+  transform: scale(1.06);
+}
+
+.swatch[aria-checked='true'] {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+.swatch:focus-visible {
+  outline: 2px solid var(--c-focus-ring);
+  outline-offset: 2px;
+}
+
+.swatch:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.swatch-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--c-surface);
+  color: var(--c-text-muted);
+}
+
+.swatch input[type='color'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+@media (forced-colors: active) {
+  .swatch {
+    forced-color-adjust: none;
+    border-color: CanvasText;
+  }
+
+  .swatch[aria-checked='true'] {
+    outline-color: Highlight;
+  }
+}
+
+/* Flexible spacer for custom footers. */
+.editor-footer-note {
+  flex: 1;
+}

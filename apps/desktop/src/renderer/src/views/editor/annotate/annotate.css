@@ -1,0 +1,86 @@
+/* Annotate editor. Colours: design tokens only. */
+
+.annot-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.annot-toolbar-spacer {
+  flex: 1;
+}
+
+.annot-tool-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.annot-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.annot-surface {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.annot-surface[data-tool='select'] {
+  cursor: default;
+}
+
+.annot-surface[data-tool='text'] {
+  cursor: text;
+}
+
+.annot-surface[data-hover='true'] {
+  cursor: move;
+}
+
+.annot-surface:focus-visible {
+  outline: 2px solid var(--c-focus-ring);
+  outline-offset: -2px;
+}
+
+.annot-text-input {
+  position: absolute;
+  z-index: 2;
+  min-width: 3ch;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 2px;
+  outline: 1.5px dashed var(--c-focus-ring);
+  outline-offset: 2px;
+  background: transparent;
+  font-weight: 700;
+  white-space: pre;
+  resize: none;
+  field-sizing: content;
+}
+
+.annot-text-input::placeholder {
+  color: var(--c-text-muted);
+  opacity: 0.8;
+}
+
+.annot-styles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.annot-swatch-row {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  align-items: center;
+  gap: 10px;
+}
