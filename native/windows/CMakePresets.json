@@ -1,0 +1,100 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "msvc-x64",
+      "displayName": "Windows x64 — MSVC, static CRT (/MT), Visual Studio generator",
+      "description": "Release build of OrbitDropHelper.exe and the core tests. Needs Visual Studio 2022+ with the C++ workload.",
+      "binaryDir": "${sourceDir}/build/msvc-x64",
+      "architecture": { "value": "x64", "strategy": "set" },
+      "cacheVariables": {
+        "ORBITDROP_BUILD_HELPER": "ON",
+        "ORBITDROP_BUILD_TESTS": "ON",
+        "ORBITDROP_STATIC_RUNTIME": "ON"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "ninja-msvc-x64",
+      "displayName": "Windows x64 — MSVC + Ninja (run from an x64 Native Tools prompt)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/ninja-msvc-x64",
+      "architecture": { "value": "x64", "strategy": "external" },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_COMPILER": "cl",
+        "CMAKE_RC_COMPILER": "rc",
+        "ORBITDROP_BUILD_HELPER": "ON",
+        "ORBITDROP_BUILD_TESTS": "ON",
+        "ORBITDROP_STATIC_RUNTIME": "ON"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "mingw-x64",
+      "displayName": "Cross compile for Windows x64 with MinGW-w64 (compile check, unverified binary)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/mingw-x64",
+      "toolchainFile": "${sourceDir}/cmake/mingw-w64-x86_64.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ORBITDROP_BUILD_HELPER": "ON",
+        "ORBITDROP_BUILD_TESTS": "ON",
+        "ORBITDROP_STATIC_RUNTIME": "ON",
+        "ORBITDROP_WARNINGS_AS_ERRORS": "ON"
+      },
+      "condition": { "type": "notEquals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "host-tests",
+      "displayName": "Portable core tests with the host compiler (macOS/Linux/Windows)",
+      "binaryDir": "${sourceDir}/build/host-tests",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ORBITDROP_BUILD_HELPER": "OFF",
+        "ORBITDROP_BUILD_TESTS": "ON",
+        "ORBITDROP_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "host-tests-asan",
+      "inherits": "host-tests",
+      "displayName": "Portable core tests with AddressSanitizer + UBSan (macOS/Linux)",
+      "binaryDir": "${sourceDir}/build/host-tests-asan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ORBITDROP_SANITIZE": "ON"
+      },
+      "condition": { "type": "notEquals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "msvc-x64-release", "configurePreset": "msvc-x64", "configuration": "Release" },
+    { "name": "ninja-msvc-x64", "configurePreset": "ninja-msvc-x64" },
+    { "name": "mingw-x64", "configurePreset": "mingw-x64" },
+    { "name": "host-tests", "configurePreset": "host-tests", "configuration": "Release" },
+    { "name": "host-tests-asan", "configurePreset": "host-tests-asan", "configuration": "Debug" }
+  ],
+  "testPresets": [
+    {
+      "name": "msvc-x64-release",
+      "configurePreset": "msvc-x64",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true }
+    },
+    { "name": "ninja-msvc-x64", "configurePreset": "ninja-msvc-x64", "output": { "outputOnFailure": true } },
+    {
+      "name": "host-tests",
+      "configurePreset": "host-tests",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "host-tests-asan",
+      "configurePreset": "host-tests-asan",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

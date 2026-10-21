@@ -1,0 +1,154 @@
+# Windows drag helper (native/windows): MSVC build + tests on Windows, portable
+# core tests and a MinGW-w64 compile check on Linux, protocol parity vs zod.
+# CI success is NOT a GUI verification of Explorer drags: see the manual
+# checklist in docs/workstreams/windows-helper.md.
+name: native-windows
+
+on:
+  push:
+    paths:
+      - 'native/windows/**'
+      - 'scripts/build-native-win.mjs'
+      - '.github/workflows/native-windows.yml'
+      - 'tests/fixtures/wheel-golden.json'
+      - 'packages/contracts/src/helper-protocol.ts'
+      - 'packages/contracts/design-tokens.json'
+      - 'packages/contracts/src/geometry.ts'
+      - 'packages/core/src/geometry.ts'
+      - 'packages/core/src/coords.ts'
+      - 'packages/core/src/selection.ts'
+  pull_request:
+    paths:
+      - 'native/windows/**'
+      - 'scripts/build-native-win.mjs'
+      - '.github/workflows/native-windows.yml'
+      - 'tests/fixtures/wheel-golden.json'
+      - 'packages/contracts/src/helper-protocol.ts'
+      - 'packages/contracts/design-tokens.json'
+      - 'packages/contracts/src/geometry.ts'
+      - 'packages/core/src/geometry.ts'
+      - 'packages/core/src/coords.ts'
+      - 'packages/core/src/selection.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-msvc:
+    name: Windows x64 · MSVC (/MT) · tests · smoke · snapshots
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Configure (CMake preset msvc-x64, static CRT)
+        working-directory: native/windows
+        run: cmake --preset msvc-x64
+
+      - name: Build OrbitDropHelper.exe and the core tests
+        working-directory: native/windows
+        run: cmake --build --preset msvc-x64-release --parallel
+
+      - name: Unit tests incl. golden vectors (tests/fixtures/wheel-golden.json, required)
+        working-directory: native/windows
+        # ctest runs `orbitdrop-core-tests --require-golden`: a missing golden file fails.
+        run: ctest --preset msvc-x64-release
+
+      - name: Golden sections summary
+        working-directory: native/windows
+        run: build/msvc-x64/Release/orbitdrop-core-tests.exe --require-golden --filter golden
+
+      - name: Build script (tests, stdio smoke test, snapshots, staging with BUILD_INFO.txt)
+        run: node scripts/build-native-win.mjs --arch x64
+
+      - name: Import table and PE flags (informational)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $vsw = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vsw -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $dumpbin = Get-ChildItem -Path "$vs\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe | Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+          & $dumpbin.FullName /nologo /dependents apps/desktop/resources/helper/win32-x64/OrbitDropHelper.exe
+          & $dumpbin.FullName /nologo /headers apps/desktop/resources/helper/win32-x64/OrbitDropHelper.exe | Select-String -Pattern 'subsystem|Dynamic base|NX compatible|High Entropy|Guard'
+
+      - name: Upload OrbitDropHelper.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrbitDropHelper-win32-x64
+          path: |
+            apps/desktop/resources/helper/win32-x64/OrbitDropHelper.exe
+            apps/desktop/resources/helper/win32-x64/BUILD_INFO.txt
+          if-no-files-found: error
+
+      - name: Upload wheel snapshots (Direct2D rendering on Windows)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-helper-snapshots
+          path: native/windows/build/msvc-x64/snapshots/*.png
+          if-no-files-found: warn
+
+  linux-portable:
+    name: Linux · portable core tests (GCC, ASan/UBSan) · MinGW compile check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Portable core tests incl. golden vectors
+        working-directory: native/windows
+        run: |
+          cmake --preset host-tests
+          cmake --build --preset host-tests --parallel
+          ctest --preset host-tests
+
+      - name: Portable core tests with AddressSanitizer + UBSan
+        working-directory: native/windows
+        run: |
+          cmake --preset host-tests-asan
+          cmake --build --preset host-tests-asan --parallel
+          ctest --preset host-tests-asan
+
+      - name: Install MinGW-w64
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mingw-w64
+
+      - name: MinGW-w64 cross compile (warnings as errors) + DLL import check
+        # Distribution MinGW headers can lag behind; the authoritative Windows
+        # build is the MSVC job above.
+        continue-on-error: true
+        run: node scripts/build-native-win.mjs --cross --no-stage
+
+  protocol-parity:
+    name: Protocol parity · C++ vs zod schemas
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install workspace dependencies (no Electron binary needed)
+        run: pnpm install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+      - name: Core tests + protocol parity (helper→main samples, fuzzed main→helper verdicts)
+        run: node scripts/build-native-win.mjs --core-tests --parity
