@@ -52,7 +52,14 @@ export interface WheelGeometry {
   readonly capsuleHeight: number;
   /** Center angle of sector 0. -90 = 12 o'clock. Sectors continue clockwise. */
   readonly startAngleDeg: number;
-  /** Transparent margin around the disc inside the native window (room for the shadow). */
+  /**
+   * Margin around the disc in core's reference `placeWheel().windowFrame`
+   * (kept for golden-vector parity). Native windows may size themselves
+   * differently: the macOS panel is the disc's bounding square plus a caption
+   * strip, with a window-server shadow; the Windows window keeps alpha 0
+   * outside the disc. What matters for drops is that pixels outside the disc
+   * are not hit-testable, so a release beside the ring reaches the app below.
+   */
   readonly windowMargin: number;
   /** Minimum distance between the disc edge and the display work-area edge. */
   readonly edgePadding: number;
