@@ -7,6 +7,7 @@ import { previewCrop } from './crop';
 import { previewEdit } from './edit';
 import { previewRedact } from './redact';
 import { getScaledSource } from './source-cache';
+import { previewThumbnail } from './thumbnail';
 
 /**
  * Editor previews. Every tool preview is rendered by the same code as the final
@@ -17,6 +18,9 @@ import { getScaledSource } from './source-cache';
  * 'source': the oriented image fitted into maxEdge (never upscaled), sRGB,
  * JPEG (quality 90) or PNG when it has transparent pixels; sourceWidth/Height
  * are the oriented full-size dimensions for mapping editor coordinates.
+ * 'thumbnail' (thumbnail.ts): the same kind of image for file lists, decoded
+ * without the cache. Tool previews report `outputFormat`, the format the job
+ * would write. `estimateOnly` is accepted by 'tool.compress' only.
  */
 export async function previewSource(request: PreviewRequest, signal: AbortSignal): Promise<PreviewResult> {
   try {
@@ -41,9 +45,12 @@ export async function renderToolPreview(request: PreviewRequest, ctx: { readonly
   throwIfCancelled(signal);
   requireImageInput(request.input);
   if (!Number.isFinite(request.maxEdge) || request.maxEdge < 1) throw new OrbitError('INVALID_OPTIONS', 'Preview size must be positive');
+  if (request.estimateOnly === true && request.kind !== 'tool.compress') throw new OrbitError('INVALID_OPTIONS', 'Only Compress previews can be estimate-only');
   switch (request.kind) {
     case 'source':
       return previewSource(request, signal);
+    case 'thumbnail':
+      return previewThumbnail(request, signal);
     case 'tool.addBackground':
       return previewAddBackground(request, signal);
     case 'tool.crop':

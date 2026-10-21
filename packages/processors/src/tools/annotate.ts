@@ -1,5 +1,5 @@
 import type { OverlayOptions } from 'sharp';
-import type { AnnotationShape, PreviewRequest, PreviewResult, ProcessorJob, ProcessorResult, ProcessorRunContext } from '@orbitdrop/contracts';
+import type { AnnotationShape, JobWarning, PreviewRequest, PreviewResult, ProcessorJob, ProcessorResult, ProcessorRunContext } from '@orbitdrop/contracts';
 import { annotationBounds, drawAnnotations } from '@orbitdrop/core';
 import {
   encodePreview,
@@ -7,18 +7,19 @@ import {
   loadImage,
   parseToolOptions,
   regionHasTransparency,
-  resolveToolFormat,
+  requireImageInput,
   sharpFromRaw,
   singleInput,
   stage,
   throwIfCancelled,
   toRaw,
   toToolError,
+  toolOutputFormat,
   writeToolOutput,
   type LoadedImage,
 } from './common';
 import { clipBox, clusterBoxes } from './boxes';
-import { loadCanvas, resolveAnnotationFont } from './fonts';
+import { checkTextCoverage, loadCanvas, resolveAnnotationFont, type AnnotationFont } from './fonts';
 import { needsProfileConversion, srgbToProfile, withProfileFile } from './profile';
 import { getScaledSource } from './source-cache';
 
@@ -93,6 +94,31 @@ function tileOverlays(tiles: readonly OverlayTile[]): OverlayOptions[] {
   return tiles.map((t) => ({ input: t.data, raw: { width: t.width, height: t.height, channels: 4 as const }, left: t.left, top: t.top }));
 }
 
+/**
+ * ANNOTATION_FONT_FALLBACK when text characters cannot be drawn with the font
+ * stack the export uses (no Hangul-capable font installed, or a script/emoji
+ * no font covers). Jobs and previews both report it, so the editor can show a
+ * notice before saving. Params are counts only, never the text.
+ */
+export async function annotationFontWarnings(shapes: readonly AnnotationShape[], font: AnnotationFont): Promise<JobWarning[]> {
+  const texts = shapes.flatMap((s) => (s.type === 'text' ? [s.text] : []));
+  if (texts.length === 0) return [];
+  const coverage = await checkTextCoverage(texts, font.css);
+  if (coverage.missing === 0) return [];
+  return [
+    {
+      code: 'ANNOTATION_FONT_FALLBACK',
+      params: {
+        font: font.family ?? 'sans-serif',
+        characters: coverage.missing,
+        shapes: coverage.shapes,
+        unreadable: coverage.unreadableShapes,
+        hangul: coverage.hangul ? 1 : 0,
+      },
+    },
+  ];
+}
+
 export async function runAnnotate(job: ProcessorJob, ctx: ProcessorRunContext): Promise<ProcessorResult> {
   const { signal } = ctx;
   const input = singleInput(job);
@@ -100,10 +126,12 @@ export async function runAnnotate(job: ProcessorJob, ctx: ProcessorRunContext): 
   try {
     stage(ctx.onProgress, 'reading');
     const image = await loadImage(input, job.limits, signal);
-    const format = await resolveToolFormat(options.outputFormat, input.format);
+    const format = await toolOutputFormat(options.outputFormat, input.format);
     throwIfCancelled(signal);
     stage(ctx.onProgress, 'rendering');
-    const tiles = await tilesForImage(await renderAnnotationTiles(options.shapes, image.width, image.height, 1, (await resolveAnnotationFont()).css), image);
+    const font = await resolveAnnotationFont();
+    const fontWarnings = await annotationFontWarnings(options.shapes, font);
+    const tiles = await tilesForImage(await renderAnnotationTiles(options.shapes, image.width, image.height, 1, font.css), image);
     throwIfCancelled(signal);
     stage(ctx.onProgress, 'encoding');
     const overlays = tileOverlays(tiles);
@@ -121,7 +149,8 @@ export async function runAnnotate(job: ProcessorJob, ctx: ProcessorRunContext): 
       flattenBackground: '#FFFFFF',
       keepIcc: image.keepIcc,
     });
-    const warnings = encoded.flattened && (await regionHasTransparency(image)) ? [{ code: 'ALPHA_FLATTENED' as const, params: { background: '#FFFFFF' } }] : [];
+    const warnings: JobWarning[] = [...fontWarnings];
+    if (encoded.flattened && (await regionHasTransparency(image))) warnings.push({ code: 'ALPHA_FLATTENED', params: { background: '#FFFFFF' } });
     stage(ctx.onProgress, 'writing');
     const output = await writeToolOutput(job, input, encoded, signal);
     return { outputs: [output], warnings };
@@ -137,7 +166,9 @@ export async function previewAnnotate(request: PreviewRequest, signal: AbortSign
     const source = await getScaledSource(request.input, request.limits, () => maxEdge, signal);
     throwIfCancelled(signal);
     const scale = source.width / source.sourceWidth;
-    const tiles = await renderAnnotationTiles(options.shapes, source.width, source.height, scale, (await resolveAnnotationFont()).css);
+    const font = await resolveAnnotationFont();
+    const warnings = await annotationFontWarnings(options.shapes, font);
+    const tiles = await renderAnnotationTiles(options.shapes, source.width, source.height, scale, font.css);
     const raw = tiles.length > 0 ? await toRaw(sharpFromRaw(source).composite(tileOverlays(tiles))) : source;
     const preview = await encodePreview(raw);
     return {
@@ -146,6 +177,8 @@ export async function previewAnnotate(request: PreviewRequest, signal: AbortSign
       sourceHeight: source.sourceHeight,
       outputWidth: source.sourceWidth,
       outputHeight: source.sourceHeight,
+      outputFormat: await toolOutputFormat(options.outputFormat, requireImageInput(request.input).format),
+      ...(warnings.length > 0 ? { warnings } : {}),
     };
   } catch (error) {
     throw toToolError(error, signal);

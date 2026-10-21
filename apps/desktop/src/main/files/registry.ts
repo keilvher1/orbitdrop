@@ -183,6 +183,28 @@ export class FileRegistry {
     return selection;
   }
 
+  /**
+   * Validate files again without registering anything (retryJob: a file may be
+   * gone, replaced or still a cloud placeholder since the job ran). Same
+   * validator, time limit, concurrency and hung-read accounting as
+   * registration. Rejects with the error of the earliest failing file; files
+   * after a failure are not read.
+   */
+  async revalidate(paths: readonly string[]): Promise<ValidatedInput[]> {
+    const failures = new Map<number, unknown>();
+    const inputs = await mapLimit(paths, this.concurrency, async (path, index) => {
+      if (failures.size > 0) return null;
+      try {
+        return await this.validate(path);
+      } catch (error) {
+        failures.set(index, error);
+        return null;
+      }
+    });
+    if (failures.size > 0) throw failures.get(Math.min(...failures.keys()));
+    return inputs as ValidatedInput[];
+  }
+
   /** Validate one standalone file (e.g. a background image). Throws OrbitError when it cannot be used. */
   async registerFile(path: string): Promise<UsableFile> {
     const input = await this.validate(path);

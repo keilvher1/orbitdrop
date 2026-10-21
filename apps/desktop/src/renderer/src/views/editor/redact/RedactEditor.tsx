@@ -1,5 +1,5 @@
 import type { EditorContext, RedactRegion } from '@orbitdrop/contracts';
-import { Grid3x3, Trash2 } from 'lucide-react';
+import { Grid3x3, Plus, Trash2 } from 'lucide-react';
 import {
   useCallback,
   useId,
@@ -38,7 +38,7 @@ import './redact.css';
 type RedactStyle = RedactRegion['style'];
 
 /** Height kept free for the title bar, controls, notices and footer. */
-const RESERVED = 420;
+const RESERVED = 440;
 export const REDACT_COLORS: readonly string[] = ['#000000', '#FFFFFF', '#808080'];
 export const BLOCK_SIZE = { min: 4, max: 256, initial: 16 } as const;
 /** A pointer that moved less than this (view px) is a click, not a drag. */
@@ -90,9 +90,11 @@ function withAlpha(hex: string, alpha: number): string {
  * "Save Redacted".
  */
 export function RedactEditor({ ctx, title }: { readonly ctx: EditorContext; readonly title: string }) {
-  const { t } = useEnv();
+  const { t, platform } = useEnv();
   const commit = useEditorCommit(ctx.editorId);
   const helpId = useId();
+  const keysHelpId = useId();
+  const [announcement, setAnnouncement] = useState('');
   const orientedWidth = Math.max(1, ctx.image.orientedWidth);
   const orientedHeight = Math.max(1, ctx.image.orientedHeight);
   const bounds = useMemo(() => ({ width: orientedWidth, height: orientedHeight }), [orientedWidth, orientedHeight]);
@@ -300,6 +302,25 @@ export function RedactEditor({ ctx, title }: { readonly ctx: EditorContext; read
     if (selected !== null) updateRegion(selected.id, { blockSize: value });
   };
 
+  const altKey = platform === 'darwin' ? 'Option' : 'Alt';
+
+  /**
+   * "Add region" (keyboard users): a region in the centre of the image, in the
+   * current style, selected, with focus on the canvas — the arrow keys move it
+   * and Alt/Option+arrows resize it.
+   */
+  const insertRegion = () => {
+    if (regionsRef.current.length >= 200) return;
+    const half = { x: display.width / 6, y: Math.max(6, display.height / 16) };
+    const center = { x: display.width / 2, y: display.height / 2 };
+    const rect = rectFromPoints(viewToSource({ x: center.x - half.x, y: center.y - half.y }, mapping), viewToSource({ x: center.x + half.x, y: center.y + half.y }, mapping), 'free', bounds);
+    const region: RedactRegion = { id: newShapeId('r'), rect, style, color, blockSize };
+    setRegions([...regionsRef.current, region]);
+    setSelectedId(region.id);
+    surfaceRef.current?.focus({ preventScroll: true });
+    setAnnouncement(t('redact.added', { alt: altKey }));
+  };
+
   const reset = () => {
     setRegions([]);
     setSelectedId(null);
@@ -332,6 +353,7 @@ export function RedactEditor({ ctx, title }: { readonly ctx: EditorContext; read
       onReset={reset}
       resetDisabled={regions.length === 0}
       footerNote={regions.length === 0 ? t('redact.empty') : undefined}
+      confirmClose={regions.length > 0 ? { message: t('redact.unsaved') } : null}
     >
       <Stage display={display} pending={preview.pending && options !== null}>
         <img src={imageUrl} alt={options !== null ? t('editor.previewAlt') : t('editor.sourceAlt')} draggable={false} />
@@ -355,7 +377,7 @@ export function RedactEditor({ ctx, title }: { readonly ctx: EditorContext; read
           className="redact-surface"
           role="application"
           aria-label={t('redact.canvasLabel')}
-          aria-describedby={helpId}
+          aria-describedby={`${helpId} ${keysHelpId}`}
           tabIndex={0}
           style={{ cursor: gesture?.kind === 'move' ? 'grabbing' : hoverCursor }}
           onPointerDown={onPointerDown}
@@ -368,9 +390,12 @@ export function RedactEditor({ ctx, title }: { readonly ctx: EditorContext; read
 
       <PreviewError error={preview.error} />
 
-      {regions.length > 0 ? (
-        <div className="redact-list" role="group" aria-label={t('redact.regions')}>
-          {regions.map((region, index) => (
+      <div className="redact-list" role="group" aria-label={t('redact.regions')}>
+        <button type="button" className="btn btn-small redact-add" aria-describedby={keysHelpId} onClick={insertRegion}>
+          <Plus size={13} aria-hidden="true" />
+          {t('redact.add')}
+        </button>
+        {regions.map((region, index) => (
             <button
               key={region.id}
               type="button"
@@ -388,6 +413,7 @@ export function RedactEditor({ ctx, title }: { readonly ctx: EditorContext; read
               <span className="redact-list-style">{styleLabel(region.style)}</span>
             </button>
           ))}
+        {regions.length > 0 ? (
           <button
             type="button"
             className="btn-icon"
@@ -400,8 +426,8 @@ export function RedactEditor({ ctx, title }: { readonly ctx: EditorContext; read
           >
             <Trash2 size={15} aria-hidden="true" />
           </button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
 
       <div className="redact-controls">
         <div className="field-row">
@@ -438,7 +464,13 @@ export function RedactEditor({ ctx, title }: { readonly ctx: EditorContext; read
 
       <div className="editor-meta">
         <span id={helpId}>{t('redact.help')}</span>
+        <span id={keysHelpId} className="visually-hidden">
+          {t('redact.keysHelp', { alt: altKey })}
+        </span>
         <strong aria-live="polite">{t.plural('redact.count', regions.length)}</strong>
+        <span className="visually-hidden" aria-live="polite" aria-atomic="true">
+          {announcement}
+        </span>
       </div>
     </EditorFrame>
   );

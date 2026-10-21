@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { _electron as electron, expect, type ElectronApplication, type Page } from '@playwright/test';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import sharp from 'sharp';
-import type { ActionId, FileSelection, JobSnapshot, WheelMode, WindowContext, WindowKind } from '@orbitdrop/contracts';
+import type { ActionId, ErrorCode, FileSelection, JobSnapshot, SubmitActionResult, WheelMode, WindowContext, WindowKind } from '@orbitdrop/contracts';
 
 // apps/desktop is a CommonJS package, so Playwright compiles these files to CJS (__dirname/require exist).
 export const appDir = resolve(__dirname, '..');
@@ -67,6 +67,10 @@ type Hooks = {
   outputPath(outputId: string): string | null;
   updateSettings(patch: unknown): Promise<unknown>;
   trayMenu(): string[] | null;
+  submit(paths: string[], actionId: ActionId, options?: unknown): Promise<SubmitActionResult>;
+  failNextJobs(codes: ErrorCode[]): Promise<void>;
+  holdNextJob(): Promise<void>;
+  releaseHeldJobs(): Promise<number>;
 };
 
 export function hooks(app: ElectronApplication) {
@@ -88,6 +92,13 @@ export function hooks(app: ElectronApplication) {
     outputPath: (outputId: string) => call<string | null>('outputPath', outputId),
     updateSettings: (patch: unknown) => call<unknown>('updateSettings', patch),
     trayMenu: () => call<string[] | null>('trayMenu'),
+    /** Register files and submit an action (as if chosen in a picker). */
+    submit: (paths: string[], actionId: ActionId, options?: unknown) => call<SubmitActionResult>('submit', paths, actionId, ...(options === undefined ? [] : [options])),
+    /** The next job attempts fail with these codes (E2E fault injection in main). */
+    failNextJobs: (codes: ErrorCode[]) => call<void>('failNextJobs', codes),
+    /** The next job attempt stays 'running' until releaseHeldJobs() or a cancel. */
+    holdNextJob: () => call<void>('holdNextJob'),
+    releaseHeldJobs: () => call<number>('releaseHeldJobs'),
   };
 }
 

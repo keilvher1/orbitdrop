@@ -82,8 +82,13 @@ export interface ProcessorResult {
   readonly warnings: readonly JobWarning[];
 }
 
-/** 'source' = oriented source image downscaled for an editor canvas. Other kinds preview a tool's effect. */
-export type PreviewKind = 'source' | 'tool.addBackground' | 'tool.edit' | 'tool.compress' | 'tool.redact' | 'tool.annotate' | 'tool.crop';
+/**
+ * 'source' = oriented source image downscaled for an editor canvas.
+ * 'thumbnail' = a small oriented sRGB image of an input for file lists (added
+ * later; decoded without filling the editors' source cache, options ignored).
+ * Other kinds preview a tool's effect.
+ */
+export type PreviewKind = 'source' | 'thumbnail' | 'tool.addBackground' | 'tool.edit' | 'tool.compress' | 'tool.redact' | 'tool.annotate' | 'tool.crop';
 
 export interface PreviewRequest {
   readonly previewId: string;
@@ -95,6 +100,13 @@ export interface PreviewRequest {
   readonly settings: ProcessorSettings;
   readonly limits: ProcessingLimits;
   readonly assets?: Readonly<Record<string, ProcessorInput>>;
+  /**
+   * 'tool.compress' only (added later; other kinds reject it with
+   * INVALID_OPTIONS): report estimatedBytes / output size / format without
+   * rendering an image — `data` is then empty and width/height are 0. Used for
+   * the per-file estimates of a batch.
+   */
+  readonly estimateOnly?: boolean;
 }
 
 export interface PreviewResult {
@@ -112,6 +124,18 @@ export interface PreviewResult {
   readonly estimatedBytes?: number;
   /** Add Background: layout of the final output, in final output pixels. */
   readonly layout?: CompositionLayout;
+  /**
+   * Tool previews: format the final output would be written in — what 'input'
+   * resolves to, encoder fallbacks included (e.g. Compress HEIC → JPEG,
+   * GIF → PNG). Optional (added later).
+   */
+  readonly outputFormat?: FileFormat;
+  /**
+   * Tool previews: warnings the job would report for these options, so the
+   * editor can show a notice before saving (e.g. ANNOTATION_FONT_FALLBACK).
+   * Omitted when there are none. Optional (added later).
+   */
+  readonly warnings?: readonly JobWarning[];
 }
 
 export interface ExifSummary {

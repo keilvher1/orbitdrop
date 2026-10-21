@@ -320,6 +320,24 @@ function demoJobs(now: number): JobSnapshot[] {
       error: { code: 'PDF_NO_TEXT', message: 'no text', retryable: false },
     }),
     base({ jobId: 'j-cancel', actionId: 'convert.avif', inputName: 'IMG_2041.jpg', state: 'cancelled', createdAt: now - 360_000, finishedAt: now - 359_000 }),
+    base({
+      jobId: 'j-fail-timeout',
+      actionId: 'convert.png',
+      inputName: 'huge-scan.pdf',
+      state: 'failed',
+      createdAt: now - 400_000,
+      finishedAt: now - 280_000,
+      error: { code: 'TIMEOUT', message: 'Job timed out', retryable: true },
+    }),
+    base({
+      jobId: 'j-fail-disk',
+      actionId: 'tool.compress',
+      inputName: 'IMG_2042.jpg',
+      state: 'failed',
+      createdAt: now - 420_000,
+      finishedAt: now - 419_000,
+      error: { code: 'DISK_FULL', message: 'ENOSPC', retryable: true },
+    }),
   ];
 }
 
@@ -645,6 +663,53 @@ export function createMockOrbit(scenario: MockScenario): OrbitApi {
     async openExternal(url) {
       notifyHarness(`openExternal(${url})`);
       return true;
+    },
+    async getEditorThumbnail(request) {
+      const editor = editors.get(request.editorId);
+      if (!editor) throw new Error('INTERNAL: Unknown or closed editor');
+      const { ctx } = await editor;
+      const index = ctx.files.findIndex((f) => f.fileId === request.fileId);
+      const selected = ctx.files[index];
+      if (selected === undefined) throw new Error('INVALID_OPTIONS: Unknown file');
+      if (scenario.latency > 0) await delay(scenario.latency * (0.5 + index * 0.3));
+      const edge = Math.min(160, request.maxEdge ?? 96);
+      const portrait = index % 3 === 2;
+      const width = portrait ? Math.round(edge * 0.75) : edge;
+      const height = portrait ? edge : Math.round(edge * 0.75);
+      const canvas = selected.format === 'png' ? logoImage(width, height) : index % 2 === 0 ? photoImage(width, height) : documentImage(width, height);
+      const { url } = await canvasUrl(canvas, 'image/jpeg', 0.85);
+      return { fileId: selected.fileId, url, width, height };
+    },
+    async requestEstimate(request) {
+      const editor = editors.get(request.editorId);
+      if (!editor) return { ok: false, seq: request.seq, fileId: request.fileId, error: { code: 'INTERNAL', message: 'Unknown editor', retryable: false } };
+      const { ctx } = await editor;
+      const selected = ctx.files.find((f) => f.fileId === request.fileId);
+      if (selected === undefined) return { ok: false, seq: request.seq, fileId: request.fileId, error: { code: 'INVALID_OPTIONS', message: 'Unknown file', retryable: false } };
+      if (scenario.latency > 0) await delay(scenario.latency * (1 + Math.random() * 2));
+      const options = (request.options ?? {}) as { format?: string; quality?: number; pngMode?: string };
+      const input = (selected.format ?? 'jpeg') as FileFormat;
+      const format: FileFormat = options.format === 'jpeg' || options.format === 'webp' || options.format === 'png' ? options.format : input;
+      const factor = format === 'png' ? (options.pngMode === 'lossless' ? 1.04 : 0.55) : 0.12 + ((options.quality ?? 75) / 100) * 0.7;
+      return { ok: true, seq: request.seq, fileId: selected.fileId, estimatedBytes: Math.round(selected.bytes * factor), outputFormat: format };
+    },
+    async clearFinishedJobs(request) {
+      const upTo = request?.finishedUpTo ?? Number.POSITIVE_INFINITY;
+      const before = jobs.length;
+      jobs = jobs.filter((j) => !TERMINAL_JOB_STATES.has(j.state) || (j.finishedAt ?? j.createdAt) > upTo);
+      notifyHarness(`clearFinishedJobs() removed ${before - jobs.length}`);
+      emitJobs();
+      return before - jobs.length;
+    },
+    async retryJob(jobId) {
+      notifyHarness(`retryJob(${jobId})`);
+      const job = jobs.find((j) => j.jobId === jobId);
+      if (!job) return { kind: 'rejected', error: { code: 'FILE_NOT_FOUND', message: 'The job is no longer available', retryable: false } };
+      const newId = nextId('job');
+      jobs = [{ ...job, jobId: newId, state: 'queued', error: null, createdAt: Date.now(), startedAt: null, finishedAt: null }, ...jobs];
+      runJob(newId, 3, () => ({ outputs: [{ outputId: nextId('out'), name: job.inputName.replace(/\.[^.]+$/, '.png'), dirDisplay: 'Desktop', format: 'png', bytes: 980_000 }] }));
+      emitJobs();
+      return { kind: 'jobs', jobIds: [newId] };
     },
   };
   return api;

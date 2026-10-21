@@ -1,12 +1,165 @@
-import type { ConvertOptions, EditorContext, SelectedFile } from '@orbitdrop/contracts';
+import { THUMBNAIL_MAX_EDGE, type ConvertOptions, type EditorContext, type SelectedFile } from '@orbitdrop/contracts';
 import { ChevronDown, ChevronUp, FileImage, GripVertical } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 import { useEnv } from '../../../app/env';
 import { Segmented } from '../../../components/Segmented';
 import { formatBytes } from '../../../i18n/format';
 import { EditorFrame, useEditorCommit } from '../EditorFrame';
 import { isBoolean, isNumber, isOneOf, isRecord, isString, pick } from '../editorKit';
 import './pdf.css';
+
+/** Thumbnail box in CSS px (the image is fitted inside, never cropped). */
+export const THUMB_BOX = 40;
+/** Rows this far outside the visible part of the list already get their thumbnail. */
+const THUMB_ROOT_MARGIN = '120px 0px';
+
+/** Longest edge to request: the box in device pixels (at most 2×), capped by main's limit. */
+export function thumbnailEdge(devicePixelRatio: number): number {
+  const dpr = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? Math.min(devicePixelRatio, 2) : 1;
+  return Math.min(THUMBNAIL_MAX_EDGE, Math.max(16, Math.round(THUMB_BOX * dpr)));
+}
+
+/** CSS size of a thumbnail of `width`×`height` device px inside the box (only ever scaled down). */
+export function fitThumbnail(width: number, height: number): { width: number; height: number } {
+  const k = Math.min(1, THUMB_BOX / Math.max(1, width, height));
+  return { width: Math.max(1, width * k), height: Math.max(1, height * k) };
+}
+
+export type ThumbState =
+  | { readonly status: 'loading' }
+  | { readonly status: 'ready'; readonly url: string; readonly width: number; readonly height: number }
+  | { readonly status: 'failed' };
+
+/**
+ * Per-file thumbnails of an editor (getEditorThumbnail), requested once per
+ * file and kept for the editor's lifetime, so reordering never fetches again.
+ * An image that fails to load (its preview token expired) may be requested one
+ * more time; answers that arrive after unmount are dropped.
+ */
+export function useEditorThumbnails(editorId: string, maxEdge: number) {
+  const { orbit } = useEnv();
+  const [thumbs, setThumbs] = useState<ReadonlyMap<string, ThumbState>>(() => new Map());
+  const attempts = useRef(new Map<string, number>());
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const set = useCallback((fileId: string, state: ThumbState) => {
+    setThumbs((current) => {
+      const next = new Map(current);
+      next.set(fileId, state);
+      return next;
+    });
+  }, []);
+
+  /** Request a file's thumbnail; `retry` allows the one extra attempt after its image failed to load. */
+  const request = useCallback(
+    (fileId: string, retry = false) => {
+      const count = attempts.current.get(fileId) ?? 0;
+      if (count >= (retry ? 2 : 1)) {
+        if (retry) set(fileId, { status: 'failed' });
+        return;
+      }
+      attempts.current.set(fileId, count + 1);
+      set(fileId, { status: 'loading' });
+      orbit.getEditorThumbnail({ editorId, fileId, maxEdge }).then(
+        (thumb) => {
+          if (mounted.current) set(fileId, { status: 'ready', url: thumb.url, width: thumb.width, height: thumb.height });
+        },
+        () => {
+          if (mounted.current) set(fileId, { status: 'failed' });
+        },
+      );
+    },
+    [orbit, editorId, maxEdge, set],
+  );
+
+  return { thumbs, request };
+}
+
+/**
+ * Calls `onVisible(fileId)` once an observed row's thumbnail cell comes near the
+ * visible part of the scrolling list (IntersectionObserver rooted at the list).
+ * Without IntersectionObserver every row counts as visible at once.
+ */
+function useLazyRows(listRef: React.RefObject<HTMLElement | null>, onVisible: (fileId: string) => void) {
+  const observer = useRef<IntersectionObserver | null>(null);
+  const watched = useRef(new Map<Element, string>());
+  const visible = useRef(onVisible);
+  visible.current = onVisible;
+
+  useEffect(
+    () => () => {
+      observer.current?.disconnect();
+      observer.current = null;
+      watched.current.clear();
+    },
+    [],
+  );
+
+  return useCallback(
+    (fileId: string, element: Element): (() => void) => {
+      if (typeof IntersectionObserver !== 'function') {
+        visible.current(fileId);
+        return () => undefined;
+      }
+      observer.current ??= new IntersectionObserver(
+        (entries, self) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            const id = watched.current.get(entry.target);
+            self.unobserve(entry.target);
+            watched.current.delete(entry.target);
+            if (id !== undefined) visible.current(id);
+          }
+        },
+        { root: listRef.current, rootMargin: THUMB_ROOT_MARGIN },
+      );
+      watched.current.set(element, fileId);
+      observer.current.observe(element);
+      return () => {
+        watched.current.delete(element);
+        observer.current?.unobserve(element);
+      };
+    },
+    [listRef],
+  );
+}
+
+/** Thumbnail cell of a row: the file icon until the image is ready (and if it cannot be shown). */
+function PdfThumb({
+  fileId,
+  state,
+  watch,
+  onImageError,
+}: {
+  readonly fileId: string;
+  readonly state: ThumbState | undefined;
+  readonly watch: (fileId: string, element: Element) => () => void;
+  readonly onImageError: (fileId: string) => void;
+}) {
+  const cell = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const element = cell.current;
+    return element === null ? undefined : watch(fileId, element);
+  }, [fileId, watch]);
+  const ready = state?.status === 'ready' ? state : null;
+  const size = ready === null ? null : fitThumbnail(ready.width, ready.height);
+  return (
+    <span ref={cell} className="pdf-thumb" data-thumb={state?.status ?? 'idle'} aria-hidden="true">
+      {ready !== null && size !== null ? (
+        <img src={ready.url} alt="" draggable={false} style={{ width: size.width, height: size.height }} onError={() => onImageError(fileId)} />
+      ) : (
+        <FileImage size={16} className="pdf-icon" />
+      )}
+    </span>
+  );
+}
 
 type PageSize = ConvertOptions['pageSize'];
 export type MarginChoice = 'none' | 'narrow' | 'normal';
@@ -81,6 +234,11 @@ export function PdfOrderEditor({ ctx, title }: { readonly ctx: EditorContext; re
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const rowRefs = useRef(new Map<string, HTMLLIElement>());
   const focusAfterMove = useRef<string | null>(null);
+  const listRef = useRef<HTMLOListElement>(null);
+  const thumbEdge = thumbnailEdge(typeof window !== 'undefined' ? window.devicePixelRatio : 1);
+  const { thumbs, request: requestThumb } = useEditorThumbnails(ctx.editorId, thumbEdge);
+  const watchThumb = useLazyRows(listRef, requestThumb);
+  const onThumbError = useCallback((fileId: string) => requestThumb(fileId, true), [requestThumb]);
 
   useEffect(() => {
     const id = focusAfterMove.current;
@@ -158,7 +316,7 @@ export function PdfOrderEditor({ ctx, title }: { readonly ctx: EditorContext; re
           {t('pdf.order')}
         </h2>
         <p className="pdf-help muted">{t('pdf.help')}</p>
-        <ol className="pdf-list" aria-labelledby={`${ctx.editorId}-order`}>
+        <ol ref={listRef} className="pdf-list" aria-labelledby={`${ctx.editorId}-order`}>
           {order.map((id, index) => {
             const file = files.get(id);
             const name = nameOf(id);
@@ -190,7 +348,7 @@ export function PdfOrderEditor({ ctx, title }: { readonly ctx: EditorContext; re
               >
                 <GripVertical size={14} className="pdf-grip" aria-hidden="true" />
                 <span className="pdf-page tabular">{t('pdf.page', { n: index + 1 })}</span>
-                <FileImage size={16} className="pdf-icon" aria-hidden="true" />
+                <PdfThumb fileId={id} state={thumbs.get(id)} watch={watchThumb} onImageError={onThumbError} />
                 <span className="pdf-name" title={name}>
                   {name}
                 </span>

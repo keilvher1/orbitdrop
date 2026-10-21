@@ -1,4 +1,4 @@
-import type { CropOptions, JobWarning, PreviewRequest, PreviewResult, ProcessorJob, ProcessorResult, ProcessorRunContext } from '@orbitdrop/contracts';
+import { FORMAT_INFO, type CropOptions, type JobWarning, type PreviewRequest, type PreviewResult, type ProcessorJob, type ProcessorResult, type ProcessorRunContext } from '@orbitdrop/contracts';
 import {
   encodePreview,
   encodeToolImage,
@@ -6,13 +6,14 @@ import {
   loadImage,
   parseToolOptions,
   regionHasTransparency,
-  resolveToolFormat,
+  requireImageInput,
   sharpFromRaw,
   singleInput,
   stage,
   throwIfCancelled,
   toRaw,
   toToolError,
+  toolOutputFormat,
   writeToolOutput,
   type RawImage,
 } from './common';
@@ -46,7 +47,7 @@ export async function runCrop(job: ProcessorJob, ctx: ProcessorRunContext): Prom
     const image = await loadImage(input, job.limits, signal);
     assertRectInside(options.rect, image.width, image.height);
     const region = { left: options.rect.x, top: options.rect.y, width: options.rect.width, height: options.rect.height };
-    const format = await resolveToolFormat(options.outputFormat, input.format);
+    const format = await toolOutputFormat(options.outputFormat, input.format);
     throwIfCancelled(signal);
 
     stage(ctx.onProgress, 'encoding');
@@ -114,7 +115,9 @@ export async function previewCrop(request: PreviewRequest, signal: AbortSignal):
           .ensureAlpha(),
       );
     }
-    const flatten = options.outputFormat === 'jpeg' || (options.outputFormat === 'input' && request.input.format === 'jpeg');
+    const outputFormat = await toolOutputFormat(options.outputFormat, requireImageInput(request.input).format);
+    // Formats without alpha (JPEG) get the same flattening as the job.
+    const flatten = !FORMAT_INFO[outputFormat].alpha;
     const shown = flatten ? await toRaw(sharpFromRaw(raw).flatten({ background: options.flattenBackground }).ensureAlpha()) : raw;
     const preview = await encodePreview(shown);
     return {
@@ -123,6 +126,7 @@ export async function previewCrop(request: PreviewRequest, signal: AbortSignal):
       sourceHeight: size.height,
       outputWidth: rect.width,
       outputHeight: rect.height,
+      outputFormat,
     };
   } catch (error) {
     throw toToolError(error, signal);

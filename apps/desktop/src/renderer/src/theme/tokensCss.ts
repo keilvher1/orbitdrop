@@ -9,7 +9,20 @@ import { DESIGN_TOKENS, type ThemeName } from '@orbitdrop/contracts';
  * The same JSON feeds the native helpers, so the wheel looks the same everywhere.
  */
 
-export const THEMES: readonly ThemeName[] = ['light', 'dark', 'highContrast'];
+/**
+ * Colour sets the renderer styles: the contracts' ThemeName (what main and the
+ * native helpers know) plus the renderer-only dark high-contrast set
+ * (color.highContrastDark: white on black), used when high contrast applies
+ * while the OS is in dark mode. The native wheel keeps color.highContrast.
+ */
+export type RendererTheme = ThemeName | 'highContrastDark';
+
+export const THEMES: readonly RendererTheme[] = ['light', 'dark', 'highContrast', 'highContrastDark'];
+
+/** Themes drawn light-on-dark (CSS color-scheme: dark). */
+export function isDarkTheme(theme: RendererTheme): boolean {
+  return theme === 'dark' || theme === 'highContrastDark';
+}
 
 export function kebab(name: string): string {
   return name.replace(/[A-Z]/g, (ch) => `-${ch.toLowerCase()}`);

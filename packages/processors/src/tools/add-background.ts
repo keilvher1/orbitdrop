@@ -270,6 +270,8 @@ export async function previewAddBackground(request: PreviewRequest, signal: Abor
       outputWidth: layout.canvas.width,
       outputHeight: layout.canvas.height,
       layout,
+      // PNG and JPEG are always encodable: the job writes exactly this format.
+      outputFormat: options.format,
     };
   } catch (error) {
     throw toToolError(error, signal);

@@ -15,8 +15,23 @@ import { SliderField } from '../../../components/SliderField';
 import { formatBytes, percentChange } from '../../../i18n/format';
 import { fitSize } from '../crop/cropMath';
 import { EditorFrame, useEditorCommit, type EditorCommit } from '../EditorFrame';
-import { MultiFileNote, PreviewError, Stage, isBoolean, isNumber, isOneOf, pick, previewEdgeFor, useDecodedPreview, usePreviewBox } from '../editorKit';
+import {
+  FormatResolvedNote,
+  MultiFileNote,
+  PreviewError,
+  Stage,
+  isBoolean,
+  isNumber,
+  isOneOf,
+  pick,
+  previewEdgeFor,
+  useDecodedPreview,
+  usePreviewBox,
+  type FormatChange,
+} from '../editorKit';
 import { usePreview } from '../usePreview';
+import { BatchTotals, EstimateList, signedPercent } from './CompressBatch';
+import { summarizeEstimates, useBatchEstimates } from './useBatchEstimates';
 import './compress.css';
 
 type CompressFormat = CompressOptions['format'];
@@ -59,15 +74,30 @@ export function compressOptions(state: CompressState): CompressOptions {
   };
 }
 
-/** Format the result will have. */
+/**
+ * Format the result is expected to have. 'input' follows the processors' rule
+ * (tools/compress.ts resolveCompressFormat): JPEG/PNG/WebP/AVIF keep their
+ * format, HEIC → JPEG, TIFF/BMP/GIF → PNG. The preview's `outputFormat` is
+ * authoritative (e.g. AVIF → WebP when this build cannot encode AVIF) and
+ * replaces this guess once it arrives.
+ */
 export function effectiveFormat(format: CompressFormat, input: FileFormat): FileFormat {
-  return format === 'input' ? input : format;
+  if (format !== 'input') return format;
+  switch (input) {
+    case 'heic':
+      return 'jpeg';
+    case 'tiff':
+    case 'bmp':
+    case 'gif':
+      return 'png';
+    default:
+      return input;
+  }
 }
 
-function signedPercent(value: number): string {
-  if (value > 0) return `+${value}`;
-  if (value < 0) return `−${Math.abs(value)}`;
-  return '0';
+/** Key of a reported output format: it depends only on the file and the format option. */
+function formatKey(fileId: string, format: CompressFormat): string {
+  return `${fileId}\u0000${format}`;
 }
 
 /** Merge job snapshots by id; snapshots from onJobsChanged always win over the initial list. */
@@ -81,26 +111,64 @@ function mergeJobs(current: ReadonlyMap<string, JobSnapshot>, incoming: readonly
   return next;
 }
 
+interface Committed {
+  readonly jobIds: readonly string[];
+  /** Estimates that were current when the user pressed Compress, by fileId. */
+  readonly estimates: ReadonlyMap<string, number>;
+}
+
 export function CompressEditor({ ctx, title }: { readonly ctx: EditorContext; readonly title: string }) {
   const { orbit, t, platform } = useEnv();
   const commit = useEditorCommit(ctx.editorId);
   const sourceLong = Math.max(ctx.image.orientedWidth, ctx.image.orientedHeight);
   const initial = useMemo(() => compressDefaults(ctx.defaults, sourceLong), [ctx.defaults, sourceLong]);
   const [state, setState] = useState<CompressState>(initial);
-  const [jobIds, setJobIds] = useState<readonly string[] | null>(null);
+  const [committed, setCommitted] = useState<Committed | null>(null);
+  const [reported, setReported] = useState<ReadonlyMap<string, FileFormat>>(() => new Map());
 
   const options = useMemo(() => compressOptions(state), [state]);
-  const box = usePreviewBox(470, 300);
+  const first = ctx.files[0];
+  const multi = ctx.files.length > 1;
+  const box = usePreviewBox(multi ? 600 : 470, 300);
   const display = fitSize({ width: ctx.image.orientedWidth, height: ctx.image.orientedHeight }, box);
-  const { preview: latest, pending, error } = usePreview(ctx.editorId, options, { maxEdge: previewEdgeFor(display), enabled: jobIds === null });
+  const { preview: latest, pending, error, upToDate } = usePreview(ctx.editorId, options, { maxEdge: previewEdgeFor(display), enabled: committed === null });
   // Image, estimate and size switch together once the new preview image has decoded.
   const preview = useDecodedPreview(latest);
   const shownUrl = preview?.url ?? ctx.source.url;
+  // Several files: every file gets a real estimate (debounced, superseded on change).
+  const batch = useBatchEstimates(ctx.editorId, ctx.files, options, { enabled: multi && committed === null });
+  const summary = useMemo(() => summarizeEstimates(ctx.files, batch.entries), [ctx.files, batch.entries]);
 
-  const outFormat = effectiveFormat(state.format, ctx.image.format);
-  const isPng = outFormat === 'png';
-  const lossy = FORMAT_INFO[outFormat].lossy;
-  const inputBytes = ctx.image.bytes > 0 ? ctx.image.bytes : (ctx.files[0]?.bytes ?? 0);
+  // Output formats the processor reported for the current format option (they don't depend on the other options).
+  useEffect(() => {
+    const found: [string, FileFormat][] = [];
+    if (first !== undefined && upToDate && latest?.outputFormat !== undefined) found.push([formatKey(first.fileId, state.format), latest.outputFormat]);
+    for (const [fileId, entry] of batch.entries) {
+      if (entry.status === 'ok' && entry.outputFormat !== undefined) found.push([formatKey(fileId, state.format), entry.outputFormat]);
+    }
+    if (found.length === 0) return;
+    setReported((current) => {
+      if (found.every(([key, format]) => current.get(key) === format)) return current;
+      const next = new Map(current);
+      for (const [key, format] of found) next.set(key, format);
+      return next;
+    });
+  }, [first, upToDate, latest, batch.entries, state.format]);
+
+  // The first file's format comes from its inspection (ctx.image), the others' from the selection.
+  const inputFormatOf = (file: (typeof ctx.files)[number]): FileFormat => (file.fileId === first?.fileId ? ctx.image.format : (file.format ?? ctx.image.format));
+  const targets = new Set(ctx.files.map((file) => reported.get(formatKey(file.fileId, state.format)) ?? effectiveFormat(state.format, inputFormatOf(file))));
+  const showPngMode = targets.has('png');
+  const showQuality = [...targets].some((format) => FORMAT_INFO[format].lossy);
+  const formatChanges: FormatChange[] =
+    state.format === 'input'
+      ? ctx.files.flatMap((file) => {
+          const to = reported.get(formatKey(file.fileId, 'input'));
+          return to !== undefined ? [{ from: inputFormatOf(file), to }] : [];
+        })
+      : [];
+
+  const inputBytes = ctx.image.bytes > 0 ? ctx.image.bytes : (first?.bytes ?? 0);
   const estimated = preview?.estimatedBytes;
   const change = estimated === undefined ? null : percentChange(inputBytes, estimated);
   const notSmaller = estimated !== undefined && estimated >= inputBytes;
@@ -111,16 +179,32 @@ export function CompressEditor({ ctx, title }: { readonly ctx: EditorContext; re
 
   const update = (patch: Partial<CompressState>) => setState((s) => ({ ...s, ...patch }));
 
+  /** Estimates that describe exactly the options being committed (shown again next to the real results). */
+  const currentEstimates = (): ReadonlyMap<string, number> => {
+    const map = new Map<string, number>();
+    if (multi) {
+      for (const [fileId, entry] of batch.entries) if (entry.status === 'ok') map.set(fileId, entry.bytes);
+    } else if (first !== undefined && upToDate && latest?.estimatedBytes !== undefined) {
+      map.set(first.fileId, latest.estimatedBytes);
+    }
+    return map;
+  };
+
   const run = async () => {
+    const estimates = currentEstimates();
     const result = await commit.commit(options, true);
     if (result === null || result.kind === 'rejected') return;
-    if (result.kind === 'jobs') setJobIds(result.jobIds);
+    if (result.kind === 'jobs') setCommitted({ jobIds: result.jobIds, estimates });
     else orbit.closeWindow();
   };
 
-  if (jobIds !== null) {
-    return <CompressResults ctx={ctx} title={title} commit={commit} jobIds={jobIds} />;
+  if (committed !== null) {
+    return <CompressResults ctx={ctx} title={title} commit={commit} jobIds={committed.jobIds} estimates={committed.estimates} />;
   }
+
+  const qualitySlider = (disabled: boolean) => (
+    <SliderField label={t('compress.quality')} value={state.quality} min={1} max={100} onChange={(quality) => update({ quality })} disabled={disabled} />
+  );
 
   return (
     <EditorFrame
@@ -135,34 +219,43 @@ export function CompressEditor({ ctx, title }: { readonly ctx: EditorContext; re
         {shownUrl ? <img src={shownUrl} alt={preview ? t('editor.previewAlt') : t('editor.sourceAlt')} draggable={false} /> : null}
       </Stage>
       <PreviewError error={error} />
-      <div className="compress-sizes" aria-live="polite">
-        <div className="compress-size">
-          <span className="compress-size-label">{t('compress.inputSize')}</span>
-          <strong className="tabular">{formatBytes(inputBytes, t.locale, platform)}</strong>
-        </div>
-        <div className="compress-size">
-          <span className="compress-size-label">{t('compress.estimated')}</span>
-          <strong className="tabular" data-stale={pending || undefined}>
-            {estimated === undefined ? t('compress.estimating') : formatBytes(estimated, t.locale, platform)}
-          </strong>
-        </div>
-        <div className="compress-size">
-          <span className="compress-size-label" aria-hidden="true">
-            Δ
-          </span>
-          <strong className="tabular" data-tone={change === null ? undefined : notSmaller ? 'warning' : 'good'}>
-            {change === null ? '—' : t('common.percent', { value: signedPercent(change) })}
-          </strong>
-        </div>
-      </div>
-      {ctx.files.length > 1 && ctx.files[0] ? <p className="compress-first muted">{t('compress.estimateFor', { name: ctx.files[0].name })}</p> : null}
-      {estimated !== undefined ? (
-        notSmaller ? (
-          <Notice tone="warning">{t('compress.notSmaller')}</Notice>
-        ) : (
-          <p className="compress-expect">{t('compress.smaller', { percent: Math.abs(change ?? 0) })}</p>
-        )
-      ) : null}
+      {multi ? (
+        <>
+          {first ? <p className="compress-first muted">{t('compress.previewOf', { name: first.name })}</p> : null}
+          <BatchTotals summary={summary} />
+          <EstimateList files={ctx.files} entries={batch.entries} />
+        </>
+      ) : (
+        <>
+          <div className="compress-sizes" aria-live="polite">
+            <div className="compress-size">
+              <span className="compress-size-label">{t('compress.inputSize')}</span>
+              <strong className="tabular">{formatBytes(inputBytes, t.locale, platform)}</strong>
+            </div>
+            <div className="compress-size">
+              <span className="compress-size-label">{t('compress.estimated')}</span>
+              <strong className="tabular" data-stale={pending || undefined}>
+                {estimated === undefined ? t('compress.estimating') : formatBytes(estimated, t.locale, platform)}
+              </strong>
+            </div>
+            <div className="compress-size">
+              <span className="compress-size-label" aria-hidden="true">
+                Δ
+              </span>
+              <strong className="tabular" data-tone={change === null ? undefined : notSmaller ? 'warning' : 'good'}>
+                {change === null ? '—' : t('common.percent', { value: signedPercent(change) })}
+              </strong>
+            </div>
+          </div>
+          {estimated !== undefined ? (
+            notSmaller ? (
+              <Notice tone="warning">{t('compress.notSmaller')}</Notice>
+            ) : (
+              <p className="compress-expect">{t('compress.smaller', { percent: Math.abs(change ?? 0) })}</p>
+            )
+          ) : null}
+        </>
+      )}
       <div className="editor-controls">
         <div className="field-row">
           <span className="field-label">{t('compress.format')}</span>
@@ -176,7 +269,9 @@ export function CompressEditor({ ctx, title }: { readonly ctx: EditorContext; re
             }))}
           />
         </div>
-        {isPng ? (
+        <FormatResolvedNote changes={formatChanges} className="compress-hint" />
+        {showQuality ? qualitySlider(false) : null}
+        {showPngMode ? (
           <>
             <div className="field-row">
               <span className="field-label">{t('compress.pngMode')}</span>
@@ -192,9 +287,8 @@ export function CompressEditor({ ctx, title }: { readonly ctx: EditorContext; re
             </div>
             <p className="compress-hint muted">{t('compress.pngHint')}</p>
           </>
-        ) : (
-          <SliderField label={t('compress.quality')} value={state.quality} min={1} max={100} onChange={(quality) => update({ quality })} disabled={!lossy} />
-        )}
+        ) : null}
+        {!showQuality && !showPngMode ? qualitySlider(true) : null}
         <div className="field-row">
           <span className="field-label">{t('compress.maxEdge')}</span>
           <div className="editor-inline">
@@ -245,10 +339,15 @@ interface CompressResultsProps {
   readonly title: string;
   readonly commit: EditorCommit;
   readonly jobIds: readonly string[];
+  readonly estimates: ReadonlyMap<string, number>;
 }
 
-/** After commit: follows the jobs and shows the real final size — never "success" when it did not shrink. */
-function CompressResults({ ctx, title, commit, jobIds }: CompressResultsProps) {
+/**
+ * After commit: follows the jobs and shows the real final size next to the
+ * input (and, muted, the estimate made before) — never "success" when a
+ * result did not shrink. Several files also get a total once all are done.
+ */
+function CompressResults({ ctx, title, commit, jobIds, estimates }: CompressResultsProps) {
   const { orbit, t } = useEnv();
   const [jobs, setJobs] = useState<ReadonlyMap<string, JobSnapshot>>(new Map());
 
@@ -295,35 +394,66 @@ function CompressResults({ ctx, title, commit, jobIds }: CompressResultsProps) {
     >
       <h2 className="editor-section-title">{t('compress.results')}</h2>
       <ul className="compress-results" aria-live="polite">
-        {jobIds.map((id, index) => (
-          <CompressResultRow key={id} job={jobs.get(id) ?? null} fallbackName={ctx.files[index]?.name ?? ctx.files[0]?.name ?? ''} />
-        ))}
+        {jobIds.map((id, index) => {
+          const file = ctx.files[index];
+          return (
+            <CompressResultRow
+              key={id}
+              job={jobs.get(id) ?? null}
+              fallbackName={file?.name ?? ctx.files[0]?.name ?? ''}
+              estimate={file === undefined ? undefined : estimates.get(file.fileId)}
+            />
+          );
+        })}
       </ul>
+      {allDone && jobIds.length > 1 ? <ResultTotals jobs={jobIds.map((id) => jobs.get(id)).filter((job): job is JobSnapshot => job !== undefined)} /> : null}
     </EditorFrame>
   );
 }
 
-function CompressResultRow({ job, fallbackName }: { readonly job: JobSnapshot | null; readonly fallbackName: string }) {
+/** Input → final size over the completed jobs of a batch; warning tone when the total did not shrink. */
+function ResultTotals({ jobs }: { readonly jobs: readonly JobSnapshot[] }) {
+  const { t, platform } = useEnv();
+  const completed = jobs.filter((job) => job.state === 'completed' && job.outputs.length > 0);
+  if (completed.length === 0) return null;
+  const input = completed.reduce((sum, job) => sum + job.inputBytes, 0);
+  const output = completed.reduce((sum, job) => sum + job.outputs.reduce((s, o) => s + o.bytes, 0), 0);
+  const smaller = output < input;
+  return (
+    <p className="compress-total tabular" data-tone={smaller ? 'good' : 'warning'} role="status">
+      {t('compress.resultTotal', { input: formatBytes(input, t.locale, platform), output: formatBytes(output, t.locale, platform) })}{' '}
+      <strong>{t('common.percent', { value: signedPercent(percentChange(input, output)) })}</strong>
+    </p>
+  );
+}
+
+function CompressResultRow({ job, fallbackName, estimate }: { readonly job: JobSnapshot | null; readonly fallbackName: string; readonly estimate: number | undefined }) {
   const { orbit, t, platform } = useEnv();
   const name = job?.inputName ?? fallbackName;
+  const estimateNote =
+    estimate === undefined ? null : <p className="compress-result-estimate muted tabular">{t('compress.resultEstimate', { size: formatBytes(estimate, t.locale, platform) })}</p>;
 
   let body: ReactNode;
   if (job === null || job.state === 'queued' || job.state === 'running') {
     const progress = job?.progress;
-    body =
-      progress?.kind === 'determinate' && progress.total > 0 ? (
-        <div className="compress-progress">
-          <progress className="compress-bar" max={progress.total} value={progress.done} aria-label={t('compress.running')} />
-          <span className="muted tabular">{t(`jobs.progress.${progress.unit}`, { done: progress.done, total: progress.total })}</span>
-        </div>
-      ) : (
-        <div className="compress-progress">
-          <div className="compress-bar-indeterminate" role="progressbar" aria-label={t('compress.running')} aria-valuetext={t('compress.running')}>
-            <span />
+    body = (
+      <>
+        {progress?.kind === 'determinate' && progress.total > 0 ? (
+          <div className="compress-progress">
+            <progress className="compress-bar" max={progress.total} value={progress.done} aria-label={t('compress.running')} />
+            <span className="muted tabular">{t(`jobs.progress.${progress.unit}`, { done: progress.done, total: progress.total })}</span>
           </div>
-          <span className="muted">{job?.state === 'queued' ? t('jobs.state.queued') : t('compress.running')}</span>
-        </div>
-      );
+        ) : (
+          <div className="compress-progress">
+            <div className="compress-bar-indeterminate" role="progressbar" aria-label={t('compress.running')} aria-valuetext={t('compress.running')}>
+              <span />
+            </div>
+            <span className="muted">{job?.state === 'queued' ? t('jobs.state.queued') : t('compress.running')}</span>
+          </div>
+        )}
+        {estimateNote}
+      </>
+    );
   } else if (job.state === 'failed') {
     body = <Notice tone="danger">{job.error ? t.error(job.error) : t('jobs.state.failed')}</Notice>;
   } else if (job.state === 'cancelled') {
@@ -341,6 +471,7 @@ function CompressResultRow({ job, fallbackName }: { readonly job: JobSnapshot | 
             {t('jobs.sizeChange', { input: formatBytes(job.inputBytes, t.locale, platform), output: formatBytes(outBytes, t.locale, platform) })}
           </p>
         ) : null}
+        {estimateNote}
         {notSmaller ? (
           <Notice tone="warning" live="off">
             {job.outputs.length === 0 ? t.warning('OUTPUT_LARGER_THAN_INPUT') : t('compress.resultNotSmaller', { percent: Math.max(0, pct) })}

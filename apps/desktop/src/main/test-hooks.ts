@@ -1,5 +1,5 @@
-import type { ActionId, WheelMode } from '@orbitdrop/contracts';
-import type { OrbitApp } from './app';
+import { OrbitError, type ActionId, type ErrorCode, type WheelMode } from '@orbitdrop/contracts';
+import type { JobRunScript, OrbitApp } from './app';
 
 /**
  * Automation hooks for the Playwright E2E tests (ORBITDROP_E2E=1, unpackaged
@@ -24,6 +24,57 @@ export interface OrbitTestHooks {
   updateSettings(patch: unknown): Promise<unknown>;
   trayMenu(): Promise<readonly string[] | null>;
   notifications(): Promise<readonly { readonly title: string; readonly body: string }[]>;
+  /** The next job attempts fail with these codes, one per attempt (a WORKER_CRASHED attempt is retried once by the queue). */
+  failNextJobs(codes: ErrorCode[]): Promise<void>;
+  /** The next job attempt stays 'running' until releaseHeldJobs() (or until it is cancelled). */
+  holdNextJob(): Promise<void>;
+  /** Let held attempts continue to the processor pool; returns how many were waiting. */
+  releaseHeldJobs(): Promise<number>;
+}
+
+type ScriptStep = { readonly kind: 'fail'; readonly code: ErrorCode } | { readonly kind: 'hold' };
+
+/** Scripted outcomes for the next job attempts, consumed in order (see OrbitApp.runJob). */
+export class TestJobScript implements JobRunScript {
+  private readonly steps: ScriptStep[] = [];
+  private readonly held = new Set<() => void>();
+
+  fail(codes: readonly ErrorCode[]): void {
+    for (const code of codes) this.steps.push({ kind: 'fail', code });
+  }
+
+  hold(): void {
+    this.steps.push({ kind: 'hold' });
+  }
+
+  release(): number {
+    const waiting = [...this.held];
+    this.held.clear();
+    for (const resume of waiting) resume();
+    return waiting.length;
+  }
+
+  async beforeRun(signal: AbortSignal): Promise<void> {
+    const step = this.steps.shift();
+    if (step === undefined) return;
+    if (step.kind === 'fail') throw new OrbitError(step.code, 'Injected for an E2E test');
+    await new Promise<void>((resolve, reject) => {
+      const resume = (): void => {
+        signal.removeEventListener('abort', onAbort);
+        resolve();
+      };
+      const onAbort = (): void => {
+        this.held.delete(resume);
+        reject(signal.reason instanceof Error ? signal.reason : new OrbitError('CANCELLED', 'Cancelled'));
+      };
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener('abort', onAbort, { once: true });
+      this.held.add(resume);
+    });
+  }
 }
 
 export function installTestHooks(orbit: OrbitApp): void {
@@ -32,6 +83,8 @@ export function installTestHooks(orbit: OrbitApp): void {
     await orbit.started;
     await orbit.capabilities.get();
   };
+  const script = new TestJobScript();
+  orbit.testJobScript = script;
   const hooks: OrbitTestHooks = {
     registerPaths: async (paths) => {
       await probed();
@@ -89,6 +142,18 @@ export function installTestHooks(orbit: OrbitApp): void {
     notifications: async () => {
       await started();
       return [...orbit.recordedNotifications];
+    },
+    failNextJobs: async (codes) => {
+      await started();
+      script.fail(codes);
+    },
+    holdNextJob: async () => {
+      await started();
+      script.hold();
+    },
+    releaseHeldJobs: async () => {
+      await started();
+      return script.release();
     },
   };
   (globalThis as { __orbitdrop?: OrbitTestHooks }).__orbitdrop = hooks;

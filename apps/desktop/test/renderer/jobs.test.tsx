@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import './setup';
-import type { JobSnapshot } from '@orbitdrop/contracts';
-import { act, screen, within } from '@testing-library/react';
+import type { ErrorCode, JobSnapshot } from '@orbitdrop/contracts';
+import { act, cleanup as cleanupRender, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import koErrors from '../../src/shared/locales/ko/errors.json';
@@ -196,5 +196,92 @@ describe('JobsView live updates', () => {
     await screen.findByText('아직 작업이 없습니다.');
     view.unmount();
     expect(unsubscribed).toBe(true);
+  });
+});
+
+describe('JobsView retry', () => {
+  const failed = (jobId: string, inputName: string, code: ErrorCode, finishedAt = 20) =>
+    sampleJob({ jobId, actionId: 'convert.png', inputName, state: 'failed', error: { code, message: code, retryable: true }, finishedAt });
+
+  it('offers retry, save elsewhere or both depending on the error, and retry for cancelled jobs', async () => {
+    await renderJobs([
+      failed('t', 'slow.pdf', 'TIMEOUT', 25),
+      failed('d', 'full.jpg', 'DISK_FULL', 24),
+      failed('r', 'readonly.jpg', 'OUTPUT_DIR_NOT_WRITABLE', 23),
+      failed('x', 'scan.pdf', 'PDF_NO_TEXT', 22),
+      sampleJob({ jobId: 'c', actionId: 'convert.webp', inputName: 'stopped.png', state: 'cancelled', finishedAt: 21 }),
+    ]);
+    const buttons = (name: string) =>
+      within(cardOf(name))
+        .queryAllByRole('button')
+        .map((b) => b.textContent);
+    expect(buttons('slow.pdf')).toEqual(['다시 시도']);
+    expect(buttons('full.jpg')).toEqual(['다시 시도', '다른 폴더에 저장…']);
+    expect(buttons('readonly.jpg')).toEqual(['다른 폴더에 저장…']);
+    expect(buttons('scan.pdf')).toEqual([]);
+    expect(buttons('stopped.png')).toEqual(['다시 시도']);
+  });
+
+  it('a started retry replaces the buttons with "retried" and is announced', async () => {
+    const { orbit, user } = await renderJobs([failed('t', 'slow.pdf', 'TIMEOUT')]);
+    const card = cardOf('slow.pdf');
+    await user.click(within(card).getByRole('button', { name: '다시 시도' }));
+    expect(orbit.retryJob).toHaveBeenCalledWith('t');
+    expect(await within(card).findByText('다시 시도했습니다.')).toBeTruthy();
+    expect(within(card).queryByRole('button', { name: '다시 시도' })).toBeNull();
+    expect(screen.getByText('다시 시도를 시작했습니다.')).toBeTruthy();
+  });
+
+  it('explains a refused retry: a missing file (or a job from before a restart) versus other errors', async () => {
+    const { orbit, user } = await renderJobs([failed('a', 'gone.png', 'TIMEOUT', 25), failed('b', 'cloud.png', 'CLOUD_PLACEHOLDER', 24)]);
+    orbit.retryJob.mockResolvedValueOnce({ kind: 'rejected', error: { code: 'FILE_NOT_FOUND', message: 'gone', retryable: false } });
+    await user.click(within(cardOf('gone.png')).getByRole('button', { name: '다시 시도' }));
+    expect(await within(cardOf('gone.png')).findByText(/다시 시도할 수 없습니다/)).toBeTruthy();
+    orbit.retryJob.mockResolvedValueOnce({ kind: 'rejected', error: { code: 'CLOUD_PLACEHOLDER', message: 'still', retryable: true } });
+    await user.click(within(cardOf('cloud.png')).getByRole('button', { name: '다시 시도' }));
+    const notice = await within(cardOf('cloud.png')).findByText('다시 시도하지 못했습니다.');
+    expect(notice.closest('[role="alert"], .notice')?.textContent).toContain(koErrors['error.CLOUD_PLACEHOLDER']);
+    // the buttons stay so the user can try again
+    expect(within(cardOf('cloud.png')).getByRole('button', { name: '다시 시도' })).toBeTruthy();
+  });
+});
+
+describe('JobsView clear finished', () => {
+  it('clears up to the newest finish time on screen and announces how many were removed', async () => {
+    const { orbit, user, emit } = await renderJobs();
+    orbit.clearFinishedJobs.mockResolvedValueOnce(2);
+    const button = screen.getByRole('button', { name: '끝난 작업 지우기' });
+    expect(button.getAttribute('title')).toBe('완료·실패·취소된 작업을 목록과 기록에서 지웁니다. 결과 파일은 그대로 남습니다.');
+    await user.click(button);
+    // JOBS: finished at 10 (done) and 9 (fail); running jobs have no finish time
+    expect(orbit.clearFinishedJobs).toHaveBeenCalledWith({ finishedUpTo: 10 });
+    expect(await screen.findByText('작업 2개를 목록에서 지웠습니다.')).toBeTruthy();
+    // main broadcasts the shorter list; without finished jobs the button goes away
+    emit(JOBS.filter((j) => j.state === 'running'));
+    expect(screen.queryByRole('button', { name: '끝난 작업 지우기' })).toBeNull();
+    expect(screen.queryByText('big.jpg')).toBeNull();
+    expect(screen.getByText('report.pdf')).toBeTruthy();
+  });
+
+  it('is not offered while nothing has finished, and reports a failure', async () => {
+    const active = JOBS.filter((j) => j.state === 'running');
+    await renderJobs(active);
+    expect(screen.queryByRole('button', { name: '끝난 작업 지우기' })).toBeNull();
+    cleanupRender();
+    const { orbit, user } = await renderJobs();
+    orbit.clearFinishedJobs.mockRejectedValueOnce(new Error('INTERNAL: boom'));
+    await user.click(screen.getByRole('button', { name: '끝난 작업 지우기' }));
+    expect(await screen.findByText('목록을 지우지 못했습니다.')).toBeTruthy();
+  });
+});
+
+describe('JobsView titles', () => {
+  it('names DOCX jobs by their input kind (contracts actionTitle)', async () => {
+    await renderJobs([
+      sampleJob({ jobId: 'p', actionId: 'convert.docx', inputName: 'report.pdf', state: 'completed', finishedAt: 5 }),
+      sampleJob({ jobId: 'i', actionId: 'convert.docx', inputName: 'whiteboard.PNG', state: 'completed', finishedAt: 4 }),
+    ]);
+    expect(within(cardOf('report.pdf')).getByRole('heading', { level: 3 }).textContent).toBe('DOCX로 변환 (텍스트 중심)');
+    expect(within(cardOf('whiteboard.PNG')).getByRole('heading', { level: 3 }).textContent).toBe('DOCX로 변환 (이미지 삽입, OCR 없음)');
   });
 });

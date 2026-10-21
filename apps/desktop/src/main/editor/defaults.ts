@@ -18,6 +18,11 @@ export const PREVIEW_KINDS: Partial<Record<ActionId, PreviewKind>> = {
   'tool.crop': 'tool.crop',
 };
 
+/** Actions whose editors show per-file size estimates (requestEstimate), with the preview kind that computes them. */
+export const ESTIMATE_KINDS: Partial<Record<ActionId, PreviewKind>> = {
+  'tool.compress': 'tool.compress',
+};
+
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, Math.round(value)));
 
 /**

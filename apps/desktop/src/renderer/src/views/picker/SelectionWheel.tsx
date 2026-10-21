@@ -1,7 +1,8 @@
 import {
-  ACTIONS,
+  actionTitle,
   baseMenuOrder,
   type ActionId,
+  type InputKind,
   type FileSelection,
   type OrbitErrorInfo,
   type SubmitActionResult,
@@ -50,6 +51,7 @@ export function SelectionWheel({ selection, initialMode, diameter, onSubmitted, 
   const [error, setError] = useState<OrbitErrorInfo | null>(null);
   const [active, setActive] = useState<number | null>(null);
   const instructionsId = useId();
+  const hintId = useId();
   // A submit that resolves after this view went away (Back in the Drop Zone,
   // another selection) must not report back to the parent.
   const mounted = useRef(true);
@@ -79,6 +81,8 @@ export function SelectionWheel({ selection, initialMode, diameter, onSubmitted, 
   }, [orbit, selection.selectionId, key, mode, settings.locale]);
 
   const usable = useMemo(() => usableFiles(selection), [selection]);
+  // Titles depend on what is selected (contracts actionTitle: images → DOCX embed pictures, PDFs give text).
+  const kinds = useMemo(() => [...new Set(usable.flatMap((f): InputKind[] => (f.kind === null ? [] : [f.kind])))], [usable]);
   const unusable = selection.files.length - usable.length;
   const totalBytes = usable.reduce((sum, f) => sum + f.bytes, 0);
   const sizeText = formatBytes(totalBytes, t.locale, platform);
@@ -113,11 +117,10 @@ export function SelectionWheel({ selection, initialMode, diameter, onSubmitted, 
   const loading = menu === null && menuError === null;
   const sectors = menu?.sectors ?? NO_SECTORS;
   const activeSector = active === null ? undefined : sectors[active];
-  let hint = t('wheel.instructions');
+  const instructions = t('wheel.instructions');
+  let hint = instructions;
   if (activeSector !== undefined) {
-    // DOCX from images embeds pictures (no OCR); the action title describes the PDF text path.
-    const docxFromImages = activeSector.actionId === 'convert.docx' && key !== 'pdf';
-    const title = docxFromImages ? t('picker.docxFromImages') : t.text(ACTIONS[activeSector.actionId].title);
+    const title = t.text(actionTitle(activeSector.actionId, kinds));
     hint = activeSector.enabled ? title : (activeSector.reason ?? t('wheel.unavailable'));
   } else if (menu !== null && sectors.length === 0) {
     hint = mode === 'tools' ? t('picker.noTools') : t('wheel.empty');
@@ -148,7 +151,8 @@ export function SelectionWheel({ selection, initialMode, diameter, onSubmitted, 
           onActiveChange={setActive}
           busy={busy}
           autoFocus={autoFocus}
-          describedBy={instructionsId}
+          // The hint line (highlighted action's title or why it is unavailable) also describes the menu.
+          describedBy={hint === instructions ? instructionsId : `${instructionsId} ${hintId}`}
         />
       </div>
       <span id={instructionsId} className="visually-hidden">
@@ -167,7 +171,7 @@ export function SelectionWheel({ selection, initialMode, diameter, onSubmitted, 
           { value: 'tools', label: t('mode.tools'), disabled: !toolsAvailable },
         ]}
       />
-      <p className="selection-hint" aria-hidden="true">
+      <p id={hintId} className="selection-hint">
         {hint}
       </p>
       {menuError ? <Notice tone="danger">{t.error(menuError)}</Notice> : null}

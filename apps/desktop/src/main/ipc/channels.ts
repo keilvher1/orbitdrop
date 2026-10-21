@@ -1,5 +1,7 @@
 import {
+  ClearFinishedJobsRequestSchema,
   CommitEditorRequestSchema,
+  EstimateRequestSchema,
   ExternalOpenRequestSchema,
   IPC_CHANNELS,
   IdRequestSchema,
@@ -7,12 +9,15 @@ import {
   PreviewRequestSchema,
   RegisterPathsRequestSchema,
   SubmitActionRequestSchema,
+  ThumbnailRequestSchema,
   WindowOpenRequestSchema,
   WindowResizeRequestSchema,
   type AppInfo,
   type CapabilitySnapshot,
   type CommitEditorRequest,
   type EditorContext,
+  type EstimateOutcome,
+  type EstimateRequest,
   type FileSelection,
   type HelperStatus,
   type ImageInfo,
@@ -22,6 +27,8 @@ import {
   type Settings,
   type SubmitActionRequest,
   type SubmitActionResult,
+  type ThumbnailRequest,
+  type ThumbnailResponse,
   type WheelMenu,
   type WheelMode,
   type WindowContext,
@@ -61,6 +68,11 @@ export interface OrbitIpcServices<R> {
   revealOutput(outputId: string): Promise<void>;
   openOutput(outputId: string): Promise<void>;
   openExternal(url: string): Promise<boolean>;
+  thumbnail(request: ThumbnailRequest): Promise<ThumbnailResponse>;
+  estimate(request: EstimateRequest): Promise<EstimateOutcome>;
+  /** Returns how many finished jobs were removed. */
+  clearFinishedJobs(finishedUpTo: number | undefined): number;
+  retryJob(jobId: string, record: R): Promise<SubmitActionResult>;
 }
 
 /** Wire every OrbitApi channel. Events (settingsChanged, helperStatusChanged, jobsChanged) are broadcast by main. */
@@ -92,6 +104,10 @@ export function registerOrbitIpc<R>(router: IpcRouter<R>, s: OrbitIpcServices<R>
   router.handle(C.outputReveal, IdRequestSchema, (p) => s.revealOutput(p.id));
   router.handle(C.outputOpen, IdRequestSchema, (p) => s.openOutput(p.id));
   router.handle(C.externalOpen, ExternalOpenRequestSchema, (p) => s.openExternal(p.url));
+  router.handle(C.editorThumbnail, ThumbnailRequestSchema, (p) => s.thumbnail(p));
+  router.handle(C.editorEstimate, EstimateRequestSchema, (p) => s.estimate(p));
+  router.handle(C.jobsClearFinished, ClearFinishedJobsRequestSchema, (p) => s.clearFinishedJobs(p.finishedUpTo));
+  router.handle(C.jobRetry, IdRequestSchema, (p, record) => s.retryJob(p.id, record));
 }
 
 /** Channels main pushes to renderers. */

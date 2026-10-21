@@ -84,3 +84,11 @@
   align-items: center;
   gap: 10px;
 }
+
+/* "Add" buttons: keyboard users insert a centred shape, then move it with the arrow keys. */
+.annot-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: -2px;
+}

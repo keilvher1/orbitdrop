@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { BrowserWindow, app, screen, type WebContents } from 'electron';
-import { colorTokens, type Point, type ThemeName, type WheelMode, type WindowContext, type WindowKind } from '@orbitdrop/contracts';
+import type { Point, WheelMode, WindowContext, WindowKind } from '@orbitdrop/contracts';
 import { describeError, silentLogger, type Logger } from '../log';
 import { WINDOW_MARGIN, placeCentered, rectCenter, resizeWithin } from './placement';
 import { MAX_EDITOR_WINDOWS, WINDOW_SPECS } from './specs';
@@ -27,7 +27,8 @@ export interface WindowManagerDeps {
   /** Dev server URL (electron-vite dev), or null to load the built file. */
   readonly rendererUrl: string | null;
   readonly rendererFile: string;
-  readonly theme: () => ThemeName;
+  /** Window background until the renderer paints (the windowBg of the theme it will use). */
+  readonly background: () => string;
   readonly title: (context: WindowContext) => string;
   /** E2E/automation: show windows without taking focus. */
   readonly quiet: boolean;
@@ -45,14 +46,19 @@ export class WindowManager {
     this.log = deps.log ?? silentLogger;
   }
 
-  /** Open (or focus) a single-instance window. */
-  open(kind: Exclude<WindowKind, 'picker' | 'editor'>, anchor?: Point): BrowserWindow {
+  /**
+   * Open (or focus) a single-instance window. `inactive`: show it without
+   * taking focus (e.g. a job started by a global drag needs attention while
+   * the user works in another app); an already visible window is left as is.
+   */
+  open(kind: Exclude<WindowKind, 'picker' | 'editor'>, anchor?: Point, options: { readonly inactive?: boolean } = {}): BrowserWindow {
+    const focus = WINDOW_SPECS[kind].focus && options.inactive !== true;
     const existing = this.find(kind);
     if (existing) {
-      this.reveal(existing.window, WINDOW_SPECS[kind].focus);
+      this.reveal(existing.window, focus);
       return existing.window;
     }
-    return this.create({ kind } as WindowContext, anchor);
+    return this.create({ kind } as WindowContext, anchor, focus);
   }
 
   openPicker(selectionId: string, initialMode: WheelMode, anchor?: Point): BrowserWindow {
@@ -154,13 +160,12 @@ export class WindowManager {
     return rectCenter(record.window.getBounds());
   }
 
-  private create(context: WindowContext, anchor?: Point): BrowserWindow {
+  private create(context: WindowContext, anchor?: Point, focus = WINDOW_SPECS[context.kind].focus): BrowserWindow {
     const kind = context.kind;
     const spec = WINDOW_SPECS[kind];
     const point = anchor ?? screen.getCursorScreenPoint();
     const display = screen.getDisplayNearestPoint(point);
     const bounds = placeCentered(point, spec, display.workArea, WINDOW_MARGIN);
-    const theme = this.deps.theme();
     const window = new BrowserWindow({
       ...bounds,
       minWidth: Math.min(spec.minWidth, bounds.width),
@@ -174,7 +179,7 @@ export class WindowManager {
       skipTaskbar: spec.skipTaskbar,
       alwaysOnTop: spec.alwaysOnTop,
       title: this.deps.title(context),
-      backgroundColor: colorTokens(theme).windowBg,
+      backgroundColor: this.deps.background(),
       hasShadow: true,
       autoHideMenuBar: true,
       webPreferences: {
@@ -208,7 +213,7 @@ export class WindowManager {
     const show = (): void => {
       if (shown || window.isDestroyed()) return;
       shown = true;
-      this.reveal(window, spec.focus);
+      this.reveal(window, focus);
     };
     window.once('ready-to-show', show);
     const fallback = setTimeout(show, 4000); // never leave a window invisible if ready-to-show does not come

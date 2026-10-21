@@ -2,10 +2,14 @@ import {
   ACTION_OPTION_SCHEMAS,
   DEFAULT_PROCESSING_LIMITS,
   OrbitError,
+  THUMBNAIL_MAX_EDGE,
   toErrorInfo,
   type ActionId,
   type EditorContext,
+  type EstimateOutcome,
+  type EstimateRequest,
   type ImageInfo,
+  type OrbitErrorInfo,
   type PreviewOutcome,
   type PreviewRequestIpc,
   type PreviewResult,
@@ -14,6 +18,8 @@ import {
   type SelectionSource,
   type Settings,
   type SubmitActionResult,
+  type ThumbnailRequest,
+  type ThumbnailResponse,
 } from '@orbitdrop/contracts';
 import { processorSettings } from '../jobs/manager';
 import { describeError, silentLogger, type Logger } from '../log';
@@ -21,7 +27,8 @@ import type { ProcessorPool } from '../processing/pool';
 import { previewUrl, type PreviewStore } from '../preview/store';
 import { publicErrorInfo } from '../util/errors';
 import { newId } from '../util/ids';
-import { PREVIEW_KINDS, editorDefaults } from './defaults';
+import { BackgroundLimiter } from '../util/limiter';
+import { ESTIMATE_KINDS, PREVIEW_KINDS, editorDefaults } from './defaults';
 
 /**
  * Editor sessions: editorId → action, files and preview state.
@@ -31,6 +38,15 @@ import { PREVIEW_KINDS, editorDefaults } from './defaults';
  * request cancels the in-flight one in the worker (`cancelPreview`) and the
  * superseded request resolves as stale too. Results are kept in the
  * PreviewStore and returned as orbit-preview:// URLs.
+ *
+ * Background work — file-list thumbnails (images → PDF order editor) and the
+ * per-file estimates of a batch Compress — goes through one shared limiter (at
+ * most two requests on the preview worker at once, across all editors), so
+ * the editors' own previews never wait behind a long list. Thumbnails are
+ * cached per editor + file + size while their token is in the store (bounded
+ * per editor); estimates have their own per-editor seq: a newer one aborts
+ * every older estimate still waiting or running (answered stale). Closing the
+ * editor aborts all of it and releases every token it owned.
  */
 
 export interface EditorOrigin {
@@ -58,6 +74,19 @@ interface Inflight {
   readonly controller: AbortController;
 }
 
+/** A thumbnail or estimate waiting for the limiter or running on the preview worker. */
+interface BackgroundTask {
+  readonly controller: AbortController;
+  /** Estimates: the estimate seq it answers (thumbnails have none). */
+  readonly seq?: number;
+}
+
+interface Thumbnail {
+  promise: Promise<{ readonly token: string; readonly width: number; readonly height: number }>;
+  /** Set once rendered and stored. */
+  token: string | null;
+}
+
 export interface EditorSession {
   readonly editorId: string;
   readonly actionId: ActionId;
@@ -71,6 +100,11 @@ export interface EditorSession {
   previewTokens: string[];
   committed: SubmitActionResult | null;
   disposed: boolean;
+  /** Thumbnails by `${fileId}:${edge}`, least recently used first. */
+  readonly thumbnails: Map<string, Thumbnail>;
+  /** Highest estimate seq seen (requests below it are stale). */
+  estimateSeq: number;
+  readonly background: Set<BackgroundTask>;
 }
 
 export interface EditorSessionsDeps {
@@ -84,16 +118,27 @@ export interface EditorSessionsDeps {
   readonly previewMaxEdge?: number;
   /** Preview images kept per editor (older ones are released). */
   readonly keepPreviews?: number;
+  /** Background requests (thumbnails, estimates) on the preview worker at once, across editors. */
+  readonly backgroundConcurrency?: number;
+  /** Thumbnail images kept per editor (least recently requested ones are released). */
+  readonly keepThumbnails?: number;
 }
 
 const STALE_ERROR = { code: 'CANCELLED', message: 'Superseded by a newer preview', retryable: false } as const;
+const STALE_ESTIMATE = { code: 'CANCELLED', message: 'Superseded by a newer estimate', retryable: false } as const;
+/** Thumbnail edge when the renderer does not ask for one (device px). */
+export const DEFAULT_THUMBNAIL_EDGE = 96;
+/** The image of an estimate is not used: the processors skip it (estimateOnly). */
+const ESTIMATE_MAX_EDGE = 64;
 
 export class EditorSessions {
   private readonly sessions = new Map<string, EditorSession>();
   private readonly log: Logger;
+  private readonly background: BackgroundLimiter;
 
   constructor(private readonly deps: EditorSessionsDeps) {
     this.log = deps.log ?? silentLogger;
+    this.background = new BackgroundLimiter(deps.backgroundConcurrency ?? 2);
   }
 
   create(init: EditorInit): EditorSession {
@@ -112,6 +157,9 @@ export class EditorSessions {
       previewTokens: [],
       committed: null,
       disposed: false,
+      thumbnails: new Map(),
+      estimateSeq: -1,
+      background: new Set(),
     };
     session.prepared.catch((error: unknown) => this.log.warn('editor preparation failed', { editorId, error: describeError(error) }));
     this.sessions.set(editorId, session);
@@ -222,7 +270,108 @@ export class EditorSessions {
       ...(result.outputHeight !== undefined ? { outputHeight: result.outputHeight } : {}),
       ...(result.estimatedBytes !== undefined ? { estimatedBytes: result.estimatedBytes } : {}),
       ...(result.layout !== undefined ? { layout: result.layout } : {}),
+      ...(result.outputFormat !== undefined ? { outputFormat: result.outputFormat } : {}),
+      ...(result.warnings !== undefined && result.warnings.length > 0 ? { warnings: result.warnings } : {}),
     };
+  }
+
+  /**
+   * getEditorThumbnail (OrbitApi): a small preview (≤ THUMBNAIL_MAX_EDGE) of
+   * one of the session's files, rendered by the preview worker ('thumbnail')
+   * through the background limiter. Cached per file + size while its token is
+   * still in the store; concurrent requests share one render; a failed render
+   * is not cached. The token belongs to the editor (released when it closes).
+   */
+  async thumbnail(request: ThumbnailRequest): Promise<ThumbnailResponse> {
+    const session = this.require(request.editorId);
+    const input = session.inputs.find((candidate) => candidate.fileId === request.fileId);
+    if (!input) throw new OrbitError('INVALID_OPTIONS', 'Unknown file');
+    const edge = Math.min(THUMBNAIL_MAX_EDGE, request.maxEdge ?? DEFAULT_THUMBNAIL_EDGE);
+    const key = `${input.fileId}:${edge}`;
+    let entry = session.thumbnails.get(key);
+    if (entry && entry.token !== null && !this.deps.store.has(entry.token)) entry = undefined; // evicted from the store: render again
+    if (entry) session.thumbnails.delete(key); // most recently used goes last
+    else entry = this.renderThumbnail(session, input, edge);
+    session.thumbnails.set(key, entry);
+    let rendered: Awaited<Thumbnail['promise']>;
+    try {
+      rendered = await entry.promise;
+    } catch (error) {
+      if (session.thumbnails.get(key) === entry) session.thumbnails.delete(key);
+      if (session.disposed) throw new OrbitError('CANCELLED', 'Editor closed');
+      const info = publicErrorInfo(toErrorInfo(error));
+      throw new OrbitError(info.code, info.message);
+    }
+    if (session.disposed) throw new OrbitError('CANCELLED', 'Editor closed');
+    return { fileId: input.fileId, url: previewUrl(rendered.token), width: rendered.width, height: rendered.height };
+  }
+
+  /**
+   * requestEstimate (OrbitApi): the Compress estimate of one of the session's
+   * files — the size of a real full-resolution encode with these options
+   * (processors `estimateOnly`, cached per file + options), run through the
+   * background limiter. A request with a newer seq aborts every older estimate
+   * of this editor, waiting or running; those, and requests older than the
+   * newest seq, answer stale.
+   */
+  async estimate(request: EstimateRequest): Promise<EstimateOutcome> {
+    const session = this.require(request.editorId);
+    const { seq, fileId } = request;
+    const failed = (error: OrbitErrorInfo): EstimateOutcome => ({ ok: false, seq, fileId, error });
+    const stale: EstimateOutcome = { ok: false, seq, fileId, stale: true, error: STALE_ESTIMATE };
+    const kind = ESTIMATE_KINDS[session.actionId];
+    if (!kind) return failed({ code: 'ENGINE_UNAVAILABLE', message: 'This action has no estimate', retryable: false });
+    if (seq < session.estimateSeq) return stale;
+    if (seq > session.estimateSeq) {
+      session.estimateSeq = seq;
+      for (const task of [...session.background]) {
+        if (task.seq !== undefined && task.seq < seq) task.controller.abort();
+      }
+    }
+    const input = session.inputs.find((candidate) => candidate.fileId === fileId);
+    if (!input) return failed({ code: 'INVALID_OPTIONS', message: 'Unknown file', retryable: false });
+    const schema = ACTION_OPTION_SCHEMAS[session.actionId] as { safeParse(value: unknown): { success: boolean; data?: unknown } };
+    const parsed = schema.safeParse(request.options ?? {});
+    if (!parsed.success) return failed({ code: 'INVALID_OPTIONS', message: 'Invalid options', retryable: false });
+
+    const task: BackgroundTask = { controller: new AbortController(), seq };
+    const { signal } = task.controller;
+    session.background.add(task);
+    try {
+      const result = await this.background.run(
+        () =>
+          this.deps.pool.preview(
+            {
+              previewId: newId('pv'),
+              kind,
+              input,
+              options: parsed.data,
+              maxEdge: ESTIMATE_MAX_EDGE,
+              settings: processorSettings(this.deps.settings()),
+              limits: DEFAULT_PROCESSING_LIMITS,
+              estimateOnly: true,
+            },
+            signal,
+          ),
+        signal,
+      );
+      if (session.disposed || signal.aborted) return stale;
+      if (result.estimatedBytes === undefined) return failed({ code: 'INTERNAL', message: 'The processor reported no estimate', retryable: false });
+      return {
+        ok: true,
+        seq,
+        fileId,
+        estimatedBytes: result.estimatedBytes,
+        ...(result.outputWidth !== undefined ? { outputWidth: result.outputWidth } : {}),
+        ...(result.outputHeight !== undefined ? { outputHeight: result.outputHeight } : {}),
+        ...(result.outputFormat !== undefined ? { outputFormat: result.outputFormat } : {}),
+      };
+    } catch (error) {
+      if (session.disposed || signal.aborted) return stale;
+      return failed(publicErrorInfo(toErrorInfo(error)));
+    } finally {
+      session.background.delete(task);
+    }
   }
 
   dispose(editorId: string): void {
@@ -234,6 +383,10 @@ export class EditorSessions {
       this.deps.pool.cancelPreview(session.inflight.previewId);
     }
     session.inflight = null;
+    // Thumbnails and estimates still waiting for the limiter never start; running ones are cancelled in the worker.
+    for (const task of session.background) task.controller.abort();
+    session.background.clear();
+    session.thumbnails.clear();
     this.deps.store.releaseOwner(editorId);
     this.sessions.delete(editorId);
     this.log.debug('editor disposed', { editorId });
@@ -243,6 +396,53 @@ export class EditorSessions {
 
   get size(): number {
     return this.sessions.size;
+  }
+
+  private renderThumbnail(session: EditorSession, input: ProcessorInput, edge: number): Thumbnail {
+    const task: BackgroundTask = { controller: new AbortController() };
+    const { signal } = task.controller;
+    const entry: Thumbnail = { token: null, promise: Promise.resolve({ token: '', width: 0, height: 0 }) };
+    session.background.add(task);
+    const render = this.background.run(
+      () =>
+        this.deps.pool.preview(
+          {
+            previewId: newId('pv'),
+            kind: 'thumbnail',
+            input,
+            options: {},
+            maxEdge: edge,
+            settings: processorSettings(this.deps.settings()),
+            limits: DEFAULT_PROCESSING_LIMITS,
+          },
+          signal,
+        ),
+      signal,
+    );
+    entry.promise = render
+      .then((result) => {
+        if (session.disposed || signal.aborted) throw new OrbitError('CANCELLED', 'Editor closed');
+        const token = this.deps.store.put(result.data, result.mime, session.editorId);
+        entry.token = token;
+        this.trimThumbnails(session);
+        return { token, width: result.width, height: result.height };
+      })
+      .finally(() => session.background.delete(task));
+    entry.promise.catch(() => undefined); // every requester awaits it; never an unhandled rejection
+    return entry;
+  }
+
+  /** Release the least recently requested thumbnails beyond the per-editor limit. */
+  private trimThumbnails(session: EditorSession): void {
+    const keep = this.deps.keepThumbnails ?? 120;
+    let stored = [...session.thumbnails.values()].filter((entry) => entry.token !== null).length;
+    for (const [key, entry] of [...session.thumbnails]) {
+      if (stored <= keep) return;
+      if (entry.token === null) continue;
+      this.deps.store.release(entry.token);
+      session.thumbnails.delete(key);
+      stored -= 1;
+    }
   }
 
   private remember(session: EditorSession, token: string): void {

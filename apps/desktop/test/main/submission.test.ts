@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_SETTINGS, OrbitError, type FileFormat, type ProcessorJob, type ProcessorResult, type Settings } from '@orbitdrop/contracts';
+import { DEFAULT_SETTINGS, OrbitError, type ErrorCode, type FileFormat, type ProcessorJob, type ProcessorResult, type Settings } from '@orbitdrop/contracts';
+import type { ValidatedInput } from '@orbitdrop/core/node';
 import { EditorSessions, type EditorSession } from '../../src/main/editor/sessions';
 import { OutputRegistry } from '../../src/main/files/outputs';
-import { FileRegistry } from '../../src/main/files/registry';
+import { FileRegistry, toProcessorInput } from '../../src/main/files/registry';
 import { HistoryStore } from '../../src/main/history/store';
 import { JobManager } from '../../src/main/jobs/manager';
 import { SubmissionService } from '../../src/main/jobs/submission';
 import { PreviewStore } from '../../src/main/preview/store';
-import { deferred, fakeValidator, imageInfo, snapshotWith, waitFor, type Deferred } from './helpers';
+import { deferred, fakeValidator, imageInfo, snapshotWith, validated, waitFor, type Deferred } from './helpers';
 
 const FILES: Record<string, FileFormat> = {
   '/in/a.png': 'png',
@@ -25,12 +26,14 @@ interface Options {
   /** Folder dialog stand-in (default: resolves `chooseDir` or '/chosen'). */
   readonly dialog?: () => Promise<string | null>;
   readonly run?: (job: ProcessorJob) => Promise<ProcessorResult>;
+  /** Custom path validator (default: the fixed FILES table). */
+  readonly validate?: (path: string) => Promise<ValidatedInput>;
 }
 
 function setup(options: Options = {}) {
   const settings: Settings = { ...DEFAULT_SETTINGS, ...options.settings };
   const snapshot = options.snapshot ?? snapshotWith();
-  const files = new FileRegistry({ validate: fakeValidator(FILES), snapshot: () => snapshot });
+  const files = new FileRegistry({ validate: options.validate ?? fakeValidator(FILES), snapshot: () => snapshot });
   const ran: ProcessorJob[] = [];
   const jobs = new JobManager({
     run: async (job) => {
@@ -323,5 +326,165 @@ describe('retryElsewhere', () => {
     if (res.kind !== 'jobs') throw new Error('expected jobs');
     await cancelled.jobs.waitFor(res.jobIds[0]!);
     expect(await cancelled.submission.retryElsewhere(res.jobIds[0]!, ctx)).toBeNull();
+  });
+});
+
+describe('retryJob', () => {
+  /** A validator over a mutable table: tests delete, resize or change files between attempts. */
+  function table(initial: Record<string, { format: FileFormat; bytes?: number }>) {
+    const entries = new Map(Object.entries(initial));
+    const validate = async (path: string): Promise<ValidatedInput> => {
+      const entry = entries.get(path);
+      if (!entry) throw new OrbitError('FILE_NOT_FOUND', 'The file does not exist');
+      return validated(path, entry.format, entry.bytes ?? 1000);
+    };
+    return { entries, validate };
+  }
+
+  /** run(): fails each listed attempt with its code (in order), then succeeds. */
+  function failing(codes: readonly ErrorCode[]) {
+    const queue = [...codes];
+    return async (): Promise<ProcessorResult> => {
+      const code = queue.shift();
+      if (code) throw new OrbitError(code, 'scripted failure');
+      return { outputs: [], warnings: [] };
+    };
+  }
+
+  async function failedJob(s: ReturnType<typeof setup>, paths: string[], actionId: 'convert.jpeg' | 'convert.png' = 'convert.jpeg', options?: unknown) {
+    const selection = await s.files.registerPaths(paths, 'dropZone');
+    const result = await s.submission.submit({ selectionId: selection.selectionId, actionId, ...(options === undefined ? {} : { options }) }, ctx);
+    if (result.kind !== 'jobs') throw new Error(`expected jobs, got ${result.kind}`);
+    const snapshot = await s.jobs.waitFor(result.jobIds[0]!);
+    return { selection, jobId: result.jobIds[0]!, snapshot };
+  }
+
+  it('runs a timed-out job again with the same action, options, folder and origin, from freshly validated inputs', async () => {
+    const files = table({ '/in/a.png': { format: 'png', bytes: 1000 } });
+    const s = setup({ validate: files.validate, run: failing(['TIMEOUT']), settings: { output: { ...DEFAULT_SETTINGS.output, location: 'ask' } } });
+    const { jobId, snapshot } = await failedJob(s, ['/in/a.png'], 'convert.jpeg', { quality: 70 });
+    expect(snapshot).toMatchObject({ state: 'failed', error: { code: 'TIMEOUT' } });
+    files.entries.set('/in/a.png', { format: 'png', bytes: 2345 }); // the file changed since
+
+    const retried = await s.submission.retryJob(jobId, ctx);
+    if (retried.kind !== 'jobs') throw new Error(`expected jobs, got ${JSON.stringify(retried)}`);
+    expect((await s.jobs.waitFor(retried.jobIds[0]!)).state).toBe('completed');
+    const [first, second] = s.ran;
+    expect(second!.actionId).toBe('convert.jpeg');
+    expect(second!.options).toEqual(first!.options);
+    expect(second!.outputDir).toBe('/chosen'); // the folder chosen for the original job — no second dialog
+    expect(s.chooseOutputDir).toHaveBeenCalledTimes(1);
+    expect(second!.inputs.map((i) => [i.fileId, i.displayName, i.sourceDir, i.bytes])).toEqual([[first!.inputs[0]!.fileId, 'a.png', '/in', 2345]]);
+    expect(s.jobs.get(retried.jobIds[0]!)?.spec.origin).toEqual(s.jobs.get(jobId)?.spec.origin); // same origin (notifications follow it)
+
+    // One retry per job: asking again returns the same retry instead of submitting a third run.
+    expect(await s.submission.retryJob(jobId, ctx)).toEqual(retried);
+    expect(s.ran).toHaveLength(2);
+  });
+
+  it('a double click retries once', async () => {
+    const s = setup({ run: failing(['WORKER_CRASHED', 'WORKER_CRASHED']) }); // the queue retries a crash once by itself
+    const { jobId, snapshot } = await failedJob(s, ['/in/a.png']);
+    expect(snapshot.error?.code).toBe('WORKER_CRASHED');
+    const [a, b] = await Promise.all([s.submission.retryJob(jobId, ctx), s.submission.retryJob(jobId, ctx)]);
+    expect(a).toEqual(b);
+    expect(a.kind).toBe('jobs');
+    await waitFor(() => s.ran.length === 3, 1000, 'one retry run');
+    expect(s.jobs.list().filter((j) => j.inputName === 'a.png')).toHaveLength(2);
+  });
+
+  it('a cancelled job can be retried', async () => {
+    const gate = deferred<ProcessorResult>();
+    let attempts = 0;
+    const s = setup({
+      run: () => {
+        attempts += 1;
+        return attempts === 1 ? gate.promise : Promise.resolve({ outputs: [], warnings: [] });
+      },
+    });
+    const selection = await s.files.registerPaths(['/in/a.png'], 'dropZone');
+    const result = await s.submission.submit({ selectionId: selection.selectionId, actionId: 'convert.jpeg' }, ctx);
+    if (result.kind !== 'jobs') throw new Error('expected jobs');
+    await waitFor(() => attempts === 1, 1000, 'running');
+    expect(s.jobs.cancel(result.jobIds[0]!)).toBe(true);
+    expect((await s.jobs.waitFor(result.jobIds[0]!)).state).toBe('cancelled');
+    const retried = await s.submission.retryJob(result.jobIds[0]!, ctx);
+    if (retried.kind !== 'jobs') throw new Error(`expected jobs, got ${JSON.stringify(retried)}`);
+    expect((await s.jobs.waitFor(retried.jobIds[0]!)).state).toBe('completed');
+  });
+
+  it('an input that is gone since → FILE_NOT_FOUND, nothing submitted', async () => {
+    const files = table({ '/in/a.png': { format: 'png' } });
+    const s = setup({ validate: files.validate, run: failing(['NETWORK_PATH_FAILED']) });
+    const { jobId } = await failedJob(s, ['/in/a.png']);
+    files.entries.delete('/in/a.png');
+    expect(await s.submission.retryJob(jobId, ctx)).toMatchObject({ kind: 'rejected', error: { code: 'FILE_NOT_FOUND' } });
+    expect(s.ran).toHaveLength(1);
+    // Once the file is back, the retry works (a refused retry is not remembered).
+    files.entries.set('/in/a.png', { format: 'png' });
+    expect((await s.submission.retryJob(jobId, ctx)).kind).toBe('jobs');
+  });
+
+  it('an input this build cannot read any more, or that the action no longer accepts, is refused', async () => {
+    const files = table({ '/in/a.png': { format: 'png' }, '/in/b.png': { format: 'png' } });
+    const s = setup({ validate: files.validate, run: failing(['DISK_FULL', 'DISK_FULL']) });
+    const unreadable = await failedJob(s, ['/in/a.png']);
+    files.entries.set('/in/a.png', { format: 'heic' }); // replaced by a HEIC (this build cannot decode HEIC)
+    expect(await s.submission.retryJob(unreadable.jobId, ctx)).toMatchObject({ kind: 'rejected', error: { code: 'UNSUPPORTED_FORMAT' } });
+    const sameFormat = await failedJob(s, ['/in/b.png'], 'convert.jpeg');
+    files.entries.set('/in/b.png', { format: 'jpeg' }); // now already a JPEG: convert.jpeg does not accept it
+    expect(await s.submission.retryJob(sameFormat.jobId, ctx)).toMatchObject({ kind: 'rejected', error: { code: 'UNSUPPORTED_FORMAT' } });
+  });
+
+  it('refuses jobs that are not retryable and jobs main no longer knows', async () => {
+    const s = setup({ run: failing(['PDF_CORRUPT', 'OUTPUT_DIR_NOT_WRITABLE']) });
+    const corrupt = await failedJob(s, ['/in/a.png']);
+    expect(await s.submission.retryJob(corrupt.jobId, ctx)).toMatchObject({ kind: 'rejected', error: { code: 'INVALID_OPTIONS' } });
+    const readOnly = await failedJob(s, ['/in/d.png']); // needs another folder: retryElsewhere, not retryJob
+    expect(await s.submission.retryJob(readOnly.jobId, ctx)).toMatchObject({ kind: 'rejected', error: { code: 'INVALID_OPTIONS' } });
+    const done = await failedJob(s, ['/in/c.webp']);
+    expect(done.snapshot.state).toBe('completed');
+    expect(await s.submission.retryJob(done.jobId, ctx)).toMatchObject({ kind: 'rejected', error: { code: 'INVALID_OPTIONS' } });
+    expect(await s.submission.retryJob('job_unknown', ctx)).toMatchObject({ kind: 'rejected', error: { code: 'FILE_NOT_FOUND' } });
+    expect(s.ran).toHaveLength(3);
+  });
+
+  it('images → PDF: the retry keeps every file id and the confirmed page order', async () => {
+    const s = setup({ run: failing(['TIMEOUT']) });
+    const selection = await s.files.registerPaths(['/in/a.png', '/in/b.jpg', '/in/c.webp'], 'dropZone');
+    await s.submission.submit({ selectionId: selection.selectionId, actionId: 'convert.pdf' }, ctx);
+    const session = s.opened[0]!;
+    const [a, b, c] = session.files.map((f) => f.fileId);
+    const committed = await s.submission.commitEditor({ editorId: session.editorId, options: { order: [c, a, b] } }, ctx);
+    if (committed.kind !== 'jobs') throw new Error('expected jobs');
+    expect((await s.jobs.waitFor(committed.jobIds[0]!)).state).toBe('failed');
+    const retried = await s.submission.retryJob(committed.jobIds[0]!, ctx);
+    if (retried.kind !== 'jobs') throw new Error(`expected jobs, got ${JSON.stringify(retried)}`);
+    await s.jobs.waitFor(retried.jobIds[0]!);
+    expect(s.ran[1]!.inputs.map((i) => i.fileId)).toEqual([c, a, b]);
+    expect(s.ran[1]!.inputs.map((i) => i.displayName)).toEqual(['c.webp', 'a.png', 'b.jpg']);
+    expect(s.ran[1]!.options).toMatchObject({ order: [c, a, b] });
+  });
+
+  it('Add Background: the picked background image is validated again too', async () => {
+    const files = table({ '/in/b.jpg': { format: 'jpeg' }, '/in/bg.png': { format: 'png' } });
+    const s = setup({ validate: files.validate, run: failing(['TIMEOUT', 'TIMEOUT']) });
+    const selection = await s.files.registerPaths(['/in/b.jpg'], 'dropZone');
+    await s.submission.submit({ selectionId: selection.selectionId, actionId: 'tool.addBackground' }, ctx);
+    const session = s.opened[0]!;
+    const background = await s.files.registerFile('/in/bg.png');
+    s.editors.addAsset(session.editorId, toProcessorInput(background));
+    const options = { background: { kind: 'image', fileId: background.fileId }, padding: 10, cornerRadius: 0, shadow: 0, ratio: 'auto', maxEdge: 1000, format: 'png', quality: 90 };
+    const committed = await s.submission.commitEditor({ editorId: session.editorId, options }, ctx);
+    if (committed.kind !== 'jobs') throw new Error(`expected jobs, got ${JSON.stringify(committed)}`);
+    await s.jobs.waitFor(committed.jobIds[0]!);
+
+    files.entries.delete('/in/bg.png');
+    expect(await s.submission.retryJob(committed.jobIds[0]!, ctx)).toMatchObject({ kind: 'rejected', error: { code: 'FILE_NOT_FOUND' } });
+    files.entries.set('/in/bg.png', { format: 'png', bytes: 777 });
+    const retried = await s.submission.retryJob(committed.jobIds[0]!, ctx);
+    if (retried.kind !== 'jobs') throw new Error(`expected jobs, got ${JSON.stringify(retried)}`);
+    await s.jobs.waitFor(retried.jobIds[0]!);
+    expect(s.ran.at(-1)!.assets?.[background.fileId]).toMatchObject({ fileId: background.fileId, path: '/in/bg.png', bytes: 777 });
   });
 });

@@ -1,6 +1,9 @@
 import {
   ACTIONS,
   ACTION_OPTION_SCHEMAS,
+  OrbitError,
+  RETRY_ELSEWHERE_CODES,
+  canRetryJob,
   toErrorInfo,
   type ActionId,
   type CapabilitySnapshot,
@@ -13,7 +16,8 @@ import {
   type SubmitActionRequest,
   type SubmitActionResult,
 } from '@orbitdrop/contracts';
-import { resolveSubmission } from '@orbitdrop/core';
+import { buildSelectedFile, resolveSubmission, supports } from '@orbitdrop/core';
+import type { ValidatedInput } from '@orbitdrop/core/node';
 import type { EditorSession, EditorSessions } from '../editor/sessions';
 import { isUsable, toProcessorInput, type FileRegistry, type UsableFile } from '../files/registry';
 import { silentLogger, type Logger } from '../log';
@@ -50,8 +54,8 @@ export interface SubmissionDeps {
   readonly log?: Logger;
 }
 
-/** Error codes for which choosing another output folder can help. */
-export const RETRY_ELSEWHERE_CODES: ReadonlySet<ErrorCode> = new Set<ErrorCode>(['OUTPUT_DIR_NOT_WRITABLE', 'OUTPUT_WRITE_FAILED', 'DISK_FULL', 'PATH_TOO_LONG']);
+/** Error codes for which choosing another output folder can help (shared with the renderer through contracts). */
+export { RETRY_ELSEWHERE_CODES };
 
 export function rejected(code: ErrorCode, message: string): SubmitActionResult {
   return { kind: 'rejected', error: { code, message, retryable: false } };
@@ -78,6 +82,8 @@ export class SubmissionService {
   private readonly committing = new Map<string, Promise<SubmitActionResult>>();
   /** One "save elsewhere" per failed job at a time. */
   private readonly retrying = new Map<string, Promise<SubmitActionResult | null>>();
+  /** One retryJob per failed job at a time (a double click submits once). */
+  private readonly retryingJobs = new Map<string, Promise<SubmitActionResult>>();
 
   constructor(private readonly deps: SubmissionDeps) {
     this.log = deps.log ?? silentLogger;
@@ -213,6 +219,80 @@ export class SubmissionService {
     if (dir === null) return null;
     const spec: JobSpec = { ...job.spec, outputDir: dir };
     return { kind: 'jobs', jobIds: this.deps.jobs.submit([spec], null) };
+  }
+
+  /**
+   * retryJob (OrbitApi): run a cancelled job, or one that failed with one of
+   * RETRY_JOB_CODES (timeout, crashed worker, write/disk/network trouble, cloud
+   * placeholder) — contracts `canRetryJob` — again with the same action,
+   * options, output folder and origin. Its inputs and assets are validated
+   * again first — a file may be gone, replaced by an unreadable one, or still a
+   * placeholder. Concurrent calls share one attempt and a job is retried once:
+   * later calls return the first retry's jobs. Jobs listed from history after a
+   * restart cannot be retried (their options are not kept): FILE_NOT_FOUND,
+   * like retryElsewhere.
+   */
+  retryJob(jobId: string, context: SubmitContext): Promise<SubmitActionResult> {
+    const inFlight = this.retryingJobs.get(jobId);
+    if (inFlight) return inFlight;
+    const work = this.retryJobInner(jobId, context).finally(() => this.retryingJobs.delete(jobId));
+    this.retryingJobs.set(jobId, work);
+    return work;
+  }
+
+  private async retryJobInner(jobId: string, _context: SubmitContext): Promise<SubmitActionResult> {
+    const job = this.deps.jobs.get(jobId);
+    if (!job) return rejected('FILE_NOT_FOUND', 'The job is no longer available');
+    const earlier = this.deps.jobs.retriedAs(jobId);
+    if (earlier) return { kind: 'jobs', jobIds: [...earlier] };
+    const { snapshot, spec } = job;
+    if (!canRetryJob(snapshot)) return rejected('INVALID_OPTIONS', 'This job cannot be retried');
+    try {
+      const capabilities = await this.deps.capabilities();
+      const inputs = await this.revalidateInputs(spec.inputs, capabilities, (input) => {
+        if (!supports(capabilities, spec.actionId, { kind: input.kind, format: input.format })) {
+          throw new OrbitError('UNSUPPORTED_FORMAT', `${spec.actionId} does not accept ${input.format} input`);
+        }
+      });
+      const assetList = Object.values(spec.assets ?? {});
+      const assets = await this.revalidateInputs(assetList, capabilities, (input) => {
+        if (input.kind !== 'image') throw new OrbitError('UNSUPPORTED_FORMAT', 'Background must be an image');
+      });
+      const retry: JobSpec = {
+        ...spec,
+        inputs,
+        ...(assets.length > 0 ? { assets: Object.fromEntries(assets.map((input) => [input.fileId, input])) } : {}),
+      };
+      const jobIds = this.deps.jobs.submit([retry], null);
+      this.deps.jobs.markRetried(jobId, jobIds);
+      this.log.info('job retried', { jobId, retryJobId: jobIds[0], actionId: spec.actionId, code: snapshot.error?.code ?? snapshot.state });
+      return { kind: 'jobs', jobIds };
+    } catch (error) {
+      const result = rejectedFrom(error);
+      this.log.warn('job retry refused', { jobId, code: result.kind === 'rejected' ? result.error.code : undefined });
+      return result;
+    }
+  }
+
+  /**
+   * Fresh ProcessorInputs for a retry: path, format and size from a new
+   * validation; fileId (images → PDF orders by it), display name and source
+   * folder (where outputs go) stay those of the original job.
+   */
+  private async revalidateInputs(
+    inputs: readonly ProcessorInput[],
+    capabilities: CapabilitySnapshot,
+    check: (input: ValidatedInput) => void,
+  ): Promise<ProcessorInput[]> {
+    if (inputs.length === 0) return [];
+    const fresh = await this.deps.files.revalidate(inputs.map((input) => input.path));
+    return inputs.map((input, index) => {
+      const validated = fresh[index]!;
+      const problem = buildSelectedFile({ fileId: input.fileId, input: validated }, capabilities).problem;
+      if (problem) throw new OrbitError(problem.code, problem.message);
+      check(validated);
+      return { fileId: input.fileId, path: validated.realPath, displayName: input.displayName, sourceDir: input.sourceDir, format: validated.format, bytes: validated.bytes };
+    });
   }
 
   private async validateEditorOptions(session: EditorSession, options: unknown): Promise<SubmitActionResult | null> {

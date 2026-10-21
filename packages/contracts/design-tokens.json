@@ -1,5 +1,5 @@
 {
-  "$comment": "OrbitDrop design tokens. Native helpers receive the wheel subset through the configure message; the renderer turns them into CSS variables.",
+  "$comment": "OrbitDrop design tokens. Native helpers receive the wheel subset through the configure message; the renderer turns them into CSS variables. color.highContrastDark (white on black) is renderer-only: windows use it when high contrast applies in dark mode; the native wheel keeps color.highContrast.",
   "color": {
     "light": {
       "wheelDisc": "#FFF3E6B8",
@@ -99,6 +99,39 @@
       "warningBg": "#FFFFFF",
       "warningBorder": "#000000",
       "warningText": "#000000"
+    },
+    "highContrastDark": {
+      "wheelDisc": "#000000FF",
+      "wheelRing": "#FFFFFFFF",
+      "wheelShadow": "#00000000",
+      "sector": "#000000FF",
+      "sectorHover": "#4D2A14FF",
+      "sectorText": "#FFFFFF",
+      "sectorIcon": "#FFFFFF",
+      "sectorDisabled": "#1F1F1FFF",
+      "sectorDisabledText": "#ADADAD",
+      "sectorActive": "#FF8A50",
+      "sectorActiveText": "#000000",
+      "capsule": "#FFFFFFFF",
+      "capsuleText": "#000000",
+      "capsuleReject": "#A6A6A6FF",
+      "accent": "#FF8A50",
+      "accentHover": "#FFA470",
+      "accentPressed": "#F07035",
+      "accentText": "#000000",
+      "windowBg": "#000000",
+      "surface": "#000000",
+      "surfaceMuted": "#1A1A1A",
+      "border": "#FFFFFF",
+      "text": "#FFFFFF",
+      "textMuted": "#D6D6D6",
+      "danger": "#FF7B7B",
+      "success": "#6FE07A",
+      "focusRing": "#66D9FF",
+      "mask": "#000000CC",
+      "warningBg": "#000000",
+      "warningBorder": "#FFE066",
+      "warningText": "#FFE066"
     }
   },
   "font": {

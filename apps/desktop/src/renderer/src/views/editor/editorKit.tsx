@@ -1,4 +1,4 @@
-import { ACTIONS, FORMAT_INFO, type EditorContext, type OrbitErrorInfo, type PreviewResponse, type ToolOutputFormat } from '@orbitdrop/contracts';
+import { ACTIONS, FORMAT_INFO, type EditorContext, type FileFormat, type OrbitErrorInfo, type PreviewResponse, type ToolOutputFormat } from '@orbitdrop/contracts';
 import { toolResultName } from '@orbitdrop/core';
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { useEnv } from '../../app/env';
@@ -40,15 +40,50 @@ export function previewEdgeFor(display: Size): number {
   return Math.round(Math.max(display.width, display.height) * Math.min(dpr, 2));
 }
 
-/** Result name shown before saving (the real name may get " (2)" if taken). */
-export function outputFileName(ctx: EditorContext, format: ToolOutputFormat | 'png' | 'jpeg' = 'input'): string {
+/**
+ * Result name shown before saving (the real name may get " (2)" if taken).
+ * `resolved` is the format the processor reported for 'input'
+ * (PreviewResponse.outputFormat), e.g. PNG for a GIF.
+ */
+export function outputFileName(ctx: EditorContext, format: ToolOutputFormat | 'png' | 'jpeg' = 'input', resolved?: FileFormat): string {
   const file = ctx.files[0];
   const name = file?.name ?? 'image';
   const action = ACTIONS[ctx.actionId];
   let ext = file?.ext ?? '';
   if (format !== 'input') ext = FORMAT_INFO[format].extension;
   else if (action.output !== 'input') ext = FORMAT_INFO[action.output].extension;
+  else if (resolved !== undefined && resolved !== file?.format) ext = FORMAT_INFO[resolved].extension;
   return toolResultName(name, action.outputSuffix, ext);
+}
+
+export interface FormatChange {
+  readonly from: FileFormat;
+  readonly to: FileFormat;
+}
+
+/**
+ * "With “original format”, a GIF file is saved as PNG": one line per input
+ * format whose output format (as reported by the processor) differs.
+ */
+export function FormatResolvedNote({ changes, className }: { readonly changes: readonly FormatChange[]; readonly className: string }) {
+  const { t } = useEnv();
+  const seen = new Set<string>();
+  const distinct = changes.filter(({ from, to }) => {
+    const key = `${from}>${to}`;
+    if (from === to || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  if (distinct.length === 0) return null;
+  return (
+    <>
+      {distinct.map(({ from, to }) => (
+        <p key={`${from}>${to}`} className={`${className} muted`}>
+          {t('editor.format.resolved', { from: FORMAT_INFO[from].label, to: FORMAT_INFO[to].label })}
+        </p>
+      ))}
+    </>
+  );
 }
 
 /** Keeps showing the previous image until the next one has decoded (no flash between previews). */

@@ -1,6 +1,6 @@
 import type { AnnotationShape, EditorContext } from '@orbitdrop/contracts';
 import { ANNOTATION_LINE_HEIGHT, annotationBounds, annotationFontFamilyCss, drawAnnotations } from '@orbitdrop/core';
-import { MousePointer2, MoveUpRight, Redo2, Square, Trash2, Type, Undo2 } from 'lucide-react';
+import { MousePointer2, MoveUpRight, Plus, Redo2, Square, Trash2, Type, Undo2 } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -14,14 +14,17 @@ import {
   type ReactElement,
 } from 'react';
 import { useEnv } from '../../../app/env';
+import { Notice } from '../../../components/Notice';
 import { Segmented } from '../../../components/Segmented';
 import { SliderField } from '../../../components/SliderField';
 import { editorMapping, sourcePerView, sourceToView, viewToSource, type Point } from '../crop/cropMath';
 import { EditorFrame, useEditorCommit } from '../EditorFrame';
 import { Stage, isOneOf, pick, usePreviewBox } from '../editorKit';
+import { usePreview } from '../usePreview';
 import {
   addShape,
   arrowFromDrag,
+  centeredShape,
   canRedo,
   canUndo,
   commitHistory,
@@ -34,6 +37,7 @@ import {
   redo,
   removeShape,
   replacePresent,
+  resizeShape,
   sourceToUi,
   strokeToSource,
   textShapeAt,
@@ -48,8 +52,8 @@ import {
 import { SwatchGroup } from './SwatchGroup';
 import './annotate.css';
 
-/** Height kept free for the title bar, toolbar, style rows, help line and footer. */
-const RESERVED = 372;
+/** Height kept free for the title bar, toolbar, add buttons, style rows, help line and footer. */
+const RESERVED = 408;
 export const ANNOTATE_PALETTE: readonly string[] = ['#F2552C', '#E53935', '#FDD835', '#43A047', '#1E88E5', '#111111', '#FFFFFF'];
 /** On-screen (view) px ranges of the style sliders. */
 export const STROKE_UI = { min: 1, max: 24, initial: 4 } as const;
@@ -123,6 +127,8 @@ export function AnnotateEditor({ ctx, title }: { readonly ctx: EditorContext; re
   const { orbit, t, platform } = useEnv();
   const commit = useEditorCommit(ctx.editorId);
   const helpId = useId();
+  const keysHelpId = useId();
+  const [announcement, setAnnouncement] = useState('');
   const orientedWidth = Math.max(1, ctx.image.orientedWidth);
   const orientedHeight = Math.max(1, ctx.image.orientedHeight);
   const box = usePreviewBox(RESERVED, 400);
@@ -452,9 +458,11 @@ export function AnnotateEditor({ ctx, title }: { readonly ctx: EditorContext; re
   const onSurfaceKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (textEditRef.current !== null || selected === null) return;
     const step = (event.shiftKey ? 10 : 1) * Math.max(1, Math.round(spv));
+    // Arrows move the selected shape; Alt/Option+arrows resize it (rect size, arrow tip, text size).
     const nudge = (dx: number, dy: number) => {
       event.preventDefault();
-      update((list) => updateShape(list, selected.id, (shape) => moveShape(shape, dx, dy)), `nudge:${selected.id}`);
+      if (event.altKey) update((list) => updateShape(list, selected.id, (shape) => resizeShape(shape, dx, dy)), `resize:${selected.id}`);
+      else update((list) => updateShape(list, selected.id, (shape) => moveShape(shape, dx, dy)), `nudge:${selected.id}`);
     };
     switch (event.key) {
       case 'Delete':
@@ -528,6 +536,14 @@ export function AnnotateEditor({ ctx, title }: { readonly ctx: EditorContext; re
     }
   };
 
+  // Font coverage: the processor reports ANNOTATION_FONT_FALLBACK when the export's fonts cannot draw
+  // some text characters. Only the text shapes are sent, as a tiny preview whose image is not shown.
+  const textShapes = useMemo(() => shapes.filter((shape) => shape.type === 'text'), [shapes]);
+  const fontCheck = useMemo(() => (textShapes.length > 0 ? { shapes: textShapes, outputFormat } : null), [textShapes, outputFormat]);
+  const fontPreview = usePreview(ctx.editorId, fontCheck, { maxEdge: 64, debounceMs: 300 });
+  const fontWarning = fontCheck === null ? undefined : fontPreview.preview?.warnings?.find((warning) => warning.code === 'ANNOTATION_FONT_FALLBACK');
+  const unreadableTexts = Number(fontWarning?.params?.unreadable ?? 0) || 0;
+
   const reset = () => {
     finishText(false);
     setSelectedId(null);
@@ -541,6 +557,29 @@ export function AnnotateEditor({ ctx, title }: { readonly ctx: EditorContext; re
   };
 
   const mac = platform === 'darwin';
+  const altKey = mac ? 'Option' : 'Alt';
+
+  /**
+   * "Add" buttons (keyboard users): a shape in the centre of the image, in the
+   * current style, selected, with focus on the canvas so the arrow keys move it
+   * and Alt/Option+arrows resize it. Text opens the text box in the centre.
+   */
+  const insert = (kind: 'text' | 'arrow' | 'rect') => {
+    finishText(true);
+    if (kind === 'text') {
+      setSelectedId(null);
+      openText({ id: null, at: { x: Math.round(display.width * 0.3), y: Math.round(display.height / 2 - fontUi * 0.6) }, color, fontUi, initial: '' });
+      return;
+    }
+    const shape = centeredShape(kind, mapping, currentStyle);
+    if (shape === null) return;
+    const next = update((list) => addShape(list, shape));
+    if (!next.present.includes(shape)) return; // the 500-shape limit
+    setSelectedId(shape.id);
+    surfaceRef.current?.focus({ preventScroll: true });
+    setAnnouncement(t(kind === 'arrow' ? 'annotate.added.arrow' : 'annotate.added.rect', { alt: altKey }));
+  };
+
   const toolLabel = (icon: ReactElement, text: string) => (
     <span className="annot-tool-label">
       {icon}
@@ -560,6 +599,7 @@ export function AnnotateEditor({ ctx, title }: { readonly ctx: EditorContext; re
       resetDisabled={shapes.length === 0 && textEdit === null}
       footerNote={shapes.length === 0 ? t('annotate.empty') : undefined}
       escapeEnabled={textEdit === null}
+      confirmClose={shapes.length > 0 || draftHasText ? { message: t('annotate.unsaved') } : null}
     >
       <div className="annot-toolbar">
         <Segmented<AnnotationTool>
@@ -605,6 +645,21 @@ export function AnnotateEditor({ ctx, title }: { readonly ctx: EditorContext; re
         </button>
       </div>
 
+      <div className="annot-add" role="group" aria-label={t('annotate.add')}>
+        <button type="button" className="btn btn-small" aria-describedby={keysHelpId} onClick={() => insert('text')}>
+          <Plus size={13} aria-hidden="true" />
+          {t('annotate.add.text')}
+        </button>
+        <button type="button" className="btn btn-small" aria-describedby={keysHelpId} onClick={() => insert('arrow')}>
+          <Plus size={13} aria-hidden="true" />
+          {t('annotate.add.arrow')}
+        </button>
+        <button type="button" className="btn btn-small" aria-describedby={keysHelpId} onClick={() => insert('rect')}>
+          <Plus size={13} aria-hidden="true" />
+          {t('annotate.add.rect')}
+        </button>
+      </div>
+
       <Stage display={display}>
         <img src={ctx.source.url} alt={t('editor.sourceAlt')} draggable={false} />
         <canvas ref={canvasRef} className="annot-canvas" aria-hidden="true" />
@@ -613,7 +668,7 @@ export function AnnotateEditor({ ctx, title }: { readonly ctx: EditorContext; re
           className="annot-surface"
           role="application"
           aria-label={t('annotate.canvasLabel')}
-          aria-describedby={helpId}
+          aria-describedby={`${helpId} ${keysHelpId}`}
           tabIndex={0}
           data-tool={tool}
           data-hover={tool === 'select' && (hoverShape || gesture?.kind === 'move')}
@@ -692,9 +747,23 @@ export function AnnotateEditor({ ctx, title }: { readonly ctx: EditorContext; re
         <SliderField label={t('annotate.fontSize')} value={fontUi} min={FONT_UI.min} max={FONT_UI.max} onChange={changeFont} />
       </div>
 
+      {fontWarning ? (
+        // Stronger when some text would not be visible at all in the saved image.
+        <Notice tone={unreadableTexts > 0 ? 'danger' : 'warning'}>
+          {t.warning('ANNOTATION_FONT_FALLBACK')}
+          {unreadableTexts > 0 ? <> {t.plural('annotate.fontUnreadable', unreadableTexts)}</> : null}
+        </Notice>
+      ) : null}
+
       <div className="editor-meta">
         <span id={helpId}>{t('annotate.help')}</span>
+        <span id={keysHelpId} className="visually-hidden">
+          {t('annotate.keysHelp', { alt: altKey })}
+        </span>
         <strong aria-live="polite">{t.plural('annotate.count', shapes.length)}</strong>
+        <span className="visually-hidden" aria-live="polite" aria-atomic="true">
+          {announcement}
+        </span>
       </div>
     </EditorFrame>
   );

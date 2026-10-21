@@ -50,6 +50,10 @@ export class Lru<V> {
     })();
   }
 
+  get size(): number {
+    return this.map.size;
+  }
+
   clear(): void {
     this.map.clear();
     this.total = 0;
@@ -194,8 +198,25 @@ export async function getScaledSource(
   }
 }
 
-/** Drop all cached decodes (tests, memory pressure). */
+/** Other preview caches (Compress encodes and estimates) register here so one call frees them all. */
+const otherCaches = new Set<() => void>();
+
+export function onClearPreviewCaches(clear: () => void): void {
+  otherCaches.add(clear);
+}
+
+/**
+ * Drop all cached decodes and the caches registered with onClearPreviewCaches
+ * (tests, memory pressure; main sends `clearPreviewCaches` when the last
+ * editor closes).
+ */
 export function clearPreviewCaches(): void {
   sourceCache.clear();
   sizeCache.clear();
+  for (const clear of otherCaches) clear();
+}
+
+/** Decoded sources held in the preview cache (tests, diagnostics). */
+export function cachedSourceCount(): number {
+  return sourceCache.size;
 }

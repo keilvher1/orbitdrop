@@ -189,6 +189,18 @@ export function textShapeAt(view: Point, text: string, m: ViewMapping, style: Sh
   };
 }
 
+/**
+ * Default shape inserted by the editor's "add" buttons (keyboard users): centred
+ * on the image, about a third of its shorter side, in the current style.
+ */
+export function centeredShape(kind: 'rect' | 'arrow', m: ViewMapping, style: ShapeStyle): AnnotationShape | null {
+  const cx = m.view.width / 2;
+  const cy = m.view.height / 2;
+  const half = Math.max(4, Math.min(m.view.width, m.view.height) / 6);
+  if (kind === 'rect') return rectFromDrag({ x: cx - half * 1.25, y: cy - half * 0.8 }, { x: cx + half * 1.25, y: cy + half * 0.8 }, m, style);
+  return arrowFromDrag({ x: cx - half, y: cy + half * 0.6 }, { x: cx + half, y: cy - half * 0.6 }, m, style);
+}
+
 // ----------------------------------------------------------- modification
 
 /** Translate a shape by a source-px delta (rounded to whole pixels). */
@@ -202,6 +214,37 @@ export function moveShape(shape: AnnotationShape, dx: number, dy: number): Annot
       return { ...shape, x: clampCoord(shape.x + rx), y: clampCoord(shape.y + ry) };
     case 'arrow':
       return { ...shape, x1: clampCoord(shape.x1 + rx), y1: clampCoord(shape.y1 + ry), x2: clampCoord(shape.x2 + rx), y2: clampCoord(shape.y2 + ry) };
+    default:
+      return shape;
+  }
+}
+
+/**
+ * Keyboard resize (Alt/Option + arrow keys) by a source-px delta: a rectangle
+ * grows or shrinks from its top-left corner (at least 1×1 px), an arrow moves
+ * its tip (never onto its tail), a text changes its font size (→ / ↑ larger,
+ * ← / ↓ smaller).
+ */
+export function resizeShape(shape: AnnotationShape, dx: number, dy: number): AnnotationShape {
+  const rx = Math.round(dx);
+  const ry = Math.round(dy);
+  if (rx === 0 && ry === 0) return shape;
+  switch (shape.type) {
+    case 'rect': {
+      const width = clamp(shape.width + rx, 1, ANNOTATION_LIMITS.coord);
+      const height = clamp(shape.height + ry, 1, ANNOTATION_LIMITS.coord);
+      return width === shape.width && height === shape.height ? shape : { ...shape, width, height };
+    }
+    case 'arrow': {
+      const x2 = clampCoord(shape.x2 + rx);
+      const y2 = clampCoord(shape.y2 + ry);
+      if (x2 === shape.x1 && y2 === shape.y1) return shape;
+      return { ...shape, x2, y2 };
+    }
+    case 'text': {
+      const fontSize = clamp(shape.fontSize + (rx !== 0 ? rx : -ry), ANNOTATION_LIMITS.fontSize.min, ANNOTATION_LIMITS.fontSize.max);
+      return fontSize === shape.fontSize ? shape : { ...shape, fontSize };
+    }
     default:
       return shape;
   }

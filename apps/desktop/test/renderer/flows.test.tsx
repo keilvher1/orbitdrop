@@ -98,7 +98,10 @@ describe('Picker window', () => {
     const imageMenu = await loadedWheel('변환 메뉴');
     imageMenu.focus();
     await user.keyboard('{End}'); // DOCX is last in the JPG convert menu
-    expect(await screen.findByText('DOCX로 변환 (이미지 삽입, OCR 없음)')).toBeTruthy();
+    const hint = await screen.findByText('DOCX로 변환 (이미지 삽입, OCR 없음)');
+    // The hint line is part of the menu's description, not a visual-only text.
+    expect(hint.getAttribute('aria-hidden')).toBeNull();
+    expect(imageMenu.getAttribute('aria-describedby')?.split(' ')).toContain(hint.id);
     image.unmount();
 
     const orbit = createFakeOrbit();

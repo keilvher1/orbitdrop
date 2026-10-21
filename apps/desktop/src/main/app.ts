@@ -17,6 +17,7 @@ import {
 } from 'electron';
 import {
   ACTIONS,
+  DESIGN_TOKENS,
   FORMAT_INFO,
   IMAGE_FORMATS,
   IPC_CHANNELS,
@@ -28,10 +29,12 @@ import {
   type HelperDropMessage,
   type HelperStatus,
   type Point,
+  type ProcessorJob,
+  type ProcessorResult,
   type Settings,
-  type ThemeName,
   type WindowContext,
   type WindowKind,
+  colorTokens,
 } from '@orbitdrop/contracts';
 import { CapabilityService } from './capabilities/service';
 import { EditorSessions } from './editor/sessions';
@@ -45,13 +48,13 @@ import { HistoryStore } from './history/store';
 import { bindTranslate, type Translate } from './i18n';
 import { registerOrbitIpc, type OrbitIpcServices } from './ipc/channels';
 import { IpcRouter, type IpcMainLike } from './ipc/router';
-import { JobManager } from './jobs/manager';
+import { JobManager, type JobRecordView } from './jobs/manager';
 import { SubmissionService, type SubmitContext } from './jobs/submission';
 import type { LaunchOptions } from './launch-options';
 import { closeLogSink, configureLogSink, createLogger, describeError, type Logger } from './log';
-import { Notifier } from './notifications';
+import { Notifier, needsAnotherFolder } from './notifications';
 import { createUtilityWorkerFactory, workerEnv } from './processing/electron-worker';
-import { ProcessorPool } from './processing/pool';
+import { ProcessorPool, type PoolRunContext } from './processing/pool';
 import { servePreviews } from './preview/protocol';
 import { PreviewStore } from './preview/store';
 import { hardenSession, installWebContentsHardening } from './security';
@@ -80,6 +83,16 @@ export interface AppPaths {
 const INPUT_EXTENSIONS = [...IMAGE_FORMATS.flatMap((f) => FORMAT_INFO[f].extensions), ...FORMAT_INFO.pdf.extensions].map((ext) => ext.slice(1));
 const IMAGE_EXTENSIONS = IMAGE_FORMATS.flatMap((f) => FORMAT_INFO[f].extensions).map((ext) => ext.slice(1));
 
+/**
+ * E2E only (ORBITDROP_E2E=1, unpackaged builds — see test-hooks.ts): decides
+ * what happens before a job attempt reaches the processor pool, so tests can
+ * produce retryable failures and long-running jobs deterministically.
+ */
+export interface JobRunScript {
+  /** Called once per attempt; may reject (scripted failure) or wait (scripted hold, ends on abort). */
+  beforeRun(signal: AbortSignal): Promise<void>;
+}
+
 export class OrbitApp {
   readonly log: Logger = createLogger('app');
   readonly settings: SettingsStore;
@@ -106,6 +119,10 @@ export class OrbitApp {
   private readonly liveNotifications = new Set<Notification>();
   /** E2E only: notifications that would have been shown. */
   readonly recordedNotifications: { readonly title: string; readonly body: string }[] = [];
+  /** E2E only (set by installTestHooks): scripts job attempts (injected failures, holds); null otherwise. */
+  testJobScript: JobRunScript | null = null;
+  /** Drops (session/batch ids) whose "needs another folder" failure already opened the Jobs window. */
+  private readonly surfacedFailures = new Set<string>();
   private markStarted: () => void = () => undefined;
   /** Resolves once startUi() finished (windows, IPC, tray, helper started). */
   readonly started = new Promise<void>((resolve) => {
@@ -152,7 +169,7 @@ export class OrbitApp {
       log: createLogger('notify'),
     });
     this.jobs = new JobManager({
-      run: (job, ctx) => this.pool.run(job, ctx),
+      run: (job, ctx) => this.runJob(job, ctx),
       settings: () => this.settings.get(),
       outputs: this.outputs,
       history: this.history,
@@ -160,7 +177,10 @@ export class OrbitApp {
         this.windows?.broadcast(IPC_CHANNELS.jobsChanged, jobs);
         this.tray?.refresh();
       },
-      onSettled: (view) => this.notifier.onJobSettled(view),
+      onSettled: (view) => {
+        this.notifier.onJobSettled(view);
+        this.surfaceDragFailure(view);
+      },
       log: createLogger('jobs'),
     });
     this.editors = new EditorSessions({ pool: this.pool, store: this.previews, settings: () => this.settings.get(), log: createLogger('editor') });
@@ -185,6 +205,12 @@ export class OrbitApp {
           onStatus: (status) => this.onHelperStatus(status),
           log: createLogger('helper'),
         });
+  }
+
+  /** JobManager's runner: the processor pool (an E2E script may act on the attempt first). */
+  private async runJob(job: ProcessorJob, ctx: PoolRunContext): Promise<ProcessorResult> {
+    if (this.testJobScript) await this.testJobScript.beforeRun(ctx.signal);
+    return this.pool.run(job, ctx);
   }
 
   // ------------------------------------------------------------------ startup
@@ -235,7 +261,7 @@ export class OrbitApp {
       preloadPath: this.paths.preload,
       rendererUrl: this.paths.rendererUrl,
       rendererFile: this.paths.rendererFile,
-      theme: () => this.theme(),
+      background: () => this.windowBackground(),
       title: (context) => this.windowTitle(context),
       quiet: this.options.e2e,
       devTools: !app.isPackaged,
@@ -386,6 +412,10 @@ export class OrbitApp {
         await shell.openExternal(url);
         return true;
       },
+      thumbnail: (request) => this.editors.thumbnail(request),
+      estimate: (request) => this.editors.estimate(request),
+      clearFinishedJobs: (finishedUpTo) => this.jobs.clearFinished(finishedUpTo),
+      retryJob: (jobId, record) => this.submission.retryJob(jobId, { source: 'openDialog', sessionId: null, windowId: record.windowId }),
     };
   }
 
@@ -458,6 +488,22 @@ export class OrbitApp {
     const sender = context.windowId !== undefined ? windows.byWindowId(context.windowId) : undefined;
     const anchor = context.anchor ?? (sender ? windows.center(sender) : undefined);
     windows.openEditor(editorId, anchor, sender?.kind === 'picker' ? sender.windowId : undefined);
+  }
+
+  /**
+   * A global-drag job that could not write next to its files (read-only
+   * folder, disk full…) has no window to explain it, and notifications may be
+   * off or not allowed: open the Jobs window without taking focus — the failed
+   * card offers "save to another folder". Once per drop.
+   */
+  private surfaceDragFailure(view: JobRecordView): void {
+    if (!needsAnotherFolder(view) || !this.windows || this.quitting) return;
+    const key = view.spec.origin.sessionId ?? view.batchId ?? view.jobId;
+    if (this.surfacedFailures.has(key)) return;
+    this.surfacedFailures.add(key);
+    if (this.surfacedFailures.size > 200) this.surfacedFailures.clear();
+    this.log.info('drag job needs another output folder; showing the jobs window', { jobId: view.jobId, code: view.snapshot.error?.code });
+    this.windows.open('jobs', undefined, { inactive: true });
   }
 
   private onWindowClosed(record: WindowRecord): void {
@@ -629,10 +675,17 @@ export class OrbitApp {
     };
   }
 
-  private theme(): ThemeName {
+  /**
+   * Window background before the renderer paints: the windowBg of the theme the
+   * renderer will pick, including its dark high-contrast set
+   * (design-tokens color.highContrastDark, renderer-only: the helpers' wheel
+   * keeps the light high-contrast tokens).
+   */
+  private windowBackground(): string {
     const settings = this.settings.get();
     const highContrast = resolveHighContrast(settings.accessibility.highContrast, nativeTheme.shouldUseHighContrastColors);
-    return resolveTheme(highContrast, nativeTheme.shouldUseDarkColors);
+    if (highContrast && nativeTheme.shouldUseDarkColors) return DESIGN_TOKENS.color.highContrastDark.windowBg;
+    return colorTokens(resolveTheme(highContrast, nativeTheme.shouldUseDarkColors)).windowBg;
   }
 
   private windowTitle(context: WindowContext): string {

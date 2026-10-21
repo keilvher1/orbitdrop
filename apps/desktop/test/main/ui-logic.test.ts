@@ -4,7 +4,7 @@ import type { HelperStatus, JobSnapshot } from '@orbitdrop/contracts';
 import { HELPER_REASON_DISABLED_FOR_RUN, HELPER_REASON_NOT_FOUND, localizeHelperStatus } from '../../src/main/helper/status-text';
 import { bindTranslate } from '../../src/main/i18n';
 import type { JobRecordView, JobSpec } from '../../src/main/jobs/manager';
-import { Notifier, type NotificationRequest } from '../../src/main/notifications';
+import { Notifier, isSkippedJob, needsAnotherFolder, noteworthyWarnings, type NotificationRequest } from '../../src/main/notifications';
 import { buildTrayTemplate, type TrayActions, type TrayState } from '../../src/main/tray/menu';
 import { clampRect, fitSize, placeCentered, resizeWithin } from '../../src/main/windows/placement';
 import { WINDOW_SPECS } from '../../src/main/windows/specs';
@@ -208,5 +208,70 @@ describe('notifications', () => {
     n.onJobSettled(batch[1]);
     expect(shown).toHaveLength(1);
     expect(shown[0]!.body).toBe('1개 완료, 1개 실패');
+  });
+});
+
+describe('notifications follow what really happened', () => {
+  function notifier(batch: JobRecordView[] = []) {
+    const shown: NotificationRequest[] = [];
+    const revealOutput = vi.fn();
+    const openJobs = vi.fn();
+    const n = new Notifier({ show: (r) => shown.push(r), enabled: () => true, locale: () => 'ko', t: bindTranslate(() => 'ko'), jobs: { batch: () => batch }, revealOutput, openJobs });
+    return { n, shown, revealOutput, openJobs };
+  }
+  const larger = { code: 'OUTPUT_LARGER_THAN_INPUT' as const, params: { inputBytes: 10, outputBytes: 12 } };
+  const skippedWarning = { code: 'SKIPPED_SAME_FORMAT' as const };
+
+  it('a compressed file that did not get smaller is not announced as plain "done"; clicking opens the jobs window', () => {
+    const { n, shown, openJobs, revealOutput } = notifier();
+    n.onJobSettled(view({ actionId: 'tool.compress', warnings: [larger], outputs: [{ outputId: 'o', name: 'photo Compressed.jpg', dirDisplay: 'Desktop', format: 'jpeg', bytes: 12 }] }));
+    expect(shown[0]).toMatchObject({ title: '완료(확인 필요): 이미지 압축', body: 'photo Compressed.jpg — 원본보다 작아지지 않았습니다' });
+    shown[0]!.onClick();
+    expect(openJobs).toHaveBeenCalled();
+    expect(revealOutput).not.toHaveBeenCalled();
+    // Informational warnings (metadata dropped by default) keep the plain message.
+    n.onJobSettled(view({ warnings: [{ code: 'METADATA_REMOVED', params: { kinds: 'exif' } }] }));
+    expect(shown[1]!.title).toBe('완료: JPG로 변환');
+  });
+
+  it('a file skipped because it already had the target format is reported as skipped, not done', () => {
+    const { n, shown } = notifier();
+    n.onJobSettled(view({ actionId: 'convert.png', inputName: 'a.png', outputs: [], warnings: [skippedWarning] }));
+    expect(shown[0]).toMatchObject({ title: '건너뜀: PNG로 변환', body: 'a.png: 이미 같은 형식입니다' });
+  });
+
+  it('batches count done, skipped, failed and "needs a look" separately', () => {
+    const done = view({ jobId: 'a' }, undefined, 'b_1');
+    const skipped = view({ jobId: 'b', outputs: [], warnings: [skippedWarning] }, undefined, 'b_1');
+    const mixed = notifier([done, skipped]);
+    mixed.n.onJobSettled(done);
+    expect(mixed.shown[0]).toMatchObject({ title: '완료: JPG로 변환', body: '1개 완료, 1개 건너뜀(이미 같은 형식)' });
+
+    const allSkipped = notifier([skipped, view({ jobId: 'c', outputs: [], warnings: [skippedWarning] }, undefined, 'b_1')]);
+    allSkipped.n.onJobSettled(skipped);
+    expect(allSkipped.shown[0]).toMatchObject({ title: '건너뜀: JPG로 변환', body: '2개 건너뜀(이미 같은 형식)' });
+
+    const warned = view({ jobId: 'd', warnings: [larger] }, undefined, 'b_1');
+    const withWarning = notifier([done, warned]);
+    withWarning.n.onJobSettled(warned);
+    expect(withWarning.shown[0]).toMatchObject({ title: '완료(확인 필요): JPG로 변환', body: '2개 완료, 1개 확인 필요' });
+  });
+
+  it('names DOCX by its inputs (contracts actionTitle)', () => {
+    const { n, shown } = notifier();
+    const image = view({ actionId: 'convert.docx', outputs: [{ outputId: 'o', name: 'scan.docx', dirDisplay: 'Desktop', format: 'docx', bytes: 5 }] });
+    n.onJobSettled({ ...image, spec: { ...image.spec, actionId: 'convert.docx', inputs: [{ fileId: 'f', path: '/x/scan.png', displayName: 'scan.png', sourceDir: '/x', format: 'png', bytes: 1 }] } });
+    expect(shown[0]!.title).toBe('완료: DOCX로 변환 (이미지 삽입, OCR 없음)');
+  });
+
+  it('helpers: noteworthy warnings, skipped jobs, failures that need another folder', () => {
+    expect(noteworthyWarnings([{ code: 'METADATA_REMOVED' }, { code: 'DOCX_IMAGE_ONLY' }, larger]).map((w) => w.code)).toEqual(['OUTPUT_LARGER_THAN_INPUT']);
+    expect(isSkippedJob({ state: 'completed', outputs: [], warnings: [skippedWarning] })).toBe(true);
+    expect(isSkippedJob({ state: 'completed', outputs: [], warnings: [] })).toBe(false);
+    const readOnly = view({ state: 'failed', outputs: [], error: { code: 'OUTPUT_DIR_NOT_WRITABLE', message: 'x', retryable: true } });
+    expect(needsAnotherFolder(readOnly)).toBe(true);
+    expect(needsAnotherFolder({ ...readOnly, spec: { ...readOnly.spec, origin: { source: 'dropZone', sessionId: null } } })).toBe(false);
+    expect(needsAnotherFolder(view({ state: 'failed', outputs: [], error: { code: 'TIMEOUT', message: 'x', retryable: true } }))).toBe(false);
+    expect(needsAnotherFolder(view({ state: 'failed', outputs: [], error: { code: 'DISK_FULL', message: 'x', retryable: true } }))).toBe(true);
   });
 });

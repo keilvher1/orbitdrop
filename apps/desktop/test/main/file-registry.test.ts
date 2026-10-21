@@ -148,6 +148,32 @@ describe('FileRegistry bookkeeping', () => {
     expect(JSON.stringify(selection)).not.toContain('/Volumes');
   });
 
+  it('revalidate (retryJob) validates again without registering ids, with the same limits and hung-read accounting', async () => {
+    const seen: string[] = [];
+    const registry = new FileRegistry({
+      validate: async (path) => {
+        seen.push(path);
+        if (path.includes('gone')) throw new OrbitError('FILE_NOT_FOUND', 'The file does not exist');
+        if (path.includes('dead')) return new Promise<never>(() => undefined);
+        return validated(path, 'png', 4321);
+      },
+      validationTimeoutMs: 30,
+    });
+    const fresh = await registry.revalidate(['/in/a.png', '/in/b.png']);
+    expect(fresh.map((v) => [v.realPath, v.bytes])).toEqual([
+      ['/in/a.png', 4321],
+      ['/in/b.png', 4321],
+    ]);
+    expect(registry.fileCount).toBe(0);
+    expect(registry.selectionCount).toBe(0);
+    // The earliest failing file decides the error.
+    await expect(registry.revalidate(['/in/a.png', '/in/gone.png', '/in/gone-too.png'])).rejects.toMatchObject({ code: 'FILE_NOT_FOUND' });
+    // A validation that does not answer times out and counts as a hung read, like registration.
+    await expect(registry.revalidate(['/Users/me/dead.png'])).rejects.toMatchObject({ code: 'TIMEOUT' });
+    expect(registry.outstandingHungReads).toBe(1);
+    expect(seen).toContain('/in/a.png');
+  });
+
   it('recognizes timed-out reads among validation errors', () => {
     expect(isHungReadError(new OrbitError('TIMEOUT', 'x'))).toBe(true);
     expect(isHungReadError(new OrbitError('NETWORK_PATH_FAILED', 'x', { cause: new OrbitError('TIMEOUT', 'y') }))).toBe(true);

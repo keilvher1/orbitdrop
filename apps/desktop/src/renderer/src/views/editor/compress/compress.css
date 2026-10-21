@@ -38,6 +38,109 @@
   color: var(--c-warning-text);
 }
 
+/* "2/3 estimated" while a batch is still being estimated. */
+.compress-size strong[data-progress='true'] {
+  color: var(--c-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ------------------------------------------------- per-file estimates (several files) */
+
+.compress-estimates {
+  display: flex;
+  flex-direction: column;
+  max-height: 140px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-control);
+  background: var(--c-surface);
+  list-style: none;
+}
+
+.compress-estimate {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(56px, auto);
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.compress-estimate + .compress-estimate {
+  border-top: 1px solid var(--c-border);
+}
+
+.compress-estimate-name {
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.compress-estimate-sizes {
+  color: var(--c-text-muted);
+  white-space: nowrap;
+}
+
+/* Waiting for this options' estimate: the previous value (if any) is shown dimmed. */
+.compress-estimate[data-pending='true'] .compress-estimate-sizes {
+  opacity: 0.55;
+}
+
+.compress-estimate-delta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.compress-estimate-delta strong[data-tone='good'] {
+  color: var(--c-success);
+}
+
+.compress-estimate-delta strong[data-tone='warning'] {
+  color: var(--c-warning-text);
+}
+
+.compress-badge {
+  padding: 1px 7px;
+  border: 1px solid var(--c-warning-border);
+  border-radius: 999px;
+  background: var(--c-warning-bg);
+  color: var(--c-warning-text);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.compress-badge[data-tone='danger'] {
+  border-color: var(--c-danger);
+  background: var(--c-danger-bg);
+  color: var(--c-danger);
+}
+
+.compress-result-estimate {
+  font-size: 11px;
+}
+
+.compress-total {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.compress-total[data-tone='good'] strong {
+  color: var(--c-success);
+}
+
+.compress-total[data-tone='warning'] {
+  color: var(--c-warning-text);
+}
+
 .compress-first,
 .compress-hint {
   font-size: 11px;

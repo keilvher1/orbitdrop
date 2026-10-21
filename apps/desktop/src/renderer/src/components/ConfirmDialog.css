@@ -1,0 +1,84 @@
+/*
+ * In-window confirmation (ConfirmDialog.tsx). Fixed over the whole window, so
+ * the window keeps the size of its own content. Colours and radii are design
+ * tokens; reduced motion zeroes --motion-* and disables the fade (base.css).
+ */
+
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--c-mask);
+  animation: od-confirm-in var(--motion-sector) var(--motion-easing) both;
+}
+
+@keyframes od-confirm-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.confirm-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(340px, 100%);
+  padding: 16px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-panel);
+  background: var(--c-surface);
+  box-shadow: 0 14px 36px rgb(0 0 0 / 30%);
+  color: var(--c-text);
+  /* Frameless windows: never let the title bar's drag region swallow clicks on the buttons. */
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.confirm-dialog:focus-visible {
+  outline-offset: 3px;
+}
+
+.confirm-title {
+  font-size: var(--font-title-size);
+  font-weight: 700;
+}
+
+.confirm-message {
+  color: var(--c-text);
+  line-height: 1.5;
+}
+
+.confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* Destructive choice: outlined in the danger colour (readable on the surface in every theme). */
+.confirm-discard {
+  border-color: var(--c-danger);
+  color: var(--c-danger);
+}
+
+.confirm-discard:hover:not(:disabled) {
+  background: var(--c-danger-bg, var(--c-surface-muted));
+}
+
+@media (forced-colors: active) {
+  .confirm-dialog {
+    border: 2px solid CanvasText;
+  }
+
+  .confirm-discard {
+    border-width: 2px;
+  }
+}

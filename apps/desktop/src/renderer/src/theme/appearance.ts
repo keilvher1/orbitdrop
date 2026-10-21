@@ -1,5 +1,6 @@
-import type { Platform, Settings, ThemeName } from '@orbitdrop/contracts';
+import type { Platform, Settings } from '@orbitdrop/contracts';
 import { useEffect, useMemo, useState } from 'react';
+import { isDarkTheme, type RendererTheme } from './tokensCss';
 
 /** OS-level appearance signals read from media queries. */
 export interface MediaFlags {
@@ -10,7 +11,7 @@ export interface MediaFlags {
 }
 
 export interface Appearance {
-  readonly theme: ThemeName;
+  readonly theme: RendererTheme;
   readonly reduceMotion: boolean;
   readonly forcedColors: boolean;
 }
@@ -37,18 +38,17 @@ export function readMediaFlags(): MediaFlags {
 
 /**
  * Settings overrides win over the OS: 'on'/'off' force the behaviour,
- * 'system' follows the media queries. High contrast uses the dedicated
- * highContrast token set (light, black on white) regardless of dark mode.
+ * 'system' follows the media queries. High contrast uses the dedicated token
+ * sets, chosen by the OS colour scheme: highContrast (black on white) in light
+ * mode, highContrastDark (white on black) in dark mode.
  */
 export function resolveAppearance(accessibility: Settings['accessibility'], media: MediaFlags): Appearance {
   const highContrast =
     accessibility.highContrast === 'on' || (accessibility.highContrast === 'system' && (media.moreContrast || media.forcedColors));
   const reduceMotion = accessibility.reduceMotion === 'on' || (accessibility.reduceMotion === 'system' && media.reducedMotion);
-  return {
-    theme: highContrast ? 'highContrast' : media.dark ? 'dark' : 'light',
-    reduceMotion,
-    forcedColors: media.forcedColors,
-  };
+  let theme: RendererTheme = media.dark ? 'dark' : 'light';
+  if (highContrast) theme = media.dark ? 'highContrastDark' : 'highContrast';
+  return { theme, reduceMotion, forcedColors: media.forcedColors };
 }
 
 export function applyAppearance(root: HTMLElement, appearance: Appearance, platform: Platform): void {
@@ -56,7 +56,7 @@ export function applyAppearance(root: HTMLElement, appearance: Appearance, platf
   root.dataset.reduceMotion = String(appearance.reduceMotion);
   root.dataset.forcedColors = String(appearance.forcedColors);
   root.dataset.platform = platform;
-  root.style.colorScheme = appearance.theme === 'dark' ? 'dark' : 'light';
+  root.style.colorScheme = isDarkTheme(appearance.theme) ? 'dark' : 'light';
 }
 
 /** Tracks media query changes and keeps <html> data attributes in sync. */

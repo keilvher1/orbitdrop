@@ -42,6 +42,11 @@ export interface OutputFileInfo {
  * - DOWNSCALED `{pages, count, dpi, requestedDpi}` (pages is a summary like "2-4,7")
  * - PDF_PAGES_WITHOUT_TEXT `{pages, count}`
  * - METADATA_REMOVED `{kinds}` (comma-separated, e.g. "exif,xmp")
+ * - ANNOTATION_FONT_FALLBACK `{font, characters, shapes, unreadable, hangul}`: font = family the
+ *   text is drawn with ("sans-serif" when no Hangul-capable candidate is installed), characters =
+ *   distinct characters it cannot draw, shapes = text shapes containing them, unreadable = text
+ *   shapes with no drawable visible character, hangul = 1 when Hangul is among them (else 0).
+ *   Counts only — never the text itself.
  * - DOCX_TEXT_ONLY, DOCX_IMAGE_ONLY, SKIPPED_SAME_FORMAT: no params
  */
 export const WARNING_CODES = [
@@ -63,6 +68,11 @@ export const WARNING_CODES = [
   'METADATA_REMOVED',
   /** Same format as the target: file skipped. */
   'SKIPPED_SAME_FORMAT',
+  /**
+   * Annotate: some text characters cannot be drawn with the installed fonts (no Hangul-capable
+   * font, or a script/emoji no font covers); they appear as boxes or are missing in the result.
+   */
+  'ANNOTATION_FONT_FALLBACK',
 ] as const;
 export type WarningCode = (typeof WARNING_CODES)[number];
 

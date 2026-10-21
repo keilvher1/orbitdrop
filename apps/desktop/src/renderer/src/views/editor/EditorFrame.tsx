@@ -1,8 +1,9 @@
 import { type OrbitErrorInfo, type SubmitActionResult } from '@orbitdrop/contracts';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useEnv } from '../../app/env';
 import { useEscapeKey } from '../../app/useEscapeKey';
 import { useWindowFit } from '../../app/useWindowFit';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { Notice, Spinner } from '../../components/Notice';
 import { TitleBar } from '../../components/TitleBar';
 import './editor.css';
@@ -79,12 +80,23 @@ export interface EditorFrameProps {
   readonly width?: number;
   /** Disable the window-level Esc (e.g. while a text overlay is open). */
   readonly escapeEnabled?: boolean;
+  /**
+   * Unsaved work that closing would throw away (e.g. annotations): × and Esc
+   * first ask in an in-window dialog — keep editing (the default) or close
+   * without saving — instead of cancelling right away. null / omitted: close
+   * immediately.
+   */
+  readonly confirmClose?: { readonly message: string } | null;
 }
 
 /**
  * Common editor panel (440–560 DIP): title bar with ×, body, footer with Reset
  * on the left and the orange primary action on the right. Esc cancels,
  * ⌘/Ctrl+Enter runs the primary action. The window is sized to the panel.
+ *
+ * With `confirmClose`, × / Esc open a ConfirmDialog instead; while it is open
+ * the panel is `inert` (no pointer, focus or shortcut reaches it), and
+ * choosing "keep editing" returns focus to where it was (else to ×).
  */
 export function EditorFrame({
   title,
@@ -99,29 +111,72 @@ export function EditorFrame({
   footer,
   width,
   escapeEnabled = true,
+  confirmClose = null,
 }: EditorFrameProps) {
   const { t } = useEnv();
   const rootRef = useRef<HTMLDivElement>(null);
   useWindowFit(rootRef);
-  useEscapeKey(commit.cancel, escapeEnabled && !commit.busy);
+
+  const [confirming, setConfirming] = useState(false);
+  const needsConfirm = confirmClose !== null;
+  /** Element focused when the dialog opened; focus returns there when the user keeps editing. */
+  const openerRef = useRef<HTMLElement | null>(null);
+  const pendingRestoreRef = useRef(false);
+  // Nothing left to lose (e.g. the last shape was removed): no dialog, an open one goes away.
+  useEffect(() => {
+    if (!needsConfirm) setConfirming(false);
+  }, [needsConfirm]);
+  const showConfirm = confirming && confirmClose !== null;
+
+  const requestClose = (): void => {
+    if (commit.busy) return; // × is disabled and Esc ignored while saving; commit.cancel() checks too
+    if (!needsConfirm) {
+      commit.cancel();
+      return;
+    }
+    const active = document.activeElement;
+    openerRef.current = active instanceof HTMLElement && active !== document.body ? active : null;
+    setConfirming(true);
+  };
+  const keepEditing = (): void => {
+    pendingRestoreRef.current = true;
+    setConfirming(false);
+  };
+  const discard = (): void => {
+    openerRef.current = null;
+    setConfirming(false);
+    commit.cancel();
+  };
+  // Runs in the commit that removes `inert`, so the element can take focus again.
+  useLayoutEffect(() => {
+    if (showConfirm || !pendingRestoreRef.current) return;
+    pendingRestoreRef.current = false;
+    const opener = openerRef.current;
+    openerRef.current = null;
+    const target = opener !== null && opener.isConnected ? opener : rootRef.current?.querySelector<HTMLElement>('.titlebar-close:not(:disabled)');
+    target?.focus({ preventScroll: true });
+  }, [showConfirm]);
+
+  useEscapeKey(requestClose, escapeEnabled && !commit.busy && !showConfirm);
 
   const canPrimary = !primaryDisabled && !commit.busy;
+  const shortcutEnabled = canPrimary && !showConfirm;
   const primaryRef = useRef(onPrimary);
   primaryRef.current = onPrimary;
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.isComposing && canPrimary) {
+      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.isComposing && shortcutEnabled) {
         event.preventDefault();
         primaryRef.current();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [canPrimary]);
+  }, [shortcutEnabled]);
 
   return (
-    <div className="view editor-view" ref={rootRef} style={width === undefined ? undefined : { width }}>
-      <TitleBar title={title} onClose={commit.cancel} closeDisabled={commit.busy} closeLabel={t('common.cancelAndClose')} />
+    <div className="view editor-view" ref={rootRef} style={width === undefined ? undefined : { width }} inert={showConfirm || undefined}>
+      <TitleBar title={title} onClose={requestClose} closeDisabled={commit.busy} closeLabel={t('common.cancelAndClose')} />
       <div className="editor-body">{children}</div>
       {commit.error ? (
         <div className="editor-error">
@@ -145,6 +200,16 @@ export function EditorFrame({
           </button>
         </footer>
       )}
+      {showConfirm ? (
+        <ConfirmDialog
+          title={t('editor.unsaved.title')}
+          message={confirmClose.message}
+          cancelLabel={t('editor.unsaved.keep')}
+          confirmLabel={t('editor.unsaved.discard')}
+          onCancel={keepEditing}
+          onConfirm={discard}
+        />
+      ) : null}
     </div>
   );
 }

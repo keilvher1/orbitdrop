@@ -1,14 +1,20 @@
 import {
   ACTIONS,
   FORMAT_INFO,
+  RETRY_ELSEWHERE_CODES,
   TERMINAL_JOB_STATES,
+  actionTitle,
+  canRetryJob,
+  formatFromExtension,
+  inputKindOf,
+  type InputKind,
   type JobProgress,
   type JobSnapshot,
   type JobWarning,
   type OrbitErrorInfo,
   type OutputFileInfo,
 } from '@orbitdrop/contracts';
-import { FolderOpen, X } from 'lucide-react';
+import { FolderOpen, ListX, RotateCw, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useEnv } from '../../app/env';
 import { asErrorInfo } from '../../app/errors';
@@ -32,17 +38,71 @@ export function partitionJobs(jobs: readonly JobSnapshot[]): { active: JobSnapsh
 }
 
 /**
+ * Cut-off for "clear finished": the newest finish time among the finished
+ * jobs on screen (main's clock), so a job that finishes while the user clicks
+ * is not removed unseen. null when nothing finished is listed.
+ */
+export function finishedCutoff(recent: readonly JobSnapshot[]): number | null {
+  let cutoff: number | null = null;
+  for (const job of recent) cutoff = Math.max(cutoff ?? 0, job.finishedAt ?? job.createdAt);
+  return cutoff;
+}
+
+/**
+ * Which retry actions a job offers: run again (cancelled jobs, and failures
+ * main accepts — contracts canRetryJob) and/or save to another folder.
+ */
+export function retryOptions(job: JobSnapshot): { readonly retry: boolean; readonly elsewhere: boolean } {
+  const code = job.state === 'failed' ? job.error?.code : undefined;
+  return { retry: canRetryJob(job), elsewhere: code !== undefined && RETRY_ELSEWHERE_CODES.has(code) };
+}
+
+/**
+ * Input kinds of a job for its title (contracts actionTitle: image → DOCX
+ * embeds the picture, PDF → DOCX extracts text). A snapshot names its first
+ * input only; jobs with several inputs are merges of images (images → PDF).
+ */
+export function jobInputKinds(job: Pick<JobSnapshot, 'inputName'>): InputKind[] {
+  const dot = job.inputName.lastIndexOf('.');
+  const format = dot > 0 ? formatFromExtension(job.inputName.slice(dot).toLowerCase()) : undefined;
+  const kind = format === undefined ? undefined : inputKindOf(format);
+  return kind === undefined ? [] : [kind];
+}
+
+/**
  * Jobs window: current and recent jobs from main (`listJobs` + live
  * `onJobsChanged`). Progress is shown exactly as reported — determinate bars
  * for counted pages/files/steps, an indeterminate animation otherwise; never a
- * timer-driven fake.
+ * timer-driven fake. Finished jobs can be cleared from the list (outputs stay
+ * on disk); cancelled jobs and failures with a retryable error can be run again.
  */
 export function JobsView() {
   const { orbit, t, platform } = useEnv();
   const [jobs, setJobs] = useState<readonly JobSnapshot[] | null>(null);
   const [loadError, setLoadError] = useState<OrbitErrorInfo | null>(null);
+  const [clearing, setClearing] = useState(false);
+  const [clearError, setClearError] = useState<OrbitErrorInfo | null>(null);
+  const [announcement, setAnnouncement] = useState('');
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const clearRef = useRef<HTMLButtonElement>(null);
+  /** The clear button had focus when used: when it disappears, focus moves to the list instead of the page. */
+  const clearHadFocus = useRef(false);
+  const mounted = useRef(true);
+  const hintId = useId();
   const close = useCallback(() => orbit.closeWindow(), [orbit]);
   useEscapeKey(close);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  /** Polite announcement; an identical message gets a zero-width space so it is read again. */
+  const announce = useCallback((text: string) => {
+    setAnnouncement((previous) => (previous === text ? `${text}​` : text));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,6 +127,35 @@ export function JobsView() {
   }, [orbit]);
 
   const { active, recent } = useMemo(() => partitionJobs(jobs ?? []), [jobs]);
+  const cutoff = finishedCutoff(recent);
+  const hasFinished = cutoff !== null;
+
+  const clearFinished = async () => {
+    if (clearing || cutoff === null) return;
+    clearHadFocus.current = document.activeElement === clearRef.current;
+    setClearing(true);
+    setClearError(null);
+    try {
+      const removed = await orbit.clearFinishedJobs({ finishedUpTo: cutoff });
+      // The list itself updates through onJobsChanged.
+      if (mounted.current) announce(t.plural('jobs.cleared', removed));
+    } catch (reason) {
+      clearHadFocus.current = false;
+      if (mounted.current) setClearError(asErrorInfo(reason));
+    } finally {
+      if (mounted.current) setClearing(false);
+    }
+  };
+
+  // The clear button vanished with the jobs it removed: don't leave keyboard focus on the page.
+  useEffect(() => {
+    if (hasFinished || !clearHadFocus.current) return;
+    clearHadFocus.current = false;
+    const focused = document.activeElement;
+    if (focused !== null && focused !== document.body) return;
+    const target = bodyRef.current?.querySelector<HTMLElement>('.jobs-section-title, .jobs-empty-title') ?? bodyRef.current;
+    target?.focus({ preventScroll: true });
+  }, [hasFinished]);
 
   let body;
   if (jobs === null && loadError === null) {
@@ -85,15 +174,17 @@ export function JobsView() {
   } else if (jobs.length === 0) {
     body = (
       <div className="jobs-empty">
-        <p className="jobs-empty-title">{t('jobs.empty')}</p>
+        <p className="jobs-empty-title" tabIndex={-1}>
+          {t('jobs.empty')}
+        </p>
         <p className="jobs-empty-hint">{platform === 'darwin' ? t('jobs.emptyHint') : t('jobs.emptyHintPc')}</p>
       </div>
     );
   } else {
     body = (
       <>
-        {active.length > 0 ? <JobSection title={t('jobs.active')} jobs={active} /> : null}
-        {recent.length > 0 ? <JobSection title={t('jobs.recent')} jobs={recent} /> : null}
+        {active.length > 0 ? <JobSection title={t('jobs.active')} jobs={active} onAnnounce={announce} /> : null}
+        {recent.length > 0 ? <JobSection title={t('jobs.recent')} jobs={recent} onAnnounce={announce} /> : null}
       </>
     );
   }
@@ -101,33 +192,74 @@ export function JobsView() {
   return (
     <div className="view jobs-view">
       <TitleBar title={t('jobs.title')} onClose={close} separated />
-      <div className="jobs-body">{body}</div>
+      <div className="jobs-body" ref={bodyRef} tabIndex={-1}>
+        {hasFinished ? (
+          <div className="jobs-toolbar">
+            <button
+              ref={clearRef}
+              type="button"
+              className="btn btn-small jobs-clear"
+              title={t('jobs.clearFinishedHint')}
+              aria-describedby={hintId}
+              // aria-disabled instead of disabled while clearing: the button keeps keyboard focus.
+              aria-disabled={clearing || undefined}
+              onClick={() => void clearFinished()}
+            >
+              {clearing ? <Spinner size={12} /> : <ListX size={14} aria-hidden="true" />}
+              {t('jobs.clearFinished')}
+            </button>
+            <span id={hintId} className="visually-hidden">
+              {t('jobs.clearFinishedHint')}
+            </span>
+          </div>
+        ) : null}
+        {clearError ? (
+          <Notice tone="danger" onDismiss={() => setClearError(null)} dismissLabel={t('common.dismiss')}>
+            <strong>{t('jobs.clearFailed')}</strong> {t.error(clearError)}
+          </Notice>
+        ) : null}
+        {body}
+      </div>
+      <div className="visually-hidden" aria-live="polite" aria-atomic="true">
+        {announcement}
+      </div>
     </div>
   );
 }
 
-function JobSection({ title, jobs }: { readonly title: string; readonly jobs: readonly JobSnapshot[] }) {
+function JobSection({ title, jobs, onAnnounce }: { readonly title: string; readonly jobs: readonly JobSnapshot[]; readonly onAnnounce: (text: string) => void }) {
   const headingId = useId();
   return (
     <section className="jobs-section" aria-labelledby={headingId}>
-      <h2 id={headingId} className="jobs-section-title">
+      <h2 id={headingId} className="jobs-section-title" tabIndex={-1}>
         {title}
       </h2>
       <ul className="job-list">
         {jobs.map((job) => (
-          <JobCard key={job.jobId} job={job} />
+          <JobCard key={job.jobId} job={job} onAnnounce={onAnnounce} />
         ))}
       </ul>
     </section>
   );
 }
 
-function JobCard({ job }: { readonly job: JobSnapshot }) {
+type CardAction = 'cancel' | 'retry' | 'elsewhere';
+
+/** An action that failed; retry failures get their own wording. */
+interface ActionError {
+  readonly error: OrbitErrorInfo;
+  readonly retry: boolean;
+}
+
+function JobCard({ job, onAnnounce }: { readonly job: JobSnapshot; readonly onAnnounce: (text: string) => void }) {
   const { orbit, t, platform } = useEnv();
   const titleId = useId();
   const action = ACTIONS[job.actionId];
-  const [busy, setBusy] = useState<'cancel' | 'retry' | null>(null);
-  const [actionError, setActionError] = useState<OrbitErrorInfo | null>(null);
+  const [busy, setBusy] = useState<CardAction | null>(null);
+  const [actionError, setActionError] = useState<ActionError | null>(null);
+  /** This job was run again (here or in another folder); the new job is listed separately. */
+  const [retried, setRetried] = useState(false);
+  const retriedRef = useRef<HTMLParagraphElement>(null);
   const mounted = useRef(true);
   useEffect(
     () => () => {
@@ -136,25 +268,92 @@ function JobCard({ job }: { readonly job: JobSnapshot }) {
     [],
   );
 
-  const run = useCallback(async (kind: 'cancel' | 'retry' | null, task: () => Promise<OrbitErrorInfo | null | void>) => {
+  const run = useCallback(async (kind: CardAction | null, task: () => Promise<OrbitErrorInfo | null | void>, retry = false) => {
     if (kind) setBusy(kind);
     setActionError(null);
     try {
       const error = await task();
-      if (error && mounted.current) setActionError(error);
+      if (error && mounted.current) setActionError({ error, retry });
     } catch (reason) {
-      if (mounted.current) setActionError(asErrorInfo(reason));
+      if (mounted.current) setActionError({ error: asErrorInfo(reason), retry });
     } finally {
       if (kind && mounted.current) setBusy(null);
     }
   }, []);
 
+  const onRetried = useCallback(() => {
+    if (!mounted.current) return;
+    setRetried(true);
+    onAnnounce(t('jobs.retryStarted'));
+  }, [onAnnounce, t]);
+
+  const retry = () => {
+    if (busy !== null) return;
+    void run(
+      'retry',
+      async () => {
+        const result = await orbit.retryJob(job.jobId);
+        if (result.kind === 'rejected') return result.error;
+        onRetried(); // the new job arrives through onJobsChanged
+        return null;
+      },
+      true,
+    );
+  };
+
+  const retryElsewhere = () => {
+    if (busy !== null) return;
+    void run(
+      'elsewhere',
+      async () => {
+        const result = await orbit.retryJobElsewhere(job.jobId);
+        // null = the user closed the folder picker; jobs re-appear through onJobsChanged.
+        if (result === null) return null;
+        if (result.kind === 'rejected') return result.error;
+        onRetried();
+        return null;
+      },
+      true,
+    );
+  };
+
+  // The retry buttons were replaced by the "retried" note: keep keyboard focus in the card.
+  useEffect(() => {
+    if (!retried) return;
+    const focused = document.activeElement;
+    if (focused === null || focused === document.body) retriedRef.current?.focus({ preventScroll: true });
+  }, [retried]);
+
   const terminal = TERMINAL_JOB_STATES.has(job.state);
   const cancellable = !terminal && action.cancellable;
+  const offers = retryOptions(job);
   const inputName =
     job.inputCount > 1 ? t('jobs.inputName', { name: job.inputName, more: t.plural('common.moreFiles', job.inputCount - 1) }) : job.inputName;
   const time = job.finishedAt ?? job.startedAt ?? job.createdAt;
-  const title = t.text(action.title);
+  const title = t.text(actionTitle(job.actionId, jobInputKinds(job)));
+
+  // Failed jobs show these inside their error notice, cancelled jobs below the title.
+  const retryActions = retried ? (
+    <p ref={retriedRef} className="job-retried muted" tabIndex={-1}>
+      {t('jobs.retried')}
+    </p>
+  ) : offers.retry || offers.elsewhere ? (
+    // aria-disabled while one runs: the clicked button keeps keyboard focus.
+    <div className="job-retry-actions">
+      {offers.retry ? (
+        <button type="button" className="btn btn-small" aria-describedby={titleId} aria-disabled={busy !== null || undefined} onClick={retry}>
+          {busy === 'retry' ? <Spinner size={12} /> : <RotateCw size={13} aria-hidden="true" />}
+          {t('jobs.retry')}
+        </button>
+      ) : null}
+      {offers.elsewhere ? (
+        <button type="button" className="btn btn-small" aria-describedby={titleId} aria-disabled={busy !== null || undefined} onClick={retryElsewhere}>
+          {busy === 'elsewhere' ? <Spinner size={12} /> : <FolderOpen size={13} aria-hidden="true" />}
+          {t('jobs.retryElsewhere')}
+        </button>
+      ) : null}
+    </div>
+  ) : null;
 
   return (
     <li className="job-card" data-state={job.state} aria-labelledby={titleId}>
@@ -211,32 +410,33 @@ function JobCard({ job }: { readonly job: JobSnapshot }) {
       {job.state === 'failed' ? (
         <Notice tone="danger" live="off">
           <div>{t.error(job.error ?? 'INTERNAL')}</div>
-          {job.error?.code === 'OUTPUT_DIR_NOT_WRITABLE' ? (
-            <button
-              type="button"
-              className="btn btn-small job-retry"
-              disabled={busy === 'retry'}
-              onClick={() =>
-                void run('retry', async () => {
-                  const result = await orbit.retryJobElsewhere(job.jobId);
-                  // null = the user closed the folder picker; jobs re-appear through onJobsChanged.
-                  return result !== null && result.kind === 'rejected' ? result.error : null;
-                })
-              }
-            >
-              {busy === 'retry' ? <Spinner size={12} /> : <FolderOpen size={13} aria-hidden="true" />}
-              {t('jobs.retryElsewhere')}
-            </button>
-          ) : null}
+          {retryActions}
         </Notice>
       ) : null}
 
+      {job.state === 'cancelled' ? retryActions : null}
+
       {actionError ? (
         <Notice tone="danger" onDismiss={() => setActionError(null)} dismissLabel={t('common.dismiss')}>
-          {t.error(actionError)}
+          {actionError.retry ? <RetryErrorText error={actionError.error} /> : t.error(actionError.error)}
         </Notice>
       ) : null}
     </li>
+  );
+}
+
+/**
+ * Why a retry did not start. FILE_NOT_FOUND covers both "an input is gone" and
+ * "main no longer knows this job" (listed from before a restart): either way
+ * the user has to open the file again.
+ */
+function RetryErrorText({ error }: { readonly error: OrbitErrorInfo }) {
+  const { t } = useEnv();
+  if (error.code === 'FILE_NOT_FOUND') return <>{t('jobs.retryUnavailable')}</>;
+  return (
+    <>
+      <strong>{t('jobs.retryFailed')}</strong> {t.error(error)}
+    </>
   );
 }
 

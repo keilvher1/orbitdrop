@@ -18,6 +18,7 @@ import {
   type ToolOutputFormat,
 } from '@orbitdrop/contracts';
 import { toolResultName } from '@orbitdrop/core';
+import { imageIOHelperPath, isExecutableFile } from '../codecs/imageio';
 import { defaultQuality, encodeImage, mapSharpError, openImage, outputDirFor, readInputBuffer, writeBytes } from '../common/io';
 
 /**
@@ -261,6 +262,49 @@ export async function resolveToolFormat(option: ToolOutputFormat, inputFormat: I
   }
 }
 
+/** Formats encodeToolImage can produce (GIF is never written by tools). */
+export type WritableFormat = Exclude<ImageFormat, 'gif'>;
+
+/**
+ * Whether HEIC can be written: the macOS ImageIO codec helper named by
+ * ORBITDROP_IMAGEIO_HELPER exists and is executable — the same check
+ * encodeWithImageIO makes before spawning it (a stat, no spawn).
+ */
+export async function canWriteHeic(): Promise<boolean> {
+  const helper = imageIOHelperPath();
+  return helper !== null && (await isExecutableFile(helper));
+}
+
+/**
+ * The format encodeToolImage really writes when asked for `target`:
+ * JPEG/PNG/WebP as asked; BMP through the builtin codec; AVIF/TIFF when sharp
+ * can encode them; HEIC when the ImageIO codec helper is available; PNG
+ * otherwise (and always for GIF: tools write the first frame). Jobs and
+ * previews both go through this, so a preview's `outputFormat` names the
+ * format the job writes.
+ */
+export async function writtenFormat(target: ImageFormat): Promise<WritableFormat> {
+  switch (target) {
+    case 'jpeg':
+    case 'png':
+    case 'webp':
+    case 'bmp':
+      return target;
+    case 'avif':
+    case 'tiff':
+      return (await canEncode(target)) ? target : 'png';
+    case 'heic':
+      return (await canWriteHeic()) ? 'heic' : 'png';
+    case 'gif':
+      return 'png';
+  }
+}
+
+/** Format crop/edit/annotate/redact write for their outputFormat option (jobs and previews alike). */
+export async function toolOutputFormat(option: ToolOutputFormat, inputFormat: ImageFormat): Promise<WritableFormat> {
+  return writtenFormat(await resolveToolFormat(option, inputFormat));
+}
+
 export interface EncodeToolRequest {
   readonly format: ImageFormat;
   readonly settings: ProcessorSettings;
@@ -307,13 +351,13 @@ function applyEncoder(pipeline: Sharp, format: 'jpeg' | 'png' | 'webp' | 'avif' 
 }
 
 /**
- * Encode a pipeline built by `make()` (called again for a fallback). Formats
- * the bundled engines cannot write (HEIC without the ImageIO helper, BMP
- * without the builtin codec, GIF) fall back to PNG; the returned `format` is
- * what was actually written.
+ * Encode a pipeline built by `make()` (called again for a fallback). The
+ * target goes through `writtenFormat` first: formats the bundled engines
+ * cannot write (HEIC without the ImageIO helper, AVIF/TIFF without a sharp
+ * encoder, GIF) become PNG; the returned `format` is what was actually written.
  */
 export async function encodeToolImage(make: () => Sharp, req: EncodeToolRequest): Promise<EncodedImage> {
-  const target = req.format;
+  const target = await writtenFormat(req.format);
   const flatten = req.hasAlpha && !FORMAT_INFO[target].alpha;
   const prepare = (): Sharp => {
     let p = make();
@@ -330,12 +374,11 @@ export async function encodeToolImage(make: () => Sharp, req: EncodeToolRequest)
       });
       return { data: out.data, width: out.width, height: out.height, format: target, flattened: flatten || out.flattened };
     } catch (error) {
+      // The codec helper could not be started after all (e.g. removed since writtenFormat looked): PNG.
       if (!(error instanceof OrbitError) || error.code !== 'ENGINE_UNAVAILABLE') throw error;
       return encodeToolImage(make, { ...req, format: 'png' });
     }
   }
-  if (target === 'gif') return encodeToolImage(make, { ...req, format: 'png' });
-  if ((target === 'avif' || target === 'tiff') && !(await canEncode(target))) return encodeToolImage(make, { ...req, format: 'png' });
   const quality = req.quality ?? defaultQuality(target, req.settings);
   const { data, info } = await applyEncoder(prepare(), target, quality, req).toBuffer({ resolveWithObject: true });
   return { data, width: info.width, height: info.height, format: target, flattened: flatten };

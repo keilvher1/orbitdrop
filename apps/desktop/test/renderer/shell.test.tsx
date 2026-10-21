@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { installDropGuard } from '../../src/renderer/src/app/bootstrap';
 import { asErrorInfo } from '../../src/renderer/src/app/errors';
 import { applyAppearance, resolveAppearance, type MediaFlags } from '../../src/renderer/src/theme/appearance';
-import { buildTokensCss, colorVar } from '../../src/renderer/src/theme/tokensCss';
+import { THEMES, buildTokensCss, colorVar, isDarkTheme } from '../../src/renderer/src/theme/tokensCss';
 
 const media = (over: Partial<MediaFlags> = {}): MediaFlags => ({ dark: false, moreContrast: false, forcedColors: false, reducedMotion: false, ...over });
 const a11y = (reduceMotion: 'system' | 'on' | 'off', highContrast: 'system' | 'on' | 'off') => ({ reduceMotion, highContrast });
@@ -24,6 +24,22 @@ describe('appearance', () => {
     expect(resolveAppearance(a11y('on', 'on'), media())).toMatchObject({ theme: 'highContrast', reduceMotion: true });
   });
 
+  it('high contrast picks the light or dark high-contrast set from the OS colour scheme', () => {
+    const cases: [ReturnType<typeof a11y>, Partial<MediaFlags>, string][] = [
+      [a11y('system', 'on'), { dark: true }, 'highContrastDark'],
+      [a11y('system', 'on'), { dark: false }, 'highContrast'],
+      [a11y('system', 'system'), { dark: true, moreContrast: true }, 'highContrastDark'],
+      [a11y('system', 'system'), { dark: false, moreContrast: true }, 'highContrast'],
+      [a11y('system', 'system'), { dark: true, forcedColors: true }, 'highContrastDark'],
+      [a11y('system', 'off'), { dark: true, moreContrast: true, forcedColors: true }, 'dark'],
+      [a11y('system', 'system'), { dark: true }, 'dark'],
+    ];
+    for (const [accessibility, flags, theme] of cases) {
+      expect(resolveAppearance(accessibility, media(flags)).theme, JSON.stringify({ accessibility, flags })).toBe(theme);
+    }
+    expect(resolveAppearance(a11y('system', 'system'), media({ dark: true, forcedColors: true })).forcedColors).toBe(true);
+  });
+
   it('writes data attributes used by the CSS', () => {
     const root = document.createElement('html');
     applyAppearance(root, { theme: 'dark', reduceMotion: true, forcedColors: false }, 'win32');
@@ -31,16 +47,25 @@ describe('appearance', () => {
     expect(root.dataset.reduceMotion).toBe('true');
     expect(root.dataset.platform).toBe('win32');
     expect(root.style.colorScheme).toBe('dark');
+    applyAppearance(root, { theme: 'highContrastDark', reduceMotion: false, forcedColors: false }, 'darwin');
+    expect(root.dataset.theme).toBe('highContrastDark');
+    expect(root.style.colorScheme).toBe('dark');
+    applyAppearance(root, { theme: 'highContrast', reduceMotion: false, forcedColors: false }, 'darwin');
+    expect(root.style.colorScheme).toBe('light');
+    expect(THEMES.filter(isDarkTheme)).toEqual(['dark', 'highContrastDark']);
   });
 });
 
 describe('design tokens → CSS variables', () => {
   it('emits every colour token for every theme and the motion/size tokens', () => {
     const css = buildTokensCss();
-    for (const theme of ['light', 'dark', 'highContrast'] as const) {
+    // Every colour set in design-tokens.json is a renderer theme (none forgotten, none extra).
+    expect([...THEMES].sort()).toEqual(Object.keys(DESIGN_TOKENS.color).sort());
+    for (const theme of THEMES) {
       expect(css).toContain(`:root[data-theme="${theme}"]{`);
       for (const [name, value] of Object.entries(DESIGN_TOKENS.color[theme])) expect(css).toContain(`${colorVar(name)}:${value};`);
     }
+    expect(css).toContain(':root[data-theme="highContrastDark"]{--c-wheel-disc:#000000FF;');
     expect(colorVar('sectorActive')).toBe('--c-sector-active');
     expect(css).toContain(`--motion-wheel-appear:${DESIGN_TOKENS.motion.wheelAppearMs}ms;`);
     expect(css).toContain('--editor-width:520px;');

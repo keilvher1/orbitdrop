@@ -6,13 +6,14 @@ import {
   loadImage,
   parseToolOptions,
   regionHasTransparency,
-  resolveToolFormat,
+  requireImageInput,
   sharpFromRaw,
   singleInput,
   stage,
   throwIfCancelled,
   toRaw,
   toToolError,
+  toolOutputFormat,
   writeToolOutput,
 } from './common';
 import { getScaledSource } from './source-cache';
@@ -83,7 +84,7 @@ export async function runEdit(job: ProcessorJob, ctx: ProcessorRunContext): Prom
   try {
     stage(ctx.onProgress, 'reading');
     const image = await loadImage(input, job.limits, signal);
-    const format = await resolveToolFormat(options.outputFormat, input.format);
+    const format = await toolOutputFormat(options.outputFormat, input.format);
     const info = { grey: image.grey };
     throwIfCancelled(signal);
     stage(ctx.onProgress, 'rendering');
@@ -119,6 +120,7 @@ export async function previewEdit(request: PreviewRequest, signal: AbortSignal):
       sourceHeight: source.sourceHeight,
       outputWidth: out.width,
       outputHeight: out.height,
+      outputFormat: await toolOutputFormat(options.outputFormat, requireImageInput(request.input).format),
     };
   } catch (error) {
     throw toToolError(error, signal);

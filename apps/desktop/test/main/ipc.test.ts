@@ -89,6 +89,10 @@ function services(): OrbitIpcServices<Rec> & Record<string, ReturnType<typeof vi
     }),
     openOutput: fn(),
     openExternal: fn(true),
+    thumbnail: fn({ fileId: 'f_1', url: 'orbit-preview://p/AAAAAAAAAAAAAAAAAAAAAAAA', width: 96, height: 72 }),
+    estimate: fn({ ok: true, seq: 1, fileId: 'f_1', estimatedBytes: 10 }),
+    clearFinishedJobs: vi.fn(() => 0),
+    retryJob: fn({ kind: 'jobs', jobIds: ['job_2'] }),
   } as unknown as OrbitIpcServices<Rec> & Record<string, ReturnType<typeof vi.fn>>;
 }
 
@@ -146,6 +150,18 @@ describe('IPC channels', () => {
       [IPC_CHANNELS.filesRegisterPaths, { paths: ['/a'], source: 'globalDrag' }],
       [IPC_CHANNELS.externalOpen, { url: 'x'.repeat(5000) }],
       [IPC_CHANNELS.jobCancel, {}],
+      [IPC_CHANNELS.jobRetry, { id: '../job' }],
+      [IPC_CHANNELS.jobRetry, { id: 'job_1', force: true }],
+      [IPC_CHANNELS.jobsClearFinished, { finishedUpTo: -1 }],
+      [IPC_CHANNELS.jobsClearFinished, { finishedUpTo: 'all' }],
+      [IPC_CHANNELS.jobsClearFinished, { finishedUpTo: 5, also: 'running' }],
+      [IPC_CHANNELS.jobsClearFinished, undefined],
+      [IPC_CHANNELS.editorThumbnail, { editorId: 'ed_1', fileId: 'f_1', maxEdge: 4000 }],
+      [IPC_CHANNELS.editorThumbnail, { editorId: 'ed_1', fileId: '/etc/passwd' }],
+      [IPC_CHANNELS.editorThumbnail, { editorId: 'ed_1', fileId: 'f_1', path: '/a.png' }],
+      [IPC_CHANNELS.editorEstimate, { editorId: 'ed_1', fileId: 'f_1', seq: -1, options: {} }],
+      [IPC_CHANNELS.editorEstimate, { editorId: 'ed_1', fileId: 'f_1', seq: 1.5, options: {} }],
+      [IPC_CHANNELS.editorEstimate, { editorId: 'ed_1', seq: 1, options: {} }],
     ];
     for (const [channel, payload] of bad) {
       const error = await ipc.invoke(channel, fromOurs, payload).then(
@@ -158,6 +174,7 @@ describe('IPC channels', () => {
     }
     expect(s.submit).not.toHaveBeenCalled();
     expect(s.registerDroppedPaths).not.toHaveBeenCalled();
+    for (const service of ['retryJob', 'clearFinishedJobs', 'thumbnail', 'estimate']) expect(s[service], service).not.toHaveBeenCalled();
     ipc.send(IPC_CHANNELS.windowResize, fromOurs, { width: 10, height: 10 });
     expect(s.resizeWindow).not.toHaveBeenCalled();
   });
@@ -171,6 +188,30 @@ describe('IPC channels', () => {
     ipc.send(IPC_CHANNELS.windowResize, fromOurs, { width: 520, height: 700 });
     expect(s.resizeWindow).toHaveBeenCalledWith({ windowId: 1 }, 520, 700);
     expect(await ipc.invoke(IPC_CHANNELS.windowContext, fromOurs)).toEqual({ kind: 'jobs' });
+    // polish-pass channels
+    await ipc.invoke(IPC_CHANNELS.jobRetry, fromOurs, { id: 'job_1' });
+    expect(s.retryJob).toHaveBeenCalledWith('job_1', { windowId: 1 });
+    await ipc.invoke(IPC_CHANNELS.jobsClearFinished, fromOurs, { finishedUpTo: 1234 });
+    await ipc.invoke(IPC_CHANNELS.jobsClearFinished, fromOurs, {});
+    expect((s.clearFinishedJobs as unknown as ReturnType<typeof vi.fn>).mock.calls).toEqual([[1234], [undefined]]);
+    await ipc.invoke(IPC_CHANNELS.editorThumbnail, fromOurs, { editorId: 'ed_1', fileId: 'f_1', maxEdge: 96 });
+    expect(s.thumbnail).toHaveBeenCalledWith({ editorId: 'ed_1', fileId: 'f_1', maxEdge: 96 });
+    await ipc.invoke(IPC_CHANNELS.editorEstimate, fromOurs, { editorId: 'ed_1', fileId: 'f_1', seq: 3, options: { quality: 50 } });
+    expect(s.estimate).toHaveBeenCalledWith({ editorId: 'ed_1', fileId: 'f_1', seq: 3, options: { quality: 50 } });
+  });
+
+  it('refuses the polish-pass channels from foreign senders and sub-frames', async () => {
+    const { ipc, s } = setup();
+    for (const [channel, payload] of [
+      [IPC_CHANNELS.jobRetry, { id: 'job_1' }],
+      [IPC_CHANNELS.jobsClearFinished, {}],
+      [IPC_CHANNELS.editorThumbnail, { editorId: 'ed_1', fileId: 'f_1' }],
+      [IPC_CHANNELS.editorEstimate, { editorId: 'ed_1', fileId: 'f_1', seq: 1, options: {} }],
+    ] as const) {
+      await expect(ipc.invoke(channel, fromForeign, payload), channel).rejects.toThrow('INTERNAL: Untrusted sender');
+      await expect(ipc.invoke(channel, fromSubframe, payload), channel).rejects.toThrow(/^INTERNAL/);
+    }
+    for (const service of ['retryJob', 'clearFinishedJobs', 'thumbnail', 'estimate']) expect(s[service], service).not.toHaveBeenCalled();
   });
 
   it('converts errors to "<CODE>: message" and never leaks unexpected error details', async () => {

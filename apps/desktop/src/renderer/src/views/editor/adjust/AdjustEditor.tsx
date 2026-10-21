@@ -7,7 +7,7 @@ import { useEnv } from '../../../app/env';
 import { SliderField } from '../../../components/SliderField';
 import { fitSize } from '../crop/cropMath';
 import { EditorFrame, useEditorCommit } from '../EditorFrame';
-import { PreviewError, Stage, isBoolean, isNumber, isOneOf, outputFileName, pick, previewEdgeFor, useDecodedPreview, usePreviewBox } from '../editorKit';
+import { FormatResolvedNote, PreviewError, Stage, isBoolean, isNumber, isOneOf, outputFileName, pick, previewEdgeFor, useDecodedPreview, usePreviewBox } from '../editorKit';
 import { usePreview } from '../usePreview';
 import './adjust.css';
 
@@ -81,6 +81,9 @@ export function AdjustEditor({ ctx, title }: { readonly ctx: EditorContext; read
   const { preview: latest, pending, error } = usePreview(ctx.editorId, options, { maxEdge: previewEdgeFor(display) });
   const preview = useDecodedPreview(latest);
   const shownUrl = preview?.url ?? ctx.source.url;
+  // What 'input' really writes (e.g. GIF → PNG): the output format option never changes here,
+  // so any preview's report applies.
+  const resolved = outputFormat === 'input' ? latest?.outputFormat : undefined;
 
   const update = (patch: Partial<AdjustState>) => setState((s) => ({ ...s, ...patch }));
   const isNeutral = JSON.stringify(state) === JSON.stringify(NEUTRAL_ADJUST);
@@ -93,7 +96,7 @@ export function AdjustEditor({ ctx, title }: { readonly ctx: EditorContext; read
       onPrimary={() => void commit.commit(options)}
       onReset={() => setState(NEUTRAL_ADJUST)}
       resetDisabled={isNeutral}
-      footerNote={t('editor.outputName', { name: outputFileName(ctx) })}
+      footerNote={t('editor.outputName', { name: outputFileName(ctx, outputFormat, resolved) })}
     >
       <Stage display={display} checker={ctx.image.hasAlpha} pending={pending}>
         {shownUrl ? <img src={shownUrl} alt={preview ? t('editor.previewAlt') : t('editor.sourceAlt')} draggable={false} /> : null}
@@ -102,6 +105,7 @@ export function AdjustEditor({ ctx, title }: { readonly ctx: EditorContext; read
       <div className="editor-meta">
         <span>{t('editor.outputSize', { width: output.width, height: output.height })}</span>
       </div>
+      <FormatResolvedNote changes={resolved === undefined ? [] : [{ from: ctx.image.format, to: resolved }]} className="adjust-format-note" />
       <div className="editor-controls">
         <div className="field-row">
           <span className="field-label">{t('adjust.transform')}</span>

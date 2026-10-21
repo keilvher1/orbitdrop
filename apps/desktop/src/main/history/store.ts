@@ -134,6 +134,21 @@ export class HistoryStore {
     this.scheduleSave();
   }
 
+  /** Remove the entries `predicate` selects ("clear finished jobs"); returns their job ids. Saves when anything changed. */
+  removeWhere(predicate: (entry: HistoryEntry) => boolean): string[] {
+    const removed: string[] = [];
+    const kept: HistoryEntry[] = [];
+    for (const entry of this.entries) {
+      if (predicate(entry)) removed.push(entry.jobId);
+      else kept.push(entry);
+    }
+    if (removed.length > 0) {
+      this.entries = kept;
+      this.scheduleSave();
+    }
+    return removed;
+  }
+
   clear(): void {
     this.entries = [];
     this.scheduleSave();

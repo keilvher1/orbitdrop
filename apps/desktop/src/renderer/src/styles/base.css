@@ -49,6 +49,16 @@
   --c-selection-handle: #ffffff;
 }
 
+/* Dark mode + high contrast (renderer-only token set): white on black. */
+:root[data-theme='highContrastDark'] {
+  --c-danger-bg: #000000;
+  --c-success-bg: #000000;
+  --c-checker-a: #000000;
+  --c-checker-b: #333333;
+  --c-preview-bg: #000000;
+  --c-selection-handle: #ffffff;
+}
+
 *,
 *::before,
 *::after {

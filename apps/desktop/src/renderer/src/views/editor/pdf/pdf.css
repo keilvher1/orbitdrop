@@ -16,10 +16,10 @@
 .pdf-row {
   position: relative;
   display: grid;
-  grid-template-columns: 14px 54px 16px 1fr auto auto;
+  grid-template-columns: 14px 54px 40px 1fr auto auto;
   align-items: center;
   gap: 8px;
-  min-height: 38px;
+  min-height: 48px;
   padding: 4px 6px 4px 8px;
   border: 1px solid var(--c-border);
   border-radius: var(--radius-control);
@@ -57,6 +57,36 @@
 .pdf-grip,
 .pdf-icon {
   color: var(--c-text-muted);
+}
+
+/* Thumbnail cell: the image fitted into a 40 px box (never cropped), on a checkerboard for transparency. */
+.pdf-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  background: var(--c-surface-muted);
+}
+
+.pdf-thumb[data-thumb='ready'] {
+  background-color: var(--c-checker-a);
+  background-image:
+    linear-gradient(45deg, var(--c-checker-b) 25%, transparent 25%, transparent 75%, var(--c-checker-b) 75%),
+    linear-gradient(45deg, var(--c-checker-b) 25%, transparent 25%, transparent 75%, var(--c-checker-b) 75%);
+  background-position:
+    0 0,
+    4px 4px;
+  background-size: 8px 8px;
+}
+
+.pdf-thumb img {
+  display: block;
+  object-fit: contain;
+  pointer-events: none;
 }
 
 .pdf-page {

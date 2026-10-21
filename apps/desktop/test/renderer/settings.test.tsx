@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 import './setup';
-import { DEFAULT_SETTINGS, isAllowedExternalUrl, type HelperStatus, type ModifierKey } from '@orbitdrop/contracts';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { DEFAULT_SETTINGS, DEFAULT_WHEEL_GEOMETRY, WHEEL_DIAMETER_RANGE, isAllowedExternalUrl, type HelperStatus, type ModifierKey, type Settings } from '@orbitdrop/contracts';
+import { innerRadius, sectorOuterRadius } from '@orbitdrop/core';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { PERMISSION_URLS, SettingsView } from '../../src/renderer/src/views/settings/SettingsView';
+import { WHEEL_PREVIEW_SCALE, previewDiameter } from '../../src/renderer/src/views/settings/WheelSizePreview';
+import { sectorShape } from '../../src/renderer/src/wheel/sectorPath';
 import {
   isModifierSupported,
   normalizeCombo,
@@ -201,6 +204,114 @@ describe('SettingsView other settings', () => {
     expect(output.getAttribute('aria-selected')).toBe('true');
     expect(document.activeElement).toBe(output);
     expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe(output.id);
+  });
+});
+
+describe('SettingsView wheel size preview', () => {
+  const previewSvg = () => {
+    const figure = screen.getByRole('figure', { name: '휠 크기 미리보기' });
+    const svg = figure.querySelector('svg.wheel-preview-svg');
+    if (!(svg instanceof SVGSVGElement)) throw new Error('no preview svg');
+    return svg;
+  };
+  const disc = (svg: SVGSVGElement) => svg.querySelector('circle.wheel-disc');
+
+  it('follows every slider movement at once; the save is debounced to one call with the final value', async () => {
+    const { orbit, user } = setup();
+    await user.click(screen.getByRole('tab', { name: '드래그' }));
+    const svg = previewSvg();
+    expect(svg.getAttribute('data-diameter')).toBe(String(DEFAULT_SETTINGS.globalDrag.wheelDiameter));
+
+    const slider = screen.getByRole('slider', { name: '휠 크기' });
+    fireEvent.change(slider, { target: { value: '330' } });
+    expect(previewSvg().getAttribute('data-diameter')).toBe('330');
+    expect(disc(previewSvg())?.getAttribute('r')).toBe(String(330 / 2 - DEFAULT_WHEEL_GEOMETRY.ringWidth / 2));
+    fireEvent.change(slider, { target: { value: '372' } });
+    expect(previewSvg().getAttribute('data-diameter')).toBe('372');
+    expect(orbit.updateSettings).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(orbit.updateSettings).toHaveBeenCalledWith({ globalDrag: { wheelDiameter: 372 } }));
+    expect(orbit.updateSettings).toHaveBeenCalledTimes(1);
+    expect(previewSvg().getAttribute('data-diameter')).toBe('372');
+  });
+
+  it('draws the wheel with the real geometry and sector path code, with dashed limit rings, at a fixed size', async () => {
+    const { user } = setup();
+    await user.click(screen.getByRole('tab', { name: '드래그' }));
+    fireEvent.change(screen.getByRole('slider', { name: '휠 크기' }), { target: { value: '344' } });
+    const svg = previewSvg();
+    const box = WHEEL_DIAMETER_RANGE.max + 24;
+    expect(svg.getAttribute('aria-hidden')).toBe('true');
+    expect(svg.getAttribute('viewBox')).toBe(`${-box / 2} ${-box / 2} ${box} ${box}`);
+    expect(svg.getAttribute('width')).toBe(String(Math.round(box * WHEEL_PREVIEW_SCALE)));
+
+    const paths = Array.from(svg.querySelectorAll('.wheel-sector path')).map((p) => p.getAttribute('d'));
+    expect(paths).toHaveLength(8); // a JPG's convert menu, like the reference recording
+    const expected = sectorShape({
+      index: 0,
+      count: 8,
+      innerRadius: innerRadius(344),
+      outerRadius: sectorOuterRadius(344),
+      gap: DEFAULT_WHEEL_GEOMETRY.sectorGap,
+      cornerRadius: DEFAULT_WHEEL_GEOMETRY.sectorCornerRadius,
+      startAngleDeg: DEFAULT_WHEEL_GEOMETRY.startAngleDeg,
+    });
+    expect(paths[0]).toBe(expected.path);
+    expect(svg.querySelectorAll('.wheel-sector[data-active="true"]')).toHaveLength(1);
+
+    const limits = Array.from(svg.querySelectorAll('circle.wheel-preview-limit')).map((c) => [c.getAttribute('r'), c.getAttribute('stroke-dasharray')]);
+    expect(limits.map(([r]) => r)).toEqual([String(WHEEL_DIAMETER_RANGE.min / 2), String(WHEEL_DIAMETER_RANGE.max / 2)]);
+    expect(limits.every(([, dash]) => dash !== null && dash !== '')).toBe(true);
+    expect(screen.getByText('실제 크기의 45%로 표시 · 점선은 가장 작은 크기와 가장 큰 크기')).toBeTruthy();
+
+    // The drawing box does not depend on the diameter (no layout jump while dragging).
+    fireEvent.change(screen.getByRole('slider', { name: '휠 크기' }), { target: { value: '380' } });
+    expect(previewSvg().getAttribute('width')).toBe(String(Math.round(box * WHEEL_PREVIEW_SCALE)));
+  });
+
+  it('follows a value typed in the number field', async () => {
+    const { orbit, user } = setup();
+    await user.click(screen.getByRole('tab', { name: '드래그' }));
+    const field = screen.getByRole('spinbutton', { name: '휠 크기' });
+    await user.clear(field);
+    await user.type(field, '326{Enter}');
+    expect(previewSvg().getAttribute('data-diameter')).toBe('326');
+    await waitFor(() => expect(orbit.updateSettings).toHaveBeenCalledWith({ globalDrag: { wheelDiameter: 326 } }));
+  });
+
+  it('a pending change is saved once when the tab closes', async () => {
+    const { orbit, user } = setup();
+    await user.click(screen.getByRole('tab', { name: '드래그' }));
+    fireEvent.change(screen.getByRole('slider', { name: '휠 크기' }), { target: { value: '322' } });
+    await user.click(screen.getByRole('tab', { name: '일반' }));
+    expect(orbit.updateSettings).toHaveBeenCalledTimes(1);
+    expect(orbit.updateSettings).toHaveBeenCalledWith({ globalDrag: { wheelDiameter: 322 } });
+    await new Promise((resolve) => setTimeout(resolve, 300)); // the debounce timer was cancelled
+    expect(orbit.updateSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a size saved elsewhere', async () => {
+    let listener: ((settings: Settings) => void) | null = null;
+    const orbit = createFakeOrbit({
+      onSettingsChanged: (next) => {
+        listener = next;
+        return () => {
+          listener = null;
+        };
+      },
+    });
+    renderWithEnv(<SettingsView />, { orbit });
+    await userEvent.setup().click(screen.getByRole('tab', { name: '드래그' }));
+    act(() => listener?.({ ...DEFAULT_SETTINGS, globalDrag: { ...DEFAULT_SETTINGS.globalDrag, wheelDiameter: 324 } }));
+    expect(previewSvg().getAttribute('data-diameter')).toBe('324');
+    expect((screen.getByRole('slider', { name: '휠 크기' }) as HTMLInputElement).value).toBe('324');
+  });
+
+  it('draws only diameters inside the setting range', () => {
+    expect(previewDiameter(200)).toBe(WHEEL_DIAMETER_RANGE.min);
+    expect(previewDiameter(1000)).toBe(WHEEL_DIAMETER_RANGE.max);
+    expect(previewDiameter(341.6)).toBe(342);
+    expect(previewDiameter(Number.NaN)).toBe(DEFAULT_WHEEL_GEOMETRY.diameter);
   });
 });
 

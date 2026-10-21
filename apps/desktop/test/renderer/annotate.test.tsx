@@ -34,6 +34,7 @@ import {
   withStyle,
 } from '../../src/renderer/src/views/editor/annotate/annotateModel';
 import { editorMapping } from '../../src/renderer/src/views/editor/crop/cropMath';
+import koErrors from '../../src/shared/locales/ko/errors.json';
 import { createFakeOrbit, renderWithEnv, sampleEditorContext } from './helpers';
 
 // An EXIF-rotated phone photo (oriented 4032×3024) shown in the 464 px wide editor stage.
@@ -380,5 +381,54 @@ describe('AnnotateEditor', () => {
     await user.click(screen.getByRole('button', { name: '주석 저장' }));
     expect(committedShapes(orbit)?.shapes).toHaveLength(1);
     expect(committedShapes(orbit)?.shapes[0]).toMatchObject({ color: '#F2552C' });
+  });
+});
+
+describe('AnnotateEditor font coverage', () => {
+  async function addText(surface: HTMLElement, user: ReturnType<typeof userEvent.setup>, text: string) {
+    await user.click(screen.getByRole('radio', { name: '텍스트' }));
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 30, clientY: 30 });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: 30, clientY: 30 });
+    const box = await screen.findByRole('textbox', { name: '주석 텍스트' });
+    (box as HTMLTextAreaElement).value = text;
+    fireEvent.keyDown(box, { key: 'Enter', code: 'Enter' });
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: '주석 텍스트' })).toBeNull());
+  }
+
+  it('asks the processor about text only, and shows its font warning (stronger when a text would vanish)', async () => {
+    const { surface, user, orbit } = setup();
+    let unreadable = 0;
+    orbit.requestPreview.mockImplementation(async (request) => ({
+      ok: true as const,
+      seq: request.seq,
+      url: 'data:image/png;base64,',
+      width: 64,
+      height: 48,
+      warnings: [{ code: 'ANNOTATION_FONT_FALLBACK' as const, params: { font: 'sans-serif', characters: 2, shapes: 1, unreadable, hangul: 1 } }],
+    }));
+    // A rectangle alone needs no font check.
+    await user.click(screen.getByRole('radio', { name: '사각형' }));
+    drag(surface, { x: 58, y: 87 }, { x: 174, y: 174 });
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(orbit.requestPreview).not.toHaveBeenCalled();
+
+    await addText(surface, user, '한글');
+    const notice = await screen.findByText(koErrors['warning.ANNOTATION_FONT_FALLBACK']);
+    const options = orbit.requestPreview.mock.calls.at(-1)?.[0].options as { shapes: AnnotationShape[] };
+    expect(options.shapes.map((s) => s.type)).toEqual(['text']); // only the text, never the rectangle
+    expect(notice.closest('.notice')?.getAttribute('data-tone')).toBe('warning');
+
+    unreadable = 1;
+    await addText(surface, user, '🙂');
+    const strong = (await screen.findByText(/전혀 그릴 수 없어 결과에 보이지 않습니다/)).closest('.notice');
+    expect(strong?.getAttribute('data-tone')).toBe('danger');
+    expect(strong?.textContent).toContain(koErrors['warning.ANNOTATION_FONT_FALLBACK']);
+  });
+
+  it('shows nothing when the fonts cover every character', async () => {
+    const { surface, user, orbit } = setup();
+    await addText(surface, user, 'Hello');
+    await waitFor(() => expect(orbit.requestPreview).toHaveBeenCalled());
+    expect(screen.queryByText(koErrors['warning.ANNOTATION_FONT_FALLBACK'])).toBeNull();
   });
 });

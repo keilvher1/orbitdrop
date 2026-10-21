@@ -46,6 +46,10 @@ const ORBIT_API_KEYS = [
   'revealOutput',
   'openOutput',
   'openExternal',
+  'getEditorThumbnail',
+  'requestEstimate',
+  'clearFinishedJobs',
+  'retryJob',
 ];
 
 test.describe.configure({ mode: 'serial' });

@@ -490,3 +490,41 @@ export function riffChunk(webp: Buffer, type: string): Buffer | null {
   }
   return null;
 }
+
+// ---------------------------------------------------------------- fake ImageIO helper (HEIC)
+
+/**
+ * A stand-in for the macOS helper's ImageIO codec mode (CLI contract in
+ * docs/architecture.md): "HEIC" files are `FAKEHEIC q=<quality>\n` + PNG
+ * bytes, so HEIC inputs and outputs can be exercised on every machine.
+ */
+const FAKE_IMAGEIO_HELPER = `
+const fs = require('node:fs');
+const [, , mode, ...rest] = process.argv;
+if (mode !== 'imageio') process.exit(64);
+if (rest[0] === '--probe') {
+  process.stdout.write(JSON.stringify({ decode: ['heic'], encode: ['heic'] }) + '\\n');
+} else if (rest[0] === '--encode') {
+  const [, format, , quality, input, , output] = rest;
+  fs.writeFileSync(output, Buffer.concat([Buffer.from('FAKE' + format.toUpperCase() + ' q=' + quality + '\\n'), fs.readFileSync(input)]));
+} else if (rest[0] === '--decode') {
+  const [, input, , output] = rest;
+  const data = fs.readFileSync(input);
+  if (data.subarray(0, 8).toString() !== 'FAKEHEIC') { process.stderr.write('cannot decode\\n'); process.exit(2); }
+  fs.writeFileSync(output, data.subarray(data.indexOf(10) + 1));
+} else process.exit(64);
+`;
+
+/** Write an executable fake ImageIO helper into `dir`; returns its path (POSIX only). */
+export async function writeFakeImageIOHelper(dir: string): Promise<string> {
+  const { chmod } = await import('node:fs/promises');
+  const path = join(dir, 'FakeImageIOHelper');
+  await writeFile(path, `#!${process.execPath}\n${FAKE_IMAGEIO_HELPER}`);
+  await chmod(path, 0o755);
+  return path;
+}
+
+/** A "HEIC" file the fake helper decodes to `png`. */
+export function fakeHeic(png: Buffer): Buffer {
+  return Buffer.concat([Buffer.from('FAKEHEIC q=0.90\n', 'latin1'), png]);
+}

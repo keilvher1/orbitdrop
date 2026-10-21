@@ -21,6 +21,7 @@ import { SliderField } from '../../components/SliderField';
 import { TitleBar } from '../../components/TitleBar';
 import type { Translator } from '../../i18n/catalog';
 import { AboutContent } from './AboutView';
+import { WheelSizePreview } from './WheelSizePreview';
 import {
   MODIFIER_ORDER,
   isModifierSupported,
@@ -179,7 +180,11 @@ function CheckboxField({ label, checked, onChange }: { readonly label: string; r
   );
 }
 
-/** Slider that updates its value live but saves at most every `delay` ms (and on unmount). */
+/**
+ * Slider that updates its value live but saves at most every `delay` ms (and on unmount).
+ * `onLiveChange` follows the value as shown — every movement, and values saved elsewhere —
+ * for live previews that must not wait for the save.
+ */
 function DebouncedSlider({
   label,
   value,
@@ -188,6 +193,7 @@ function DebouncedSlider({
   step,
   unit,
   onCommit,
+  onLiveChange,
   delay = 250,
 }: {
   readonly label: string;
@@ -197,6 +203,7 @@ function DebouncedSlider({
   readonly step?: number;
   readonly unit?: string;
   readonly onCommit: (value: number) => void;
+  readonly onLiveChange?: (value: number) => void;
   readonly delay?: number;
 }) {
   const [local, setLocal] = useState(value);
@@ -204,9 +211,13 @@ function DebouncedSlider({
   const pending = useRef<number | null>(null);
   const commitRef = useRef(onCommit);
   commitRef.current = onCommit;
+  const liveRef = useRef(onLiveChange);
+  liveRef.current = onLiveChange;
 
   useEffect(() => {
-    if (pending.current === null) setLocal(value);
+    if (pending.current !== null) return;
+    setLocal(value);
+    liveRef.current?.(value);
   }, [value]);
 
   useEffect(
@@ -220,6 +231,7 @@ function DebouncedSlider({
 
   const onChange = (next: number) => {
     setLocal(next);
+    liveRef.current?.(next);
     pending.current = next;
     if (timer.current !== null) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
@@ -458,21 +470,27 @@ function ModifierPicker({
 
 function DragPanel({ settings, apply }: PanelProps) {
   const { t } = useEnv();
+  // The slider's value as shown (follows every movement; the save is debounced).
+  const [liveDiameter, setLiveDiameter] = useState(settings.globalDrag.wheelDiameter);
   return (
     <>
       <div className="settings-group">
         <CheckboxField label={t('settings.globalDrag')} checked={settings.globalDrag.enabled} onChange={(enabled) => apply({ globalDrag: { enabled } })} />
       </div>
       <ModifierCombos settings={settings} apply={apply} />
-      <div className="settings-group settings-sliders">
-        <DebouncedSlider
-          label={t('settings.wheelDiameter')}
-          value={settings.globalDrag.wheelDiameter}
-          min={WHEEL_DIAMETER_RANGE.min}
-          max={WHEEL_DIAMETER_RANGE.max}
-          unit={t('common.px')}
-          onCommit={intCommit(WHEEL_DIAMETER_RANGE.min, WHEEL_DIAMETER_RANGE.max, (wheelDiameter) => apply({ globalDrag: { wheelDiameter } }))}
-        />
+      <div className="settings-group">
+        <div className="settings-sliders">
+          <DebouncedSlider
+            label={t('settings.wheelDiameter')}
+            value={settings.globalDrag.wheelDiameter}
+            min={WHEEL_DIAMETER_RANGE.min}
+            max={WHEEL_DIAMETER_RANGE.max}
+            unit={t('common.px')}
+            onLiveChange={setLiveDiameter}
+            onCommit={intCommit(WHEEL_DIAMETER_RANGE.min, WHEEL_DIAMETER_RANGE.max, (wheelDiameter) => apply({ globalDrag: { wheelDiameter } }))}
+          />
+        </div>
+        <WheelSizePreview diameter={liveDiameter} />
       </div>
       <HelperStatusPanel />
     </>

@@ -182,6 +182,10 @@ export function createFakeOrbit(overrides: Partial<OrbitApi> = {}): FakeOrbit {
     revealOutput: vi.fn(async () => undefined),
     openOutput: vi.fn(async () => undefined),
     openExternal: vi.fn(async () => true),
+    getEditorThumbnail: vi.fn(async (request) => ({ fileId: request.fileId, url: `data:image/png;base64,${request.fileId}`, width: 48, height: 36 })),
+    requestEstimate: vi.fn(async (request) => ({ ok: true as const, seq: request.seq, fileId: request.fileId, estimatedBytes: 500_000 })),
+    clearFinishedJobs: vi.fn(async () => 0),
+    retryJob: vi.fn(async () => ({ kind: 'jobs' as const, jobIds: ['job-retry'] })),
   };
   for (const [key, value] of Object.entries(overrides)) {
     const current = (base as Record<string, unknown>)[key];

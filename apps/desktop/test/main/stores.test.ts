@@ -147,6 +147,15 @@ describe('HistoryStore', () => {
     expect(await new HistoryStore(dir).load()).toEqual([]);
   });
 
+  it('removeWhere drops the selected entries, persists the rest and reports the removed ids', async () => {
+    const store = new HistoryStore(dir, undefined, 5);
+    for (let i = 1; i <= 4; i += 1) store.record(entry(i, { finishedAt: i * 10 }));
+    expect(store.removeWhere((e) => (e.finishedAt ?? 0) <= 20).sort()).toEqual(['job_1', 'job_2']);
+    expect(store.removeWhere(() => false)).toEqual([]);
+    await store.flush();
+    expect((await new HistoryStore(dir).load()).map((e) => e.jobId)).toEqual(['job_4', 'job_3']);
+  });
+
   it('stores output paths and names only (no file contents)', async () => {
     const store = new HistoryStore(dir, undefined, 5);
     store.record(entry(1));

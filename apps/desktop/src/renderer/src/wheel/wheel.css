@@ -63,7 +63,8 @@
 }
 
 /* High contrast: sectors share the disc colour, so outline them with the ring colour. */
-:root[data-theme='highContrast'] .wheel-sector path {
+:root[data-theme='highContrast'] .wheel-sector path,
+:root[data-theme='highContrastDark'] .wheel-sector path {
   stroke: var(--c-wheel-ring);
   stroke-width: 1.5px;
 }

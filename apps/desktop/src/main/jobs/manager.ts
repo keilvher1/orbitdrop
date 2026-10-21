@@ -83,6 +83,18 @@ interface JobRecord {
   /** Jobs main completed without running (e.g. file already in the target format). */
   readonly skipped: readonly JobWarning[] | null;
   settledReported: boolean;
+  /**
+   * Removed by clearFinished while other jobs of its batch were still active:
+   * hidden from list()/get(), but batch() still counts it so the batch's
+   * notification reports every file. Dropped once the batch is done.
+   */
+  cleared: boolean;
+  /** Ids of the jobs retryJob resubmitted this failed job as (one retry per failed job). */
+  retriedAs: readonly string[] | null;
+}
+
+function isFinished(record: JobRecord): boolean {
+  return record.skipped !== null || (record.entry !== null && TERMINAL_JOB_STATES.has(record.entry.state));
 }
 
 export function processorSettings(settings: Settings): ProcessorSettings {
@@ -135,6 +147,8 @@ export class JobManager {
         outputPaths: [],
         skipped: null,
         settledReported: false,
+        cleared: false,
+        retriedAs: null,
       };
       this.records.set(jobId, record);
       const job: ProcessorJob = {
@@ -168,6 +182,8 @@ export class JobManager {
       outputPaths: [],
       skipped: [warning],
       settledReported: false,
+      cleared: false,
+      retriedAs: null,
     };
     this.records.set(jobId, record);
     this.reportSettled(record);
@@ -187,14 +203,15 @@ export class JobManager {
     this.queue.setConcurrency(concurrency);
   }
 
+  /** A job of this session (undefined for jobs only known from history, or cleared from the list). */
   get(jobId: string): JobRecordView | undefined {
     const record = this.records.get(jobId);
-    return record ? { jobId, batchId: record.batchId, spec: record.spec, snapshot: this.toSnapshot(record) } : undefined;
+    return record && !record.cleared ? { jobId, batchId: record.batchId, spec: record.spec, snapshot: this.toSnapshot(record) } : undefined;
   }
 
   snapshot(jobId: string): JobSnapshot | undefined {
     const record = this.records.get(jobId);
-    if (record) return this.toSnapshot(record);
+    if (record) return record.cleared ? undefined : this.toSnapshot(record);
     const past = this.deps.history.list().find((entry) => entry.jobId === jobId);
     return past ? this.historySnapshot(past) : undefined;
   }
@@ -207,7 +224,7 @@ export class JobManager {
 
   /** Session jobs plus history from earlier runs, newest first. */
   list(): JobSnapshot[] {
-    const session = [...this.records.values()].map((record) => this.toSnapshot(record));
+    const session = [...this.records.values()].filter((record) => !record.cleared).map((record) => this.toSnapshot(record));
     const ids = new Set(session.map((job) => job.jobId));
     const past = this.deps.history
       .list()
@@ -228,6 +245,48 @@ export class JobManager {
     return this.list()
       .filter((job) => job.state === 'completed' && job.outputs.length > 0)
       .slice(0, limit);
+  }
+
+  /**
+   * clearFinishedJobs (OrbitApi): remove finished (completed / failed /
+   * cancelled / skipped) jobs that finished at or before `finishedUpTo`
+   * (default: all) from the session list and from history. Queued and running
+   * jobs — including one waiting for its crash retry, which is queued again —
+   * are never touched, nothing is cancelled, and outputs stay on disk and
+   * revealable by their ids. Returns how many jobs were removed.
+   */
+  clearFinished(finishedUpTo?: number): number {
+    const limit = finishedUpTo ?? Number.POSITIVE_INFINITY;
+    const removed = new Set<string>();
+    for (const record of [...this.records.values()]) {
+      if (record.cleared || !isFinished(record)) continue;
+      const snapshot = this.toSnapshot(record);
+      if ((snapshot.finishedAt ?? snapshot.createdAt) > limit) continue; // finished after what the user saw
+      removed.add(record.jobId);
+      if (record.batchId !== null && this.batchActive(record.batchId)) record.cleared = true;
+      else this.forget(record.jobId);
+    }
+    for (const jobId of this.deps.history.removeWhere((entry) => (entry.finishedAt ?? entry.createdAt) <= limit)) {
+      this.historyOutputs.delete(jobId);
+      removed.add(jobId);
+    }
+    if (removed.size > 0) {
+      this.log.info('finished jobs cleared', { count: removed.size });
+      this.flushBroadcast(); // the jobs window and the tray's recent list update right away
+    }
+    return removed.size;
+  }
+
+  /** Ids retryJob resubmitted this failed job as, if it was retried already. */
+  retriedAs(jobId: string): readonly string[] | undefined {
+    const record = this.records.get(jobId);
+    return record && !record.cleared ? (record.retriedAs ?? undefined) : undefined;
+  }
+
+  /** Remember that a failed job was retried (forgotten with the job). */
+  markRetried(jobId: string, jobIds: readonly string[]): void {
+    const record = this.records.get(jobId);
+    if (record) record.retriedAs = [...jobIds];
   }
 
   /** Flush a pending broadcast immediately. */
@@ -282,8 +341,24 @@ export class JobManager {
         attempt: entry.attempt,
       });
       this.reportSettled(record);
+      // Batch members cleared from the list while this batch ran were kept only for its notification.
+      if (record.batchId !== null && !this.batchActive(record.batchId)) {
+        for (const member of [...this.records.values()]) if (member.cleared && member.batchId === record.batchId) this.forget(member.jobId);
+      }
     }
     this.scheduleBroadcast();
+  }
+
+  private batchActive(batchId: string): boolean {
+    for (const record of this.records.values()) if (record.batchId === batchId && !isFinished(record)) return true;
+    return false;
+  }
+
+  /** Drop a finished job's record (its outputs stay registered and on disk). */
+  private forget(jobId: string): void {
+    this.records.delete(jobId);
+    this.queue.prune(jobId);
+    this.historyOutputs.delete(jobId);
   }
 
   private registerOutputs(record: JobRecord, result: ProcessorResult): void {
@@ -426,9 +501,7 @@ export class JobManager {
   private prune(): void {
     const max = this.deps.maxRecords ?? 300;
     if (this.records.size <= max) return;
-    const finished = [...this.records.values()]
-      .filter((record) => record.skipped !== null || (record.entry !== null && TERMINAL_JOB_STATES.has(record.entry.state)))
-      .sort((a, b) => a.createdAt - b.createdAt);
+    const finished = [...this.records.values()].filter(isFinished).sort((a, b) => a.createdAt - b.createdAt);
     for (const record of finished.slice(0, this.records.size - max)) {
       this.records.delete(record.jobId);
       this.queue.prune(record.jobId);

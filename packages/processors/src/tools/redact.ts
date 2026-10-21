@@ -8,13 +8,14 @@ import {
   loadImage,
   parseToolOptions,
   regionHasTransparency,
-  resolveToolFormat,
+  requireImageInput,
   sharpFromRaw,
   singleInput,
   stage,
   throwIfCancelled,
   toRaw,
   toToolError,
+  toolOutputFormat,
   writeToolOutput,
   type RawImage,
 } from './common';
@@ -182,7 +183,7 @@ export async function runRedact(job: ProcessorJob, ctx: ProcessorRunContext): Pr
     stage(ctx.onProgress, 'reading');
     const image = await loadImage(input, job.limits, signal);
     const regions = prepareRegions(options.regions, image.width, image.height);
-    const format = await resolveToolFormat(options.outputFormat, input.format);
+    const format = await toolOutputFormat(options.outputFormat, input.format);
     throwIfCancelled(signal);
 
     stage(ctx.onProgress, 'rendering');
@@ -255,6 +256,7 @@ export async function previewRedact(request: PreviewRequest, signal: AbortSignal
       sourceHeight: source.sourceHeight,
       outputWidth: source.sourceWidth,
       outputHeight: source.sourceHeight,
+      outputFormat: await toolOutputFormat(options.outputFormat, requireImageInput(request.input).format),
     };
   } catch (error) {
     throw toToolError(error, signal);

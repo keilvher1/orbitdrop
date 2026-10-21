@@ -75,6 +75,10 @@ const api: OrbitApi = {
   revealOutput: (outputId) => invoke(IPC_CHANNELS.outputReveal, { id: outputId }),
   openOutput: (outputId) => invoke(IPC_CHANNELS.outputOpen, { id: outputId }),
   openExternal: (url) => invoke(IPC_CHANNELS.externalOpen, { url }),
+  getEditorThumbnail: (request) => invoke(IPC_CHANNELS.editorThumbnail, request),
+  requestEstimate: (request) => invoke(IPC_CHANNELS.editorEstimate, request),
+  clearFinishedJobs: (request) => invoke(IPC_CHANNELS.jobsClearFinished, request ?? {}),
+  retryJob: (jobId) => invoke(IPC_CHANNELS.jobRetry, { id: jobId }),
 };
 
 contextBridge.exposeInMainWorld('orbit', api);

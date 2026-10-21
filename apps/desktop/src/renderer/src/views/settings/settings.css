@@ -146,6 +146,46 @@
   box-shadow: 0 0 0 2px var(--c-danger);
 }
 
+/* ------------------------------------------------- wheel size preview (drag tab) */
+
+/* Scaled copy of the wheel (wheel.css draws disc and sectors) beside its caption. */
+.wheel-preview {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  margin: 0;
+}
+
+.wheel-preview-stage {
+  flex: none;
+}
+
+.wheel-preview-svg {
+  display: block;
+  overflow: visible;
+}
+
+.wheel-preview-limit {
+  fill: none;
+  stroke: var(--c-text-muted);
+}
+
+.wheel-preview-capsule {
+  fill: var(--c-capsule);
+}
+
+.wheel-preview-capsule-text {
+  fill: var(--c-capsule-text);
+  font-weight: var(--font-capsule-weight);
+}
+
+.wheel-preview-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 /* -------------------------------------------------------------------- about */
 
 .about-view {
@@ -229,6 +269,19 @@
 
   .about-logo-active {
     fill: Highlight;
+  }
+
+  .wheel-preview-limit {
+    stroke: GrayText;
+  }
+
+  .wheel-preview-capsule {
+    fill: Canvas;
+    stroke: CanvasText;
+  }
+
+  .wheel-preview-capsule-text {
+    fill: CanvasText;
   }
 }
 
