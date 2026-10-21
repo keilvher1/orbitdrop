@@ -21,8 +21,8 @@ import { extractDocumentText, pagesWithoutTextWarning } from './pdf-to-text';
  *  - PDF → "text-centric DOCX": the extracted text as re-flowable paragraphs,
  *    one Word page break per PDF page. Layout, fonts, tables, columns and
  *    images are NOT reproduced (DOCX_TEXT_ONLY warning). No text → PDF_NO_TEXT.
- *  - Image → DOCX: a document containing the image (no OCR), scaled down to
- *    fit the A4 text area.
+ *  - Image → DOCX: a document containing the image (no OCR, DOCX_IMAGE_ONLY
+ *    warning), scaled down to fit the A4 text area.
  */
 
 /** A4 portrait with 1-inch margins, in twips (1/20 pt). */
@@ -137,7 +137,7 @@ export async function convertImageToDocx(
     format: 'docx',
     pages: 1,
   });
-  const warnings: JobWarning[] = [];
+  const warnings: JobWarning[] = [{ code: 'DOCX_IMAGE_ONLY' }];
   const mismatch = extensionMismatchWarning(input);
   if (mismatch) warnings.push(mismatch);
   if (prepared.metadataRemoved.length > 0) warnings.push({ code: 'METADATA_REMOVED', params: { kinds: prepared.metadataRemoved.join(',') } });

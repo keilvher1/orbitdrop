@@ -33,6 +33,7 @@
   "warning.DOWNSCALED": "The image was scaled down to fit the output size limit.",
   "warning.PDF_PAGES_WITHOUT_TEXT": "Some pages had no extractable text.",
   "warning.DOCX_TEXT_ONLY": "The DOCX contains text only. Layout, tables and images aren't reproduced.",
+  "warning.DOCX_IMAGE_ONLY": "The image was placed in the DOCX as a picture. Text in the image isn't recognised (no OCR).",
   "warning.METADATA_REMOVED": "Metadata was removed.",
   "warning.SKIPPED_SAME_FORMAT": "Skipped because the file is already in this format."
 }

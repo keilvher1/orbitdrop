@@ -33,6 +33,7 @@
   "warning.DOWNSCALED": "출력 크기 제한에 맞추려고 이미지를 줄였습니다.",
   "warning.PDF_PAGES_WITHOUT_TEXT": "일부 페이지에는 추출할 텍스트가 없습니다.",
   "warning.DOCX_TEXT_ONLY": "DOCX에는 텍스트만 담겼습니다. 레이아웃·표·이미지는 재현되지 않습니다.",
+  "warning.DOCX_IMAGE_ONLY": "DOCX에 이미지를 그림으로 넣었습니다. 이미지 속 글자는 텍스트로 인식하지 않습니다(OCR 없음).",
   "warning.METADATA_REMOVED": "메타데이터를 제거했습니다.",
   "warning.SKIPPED_SAME_FORMAT": "이미 같은 형식이라 건너뛰었습니다."
 }

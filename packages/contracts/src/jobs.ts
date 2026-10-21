@@ -34,6 +34,16 @@ export interface OutputFileInfo {
   readonly pages?: number;
 }
 
+/**
+ * Warning codes and the `params` each one carries (all optional for readers):
+ * - OUTPUT_LARGER_THAN_INPUT `{inputBytes, outputBytes}`
+ * - EXTENSION_MISMATCH `{detected, extension}` (format label, extension without dot)
+ * - ALPHA_FLATTENED `{background}` (#RRGGBB)
+ * - DOWNSCALED `{pages, count, dpi, requestedDpi}` (pages is a summary like "2-4,7")
+ * - PDF_PAGES_WITHOUT_TEXT `{pages, count}`
+ * - METADATA_REMOVED `{kinds}` (comma-separated, e.g. "exif,xmp")
+ * - DOCX_TEXT_ONLY, DOCX_IMAGE_ONLY, SKIPPED_SAME_FORMAT: no params
+ */
 export const WARNING_CODES = [
   /** Compressed result is not smaller than the input. */
   'OUTPUT_LARGER_THAN_INPUT',
@@ -47,6 +57,8 @@ export const WARNING_CODES = [
   'PDF_PAGES_WITHOUT_TEXT',
   /** DOCX contains extracted text only; layout, tables and images are not reproduced. */
   'DOCX_TEXT_ONLY',
+  /** Image → DOCX embeds the picture as-is; text in it is not recognised (no OCR). */
+  'DOCX_IMAGE_ONLY',
   /** Metadata was dropped (default for conversions). */
   'METADATA_REMOVED',
   /** Same format as the target: file skipped. */

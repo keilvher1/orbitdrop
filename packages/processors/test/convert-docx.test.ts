@@ -106,6 +106,7 @@ describe('image → DOCX (image embedded, no OCR)', () => {
     const extent = /<wp:extent cx="(\d+)" cy="(\d+)"/.exec(documentXml);
     expect(extent?.slice(1).map(Number)).toEqual([427 * 9525, 320 * 9525]);
     expect(result.warnings).toContainEqual({ code: 'METADATA_REMOVED', params: { kinds: 'exif' } });
+    expect(result.warnings[0]).toEqual({ code: 'DOCX_IMAGE_ONLY' });
   });
 
   it('embeds other formats as PNG (alpha kept) and applies EXIF orientation', async () => {
