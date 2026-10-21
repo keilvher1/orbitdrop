@@ -124,7 +124,7 @@ function emptyFileError(displayName: string): OrbitError {
  *  - must be absolute; symbolic links are resolved (realpath) with loop
  *    detection (SYMLINK_LOOP); a dangling link is FILE_NOT_FOUND
  *  - folders (also via a link) and other non-regular files → NOT_A_FILE
- *  - 0 bytes → PDF_CORRUPT / IMAGE_CORRUPT / UNSUPPORTED_FORMAT by extension;
+ *  - 0 bytes → FILE_EMPTY for a supported extension, else UNSUPPORTED_FORMAT;
  *    larger than limits.maxInputBytes → FILE_TOO_LARGE
  *  - the format comes from the first SNIFF_BYTES bytes, never the extension;
  *    unknown or output-only formats → UNSUPPORTED_FORMAT; Finder aliases and

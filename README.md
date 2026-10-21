@@ -86,6 +86,7 @@ docs/                요구사항 · 결정(ADR) · 개발 · 지원표 · 검�
 * [support-matrix.md](docs/support-matrix.md) — P0/P1/P2 × macOS arm64 / macOS x64 / Windows x64 검증 상태
 * [verification.md](docs/verification.md) — 수동 GUI 검증 절차·기록표, 자동 검증 증거
 * [permissions.md](docs/permissions.md) — 파일 접근과 입력 관찰 권한
+* [conversion-policy.md](docs/conversion-policy.md) — 변환·편집별 메타데이터·색상 프로파일·투명도·방향 정책
 * [packaging.md](docs/packaging.md) — 산출물, 리소스 배치, 서명·공증, SmartScreen, 미서명 표시
 * [PROGRESS.md](docs/PROGRESS.md) — 진행 기록
 
