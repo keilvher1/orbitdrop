@@ -50,7 +50,11 @@ helper는 공개 API만 쓰며, 채택한 방식은 **TCC 권한이 필요 없�
   (+ 현재 `granted` 값). main은 필요한 권한이 없을 때만 안내를 보여 주며, 현재 방식에서는 안내할 필수 권한이 없다.
 * 패키지 smoke test(이 Mac, macOS 26.6 arm64 / Rosetta x64)에서 helper가 `ready`와 `globalDrag.available: true`를 보고했다.
   이는 helper의 자가 보고이며 실제 Finder 드래그 검증이 아니다.
-* 권한이 없거나 회수되면(`permissionLost`) 휠을 숨기고 세션을 폐기하며, 대체 경로는 계속 동작한다.
+* 현재 방식은 필수 권한이 없으므로 "권한 회수"로 휠을 닫는 경로는 없다(프로토콜의 `permissionLost` 취소
+  사유는 예약만 되어 있고 보내지 않는다). 잠자기·부모 종료·IPC 단절에서는 휠을 숨기고 세션을 폐기하며,
+  대체 경로(파일 열기, Drop Zone)는 언제나 동작한다.
+* 입력 모니터링이 없으면 포인터가 휠 밖에 있을 때 Esc를 감지하지 못한다. 이때는 마우스를 놓으면 휠이
+  정리된다. 설정에서 이 제약과 시스템 설정 열기 버튼을 안내한다(자동 권한 요청 없음).
 * 개발 중에는 터미널에서 실행한 앱이 아니라 **패키지된 OrbitDrop.app**으로 권한을 확인해야 한다
   (TCC는 책임 프로세스 기준으로 기록되며, 미서명 빌드는 다시 빌드할 때마다 서명이 달라져 권한이
   초기화될 수 있다).
@@ -81,7 +85,12 @@ helper는 공개 API만 쓰며, 채택한 방식은 **TCC 권한이 필요 없�
   `DROPEFFECT_NONE`. 프로세스는 Per-Monitor DPI Aware v2.
 * **UIPI 제약**: 일반 권한으로 실행된 OrbitDrop은 관리자 권한으로 실행된 창(예: 관리자 탐색기)에서 시작한
   드래그를 받을 수 없다. 이는 의도된 OS 보안 경계이며 우회하지 않는다.
-* 실측 결과(Windows 11 빌드 번호, 배율별): **_(windows-helper 보고 후 기입)_**
+* 관리자 권한으로 실행된 OrbitDrop은 일반 탐색기에서 끌어온 파일을 받지 못하므로, helper가
+  `ready.globalDrag.available: false`를 보고하면 설정 창이 사유와 함께 경고하고 대체 경로(파일 열기,
+  Drop Zone)를 안내한다.
+* 실측 결과: **미실측** — 이 프로젝트에는 Windows 기기가 없어 위 동작은 MinGW 교차 컴파일과 macOS 호스트
+  테스트로만 확인했다. Windows 11 빌드 번호·배율(100/125/150/200%)별 결과는
+  [windows-helper.md](workstreams/windows-helper.md)의 수동 점검표로 기록한다.
 
 ## 4. 무엇을 하지 않는가
 

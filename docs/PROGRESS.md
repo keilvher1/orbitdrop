@@ -101,3 +101,31 @@ Open polish (not blocking): PDF-order thumbnails, batch Compress estimates beyon
 the first file, "clear finished jobs", a generic retry for retryable errors,
 `PreviewResult.outputFormat`, live wheel-size preview in Settings, unsaved-change
 prompt for Annotate/Redact, a dark high-contrast token set.
+
+## Stage 3 — spec audit and fixes (2026-10-21, in progress)
+
+An independent read-only audit compared the spec section by section with the
+code (31 findings). Lead fixes so far: Swift rendering test after the accent
+change (98c0ac8 — `swift test` had been failing; my earlier check read only
+the last summary lines), CI shells on Windows + E2E in CI (f3aa429), build
+reports record the source commit (2e73323), `actionTitle` and specific
+unsupported strings in contracts (88a209b), conversion policy doc, support
+matrix and permissions doc corrections.
+
+Running in parallel (each owns its files): macOS helper (margin pass-through,
+modifier order, no FS in drag callbacks, panel pre-creation, captions/VoiceOver,
+Reduce Motion), Windows helper (OLE glue test, Shift+drag guard, no FS in
+callbacks, UIA, display changes), polish (retry incl. cancelled, clear finished,
+PDF-order thumbnails, batch Compress estimates, keyboard shape creation,
+notifications from warnings, read-only folder signal, offline E2E, stronger
+evidence, rollback of committed pages after a crash), processors-convert (PDF
+memory), processors-edit (Annotate font fallback warning).
+
+Next actions after they land:
+1. Re-run everything (tsc, vitest, swift test with exit code, Windows host
+   tests, E2E, electron-verify, smoke); commit per workstream.
+2. Flip main to send the specific unsupported strings once both helpers accept them.
+3. Regenerate screenshots (accent changed), rebuild and package, record the
+   new SHA-256s and source commit in verification.md.
+4. Hand the user the Finder PoC checklist (macos-helper.md §8) and record
+   the results as "PoC 결과" in verification.md and the support matrix.
