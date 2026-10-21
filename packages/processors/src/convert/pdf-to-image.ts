@@ -11,7 +11,7 @@ import {
   type ProcessorRunContext,
 } from '@orbitdrop/contracts';
 import { convertedName } from '@orbitdrop/core';
-import { configureSharp, defaultQuality, readInputBuffer } from '../common/io';
+import { configureSharp, defaultQuality, readInputBytes } from '../common/io';
 import { loadPdfEngine, openPdf, pageSizeAt, renderPage, type PdfPage } from '../pdf/engine';
 import { OutputLedger, extensionMismatchWarning, mapWithLimit, reporter, throwIfCancelled, toOrbitError, writableOutputDir } from './common';
 
@@ -117,7 +117,7 @@ export async function convertPdfToImages(
   const progress = reporter(ctx);
   progress({ kind: 'indeterminate', stage: 'reading' });
   const dir = await writableOutputDir(job, input);
-  const bytes = await readInputBuffer(input, job.limits, ctx.signal);
+  const bytes = await readInputBytes(input, job.limits, ctx.signal);
   throwIfCancelled(ctx.signal);
   progress({ kind: 'indeterminate', stage: 'decoding' });
   const engine = await loadPdfEngine();

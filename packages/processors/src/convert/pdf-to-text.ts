@@ -9,7 +9,7 @@ import {
   type ProcessorRunContext,
 } from '@orbitdrop/contracts';
 import { convertedName } from '@orbitdrop/core';
-import { readInputBuffer } from '../common/io';
+import { readInputBytes } from '../common/io';
 import { loadPdfEngine, openPdf } from '../pdf/engine';
 import { extractPageText, linesToText, type PageText } from '../pdf/text';
 import { OutputLedger, extensionMismatchWarning, reporter, throwIfCancelled, toOrbitError, writableOutputDir } from './common';
@@ -27,7 +27,7 @@ export async function extractDocumentText(
   progress: (p: JobProgress) => void,
 ): Promise<{ pages: PageText[]; emptyPages: number[] }> {
   progress({ kind: 'indeterminate', stage: 'reading' });
-  const bytes = await readInputBuffer(input, job.limits, ctx.signal);
+  const bytes = await readInputBytes(input, job.limits, ctx.signal);
   throwIfCancelled(ctx.signal);
   progress({ kind: 'indeterminate', stage: 'decoding' });
   const pdf = await openPdf(bytes, await loadPdfEngine(), { maxImagePixels: job.limits.maxInputPixels });

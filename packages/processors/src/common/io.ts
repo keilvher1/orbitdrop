@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { open, readFile, type FileHandle } from 'node:fs/promises';
 import sharp, { type Sharp, type SharpOptions } from 'sharp';
 import {
   FORMAT_INFO,
@@ -38,6 +38,46 @@ export async function readInputBuffer(input: ProcessorInput, limits: ProcessingL
   } catch (error) {
     if (signal?.aborted) throw new OrbitError('CANCELLED', 'Cancelled', { cause: error });
     throw mapFsError(error, 'READ_PERMISSION_DENIED');
+  }
+}
+
+const READ_CHUNK_BYTES = 16 * 1024 * 1024;
+
+/**
+ * Read a whole input straight into a freshly allocated ArrayBuffer of exactly
+ * the file's size and return it as a plain Uint8Array — not a Node Buffer and
+ * never a view into Node's shared pool (64 KiB slabs in Electron). PDF.js takes
+ * such an array as is and transfers its buffer to its in-process worker, so a
+ * PDF job holds the file once instead of twice. The caller hands ownership to
+ * the consumer (the array is detached after PDF.js has taken it).
+ */
+export async function readInputBytes(input: ProcessorInput, limits: ProcessingLimits, signal?: AbortSignal): Promise<Uint8Array> {
+  if (input.bytes > limits.maxInputBytes) throw new OrbitError('FILE_TOO_LARGE', 'File is larger than the limit');
+  if (signal?.aborted) throw new OrbitError('CANCELLED', 'Cancelled');
+  let handle: FileHandle;
+  try {
+    handle = await open(input.path, 'r');
+  } catch (error) {
+    throw mapFsError(error, 'READ_PERMISSION_DENIED');
+  }
+  try {
+    const { size } = await handle.stat();
+    if (size > limits.maxInputBytes) throw new OrbitError('FILE_TOO_LARGE', 'File is larger than the limit', { detail: `${size} > ${limits.maxInputBytes}` });
+    const bytes = new Uint8Array(size);
+    let filled = 0;
+    while (filled < size) {
+      if (signal?.aborted) throw new OrbitError('CANCELLED', 'Cancelled');
+      const { bytesRead } = await handle.read(bytes, filled, Math.min(READ_CHUNK_BYTES, size - filled), filled);
+      if (bytesRead === 0) break; // the file shrank while reading
+      filled += bytesRead;
+    }
+    return filled === size ? bytes : bytes.slice(0, filled);
+  } catch (error) {
+    if (error instanceof OrbitError) throw error;
+    if (signal?.aborted) throw new OrbitError('CANCELLED', 'Cancelled', { cause: error });
+    throw mapFsError(error, 'READ_PERMISSION_DENIED');
+  } finally {
+    await handle.close().catch(() => undefined);
   }
 }
 

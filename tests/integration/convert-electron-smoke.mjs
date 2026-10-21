@@ -13,6 +13,9 @@
 //   asar-native  like asar, plus sharp/@img/* and @napi-rs/* inside the archive with only
 //            their native binaries (*.node, *.dylib, *.so, *.dll) unpacked — the
 //            electron-builder layout with asarUnpack for native files
+//   memory   (opt-in, not in the default set) generates a large PDF (CONVERT_MEMORY_MB,
+//            default 200) and converts it to TXT and JPG in a utilityProcess started with
+//            --expose-gc, sampling the process RSS (convert-memory-entry.ts)
 //
 // Prints one JSON summary line `CONVERT_ELECTRON_SMOKE {...}` and exits 0 when all modes pass.
 // Runtime dependencies resolve through a `node_modules` symlink to the repo's
@@ -27,6 +30,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const ENTRY = join(ROOT, 'tests', 'integration', 'convert-smoke-entry.ts');
+const MEMORY_ENTRY = join(ROOT, 'tests', 'integration', 'convert-memory-entry.ts');
 
 export function electronBinary() {
   const bin = join(ROOT, 'node_modules', '.bin', process.platform === 'win32' ? 'electron.cmd' : 'electron');
@@ -34,10 +38,10 @@ export function electronBinary() {
 }
 
 /** Bundle the entry to CJS with rolldown (the bundler of electron-vite 6 / Vite 8). */
-export async function bundleEntry(outFile) {
+export async function bundleEntry(outFile, entry = ENTRY) {
   const { rolldown } = await import(pathToFileURL(join(ROOT, 'node_modules', 'rolldown', 'dist', 'index.mjs')).href);
   const build = await rolldown({
-    input: ENTRY,
+    input: entry,
     platform: 'node',
     cwd: join(ROOT, 'tests', 'integration'),
     // Like electron-vite: workspace packages are bundled, dependencies stay external.
@@ -61,14 +65,47 @@ const { app, utilityProcess } = require('electron');
 const path = require('node:path');
 if (process.platform === 'darwin' && app.dock) app.dock.hide();
 app.whenReady().then(() => {
-  const script = path.join(__dirname, 'smoke.cjs');
-  const child = utilityProcess.fork(script, [], { stdio: 'pipe', env: process.env, serviceName: 'convert-smoke' });
+  const script = path.join(__dirname, process.env.CONVERT_SMOKE_SCRIPT || 'smoke.cjs');
+  const execArgv = process.env.CONVERT_SMOKE_EXEC_ARGV ? JSON.parse(process.env.CONVERT_SMOKE_EXEC_ARGV) : [];
+  const child = utilityProcess.fork(script, [], { stdio: 'pipe', env: process.env, execArgv, serviceName: 'convert-smoke' });
   child.stdout.on('data', (d) => process.stdout.write(d));
   child.stderr.on('data', (d) => process.stderr.write(d));
   child.on('exit', (code) => app.exit(code ?? 1));
 });
 app.on('window-all-closed', () => {});
 `;
+
+/**
+ * A PDF of about `megabytes` MiB: pages that each hold a ~2 MiB noise JPEG (incompressible) and a
+ * line of text, written by pdf-lib in this (orchestrator) process.
+ */
+export async function makeLargePdf(path, megabytes) {
+  const req = (await import('node:module')).createRequire(join(ROOT, 'packages', 'processors', 'package.json'));
+  const sharp = req('sharp');
+  const { PDFDocument, StandardFonts } = req('pdf-lib');
+  const side = 1400;
+  const noise = Buffer.alloc(side * side * 3);
+  let x = 0x9e3779b9;
+  for (let i = 0; i < noise.length; i += 1) {
+    x ^= x << 13;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    noise[i] = x & 0xff;
+  }
+  const jpeg = await sharp(noise, { raw: { width: side, height: side, channels: 3 } }).jpeg({ quality: 92 }).toBuffer();
+  const pages = Math.max(1, Math.ceil((megabytes * 1024 * 1024) / jpeg.length));
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  for (let n = 1; n <= pages; n += 1) {
+    const image = await doc.embedJpg(jpeg);
+    const page = doc.addPage([612, 792]);
+    page.drawImage(image, { x: 36, y: 100, width: 540, height: 540 });
+    page.drawText(`Large PDF page ${n}`, { x: 36, y: 720, size: 18, font });
+  }
+  const bytes = await doc.save({ useObjectStreams: false });
+  await writeFile(path, bytes);
+  return { pages, bytes: bytes.length, mb: Math.round(bytes.length / 1048576) };
+}
 
 function runProcess(command, args, env, timeoutMs) {
   return new Promise((resolvePromise) => {
@@ -111,10 +148,26 @@ export async function runConvertSmoke(modes = ['node', 'utility', 'asar'], { tim
 
     for (const mode of modes) {
       let outcome;
-      if ((mode === 'node' || mode === 'utility') && !existsSync(join(appDir, 'node_modules'))) {
+      if ((mode === 'node' || mode === 'utility' || mode === 'memory') && !existsSync(join(appDir, 'node_modules'))) {
         await symlink(join(ROOT, 'node_modules'), join(appDir, 'node_modules'), linkType);
       }
-      if (mode === 'node') {
+      if (mode === 'memory') {
+        const pdfPath = join(work, 'big.pdf');
+        summary.memoryPdf = await makeLargePdf(pdfPath, Number(process.env.CONVERT_MEMORY_MB ?? 200));
+        await bundleEntry(join(appDir, 'memory.cjs'), MEMORY_ENTRY);
+        outcome = await runProcess(
+          electron,
+          [appDir],
+          {
+            ...baseEnv,
+            CONVERT_SMOKE_SCRIPT: 'memory.cjs',
+            CONVERT_SMOKE_EXEC_ARGV: JSON.stringify(['--expose-gc']),
+            CONVERT_MEMORY_PDF: pdfPath,
+            CONVERT_MEMORY_ACTIONS: process.env.CONVERT_MEMORY_ACTIONS ?? 'convert.txt,convert.jpeg',
+          },
+          Math.max(timeoutMs, 600_000),
+        );
+      } else if (mode === 'node') {
         outcome = await runProcess(electron, [join(appDir, 'smoke.cjs')], { ...baseEnv, ELECTRON_RUN_AS_NODE: '1' }, timeoutMs);
       } else if (mode === 'utility') {
         outcome = await runProcess(electron, [appDir], baseEnv, timeoutMs);

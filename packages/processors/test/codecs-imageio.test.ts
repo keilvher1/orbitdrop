@@ -3,7 +3,7 @@ import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { OrbitError } from '@orbitdrop/contracts';
 import { IMAGEIO_HELPER_ENV, decodeWithImageIO, encodeWithImageIO, probeImageIO } from '../src/codecs/imageio';
 import { runConvert } from '../src/convert';
@@ -49,17 +49,53 @@ async function codeOf(promise: Promise<unknown>): Promise<string | null> {
   );
 }
 
-async function imageioTempDirs(): Promise<string[]> {
-  return (await readdir(tmpdir())).filter((n) => n.startsWith('orbitdrop-imageio-'));
+async function imageioTempDirs(dir: string): Promise<string[]> {
+  return (await readdir(dir)).filter((n) => n.startsWith('orbitdrop-imageio-'));
 }
 
+const REAL_TMP = tmpdir();
+
+/**
+ * Hermetic temp folders: other test files run (fake or real) ImageIO helpers in
+ * parallel, so nothing here looks at the shared OS temp folder. Each test gets
+ * its own TMPDIR (os.tmpdir() reads it on every call, and the bridge creates
+ * its work folders there); after each test that folder must hold no
+ * `orbitdrop-imageio-*` leftovers — including after timeouts and cancellation.
+ */
+function hermeticTmp(): { root: () => string; current: () => string } {
+  let root = '';
+  let current = '';
+  let saved: string | undefined;
+  beforeAll(async () => {
+    root = await mkdtemp(join(REAL_TMP, 'orbitdrop-imageio-test-'));
+  });
+  beforeEach(async () => {
+    current = await mkdtemp(join(root, 't-'));
+    saved = process.env.TMPDIR;
+    process.env.TMPDIR = current;
+    expect(tmpdir()).toBe(current);
+  });
+  afterEach(async () => {
+    if (saved === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = saved;
+    expect(await imageioTempDirs(current)).toEqual([]);
+  });
+  afterAll(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  return { root: () => root, current: () => current };
+}
+
+const ENV_KEYS = ['FAKE_IMAGEIO_SAMPLE_PNG', 'FAKE_IMAGEIO_MODE', IMAGEIO_HELPER_ENV] as const;
+
 describe.skipIf(process.platform === 'win32')('ImageIO helper bridge (fake helper)', () => {
+  const tmp = hermeticTmp();
   let dir: string;
   let helper: string;
-  const savedEnv = { ...process.env };
+  const savedEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
 
   beforeAll(async () => {
-    dir = await mkdtemp(join(tmpdir(), 'orbitdrop-fake-helper-'));
+    dir = await mkdtemp(join(tmp.root(), 'fake-helper-'));
     helper = join(dir, 'OrbitDropHelper');
     await writeFile(helper, `#!${process.execPath}\n${FAKE_HELPER}`);
     await chmod(helper, 0o755);
@@ -68,20 +104,26 @@ describe.skipIf(process.platform === 'win32')('ImageIO helper bridge (fake helpe
     process.env.FAKE_IMAGEIO_SAMPLE_PNG = sample;
   });
 
-  afterAll(async () => {
-    process.env = savedEnv;
-    await rm(dir, { recursive: true, force: true });
+  afterEach(() => {
+    delete process.env.FAKE_IMAGEIO_MODE;
+    delete process.env[IMAGEIO_HELPER_ENV];
+  });
+
+  afterAll(() => {
+    for (const key of ENV_KEYS) {
+      if (savedEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = savedEnv[key];
+    }
   });
 
   it('probes the helper (JSON on the last line) and round-trips through temp files it cleans up', async () => {
-    const tempsBefore = await imageioTempDirs();
     expect(await probeImageIO({ helperPath: helper })).toEqual({ decode: ['heic', 'heif', 'png'], encode: ['heic'] });
     const png = await sharp({ create: { width: 20, height: 10, channels: 3, background: '#ff0000' } }).png().toBuffer();
     const heic = await encodeWithImageIO(png, 'heic', 70, { helperPath: helper });
     expect(heic.subarray(0, 16).toString()).toBe('FAKEHEIC q=0.70\n');
     const back = await decodeWithImageIO(heic, { helperPath: helper });
     expect(await sharp(back).metadata()).toMatchObject({ format: 'png', width: 20, height: 10 });
-    expect(await imageioTempDirs()).toEqual(tempsBefore);
+    expect(await imageioTempDirs(tmp.current())).toEqual([]);
   });
 
   it('maps helper problems to error codes', async () => {
@@ -99,10 +141,11 @@ describe.skipIf(process.platform === 'win32')('ImageIO helper bridge (fake helpe
     const started = Date.now();
     expect(await codeOf(probeImageIO({ helperPath: helper, timeoutMs: 400 }))).toBe('TIMEOUT');
     expect(Date.now() - started).toBeLessThan(3000);
+    expect(await codeOf(decodeWithImageIO(Buffer.from('x'), { helperPath: helper, timeoutMs: 400 }))).toBe('TIMEOUT');
     const controller = new AbortController();
     setTimeout(() => controller.abort(), 100);
     expect(await codeOf(decodeWithImageIO(Buffer.from('x'), { helperPath: helper, signal: controller.signal }))).toBe('CANCELLED');
-    delete process.env.FAKE_IMAGEIO_MODE;
+    // afterEach checks that the timed-out and cancelled calls removed their work folders too.
   });
 
   it('probeEngines reports HEIC through the helper (measured with a real round trip)', async () => {
@@ -120,6 +163,7 @@ describe.skipIf(process.platform === 'win32')('ImageIO helper bridge (fake helpe
     process.env[IMAGEIO_HELPER_ENV] = helper;
     const fx = await makeFixtureDir(['photo.jpg']);
     try {
+      expect(fx.dir.startsWith(tmp.current())).toBe(true);
       const toHeic = await runConvert(makeJob('convert.heic', [await fx.input('photo.jpg')]), makeCtx().ctx);
       const heicPath = toHeic.outputs[0]!.path;
       expect(heicPath).toBe(join(fx.dir, 'photo.heic'));
@@ -130,7 +174,6 @@ describe.skipIf(process.platform === 'win32')('ImageIO helper bridge (fake helpe
       expect(await sharp(toPng.outputs[0]!.path).metadata()).toMatchObject({ format: 'png', width: 320, height: 240 });
       expect(await listFiles(fx.dir)).toEqual(['photo.heic', 'photo.jpg', 'photo.png']);
     } finally {
-      delete process.env[IMAGEIO_HELPER_ENV];
       await fx.cleanup();
     }
   });
@@ -139,6 +182,8 @@ describe.skipIf(process.platform === 'win32')('ImageIO helper bridge (fake helpe
 const realHelper = ['arm64', 'x64'].map((arch) => join(REPO_ROOT, 'apps', 'desktop', 'resources', 'helper', `darwin-${arch}`, 'OrbitDropHelper')).find((p) => existsSync(p));
 
 describe.skipIf(process.platform !== 'darwin' || !realHelper)('ImageIO helper bridge (real macOS helper)', () => {
+  hermeticTmp();
+
   it('convert.heic writes a real HEVC HEIC; HEIC input converts back upright (EXIF-rotated source)', async () => {
     const saved = process.env[IMAGEIO_HELPER_ENV];
     process.env[IMAGEIO_HELPER_ENV] = realHelper!;

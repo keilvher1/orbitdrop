@@ -148,6 +148,38 @@ PDF → DOCX / image → DOCX (`convert/to-docx.ts`)
 - A utilityProcess forked with `stdio: 'pipe'` keeps its stdout/stderr pipes open and never exits
   on its own — the host must call `process.exit` on shutdown (the smoke entry does).
 
+## PDF memory: the input is held once (spec audit #30)
+
+Before, a PDF job read the file (`readInputBuffer` → Node Buffer) and `openPdf` copied it for
+PDF.js, so every PDF job held the file twice. Now PDF jobs read with `readInputBytes`
+(`common/io.ts`, lead-approved addition): the file goes straight into a freshly allocated,
+exactly sized ArrayBuffer returned as a plain `Uint8Array`; `openPdf` passes such arrays to PDF.js
+as is and PDF.js transfers (moves) the buffer to its in-process worker — no copy
+(`test/convert-pdf-bytes.test.ts` asserts the caller's array is detached after `openPdf`). Node
+Buffers and offset views are still copied once (Buffers from Node's pool can't be transferred,
+and PDF.js rejects Buffers in Node mode). Image jobs keep `readInputBuffer` (sharp takes Buffers
+without copying).
+
+Measured inside a real Electron 44.9 utilityProcess (`node tests/integration/convert-electron-smoke.mjs
+memory`: 200 MiB PDF, 122 pages each with a 1.7 MB noise JPEG, generated per run; RSS sampled every
+5 ms from a GC-settled baseline of ~187 MB; JPG at 150 DPI with 2 pages in flight):
+
+| Job | before: peak RSS over baseline | after | max RSS of the process (before → after) |
+|---|---|---|---|
+| PDF → TXT | +406 MB | **+206 MB** | |
+| PDF → JPG (122 pages) | +620 MB | **+417 MB** | 818 MB → **616 MB** |
+
+The TXT job went from ≈2× to ≈1× the file size; the JPG job saves the same ~200 MB (the rest is
+page rendering: decoded page images, two canvases, encoder buffers). A 1 GiB PDF → TXT also runs
+(peak RSS +460–560 MB — lower than the file because macOS was paging under heavy memory pressure
+during that run, 16 of 17 GB swap in use, so treat that number as indicative only).
+
+Limits: not changed. With the copy gone a PDF job costs about the file size plus the rendering
+working set, so the shared 1 GiB `maxInputBytes` means ≈1.2–1.5 GB for one worst-case job. A
+PDF-specific cap would have to live in `ProcessingLimits` so main rejects the file up front instead of
+the worker failing after the drop. Suggestion for the lead: if 4 workers × 1 GiB PDFs is a concern, add
+`maxPdfBytes` (e.g. 512 MiB) to the contracts, or let main run PDFs above ~256 MB one at a time.
+
 ## Fixed: `convert.pdf` "SOI not found in JPEG" (reported by desktop-renderer)
 
 Root cause, measured in a real Electron 44 utilityProcess: `Buffer.poolSize` is 64 KiB there
@@ -164,6 +196,15 @@ Regression coverage:
   A second test pins the pdf-lib behaviour (`embedJpg` on an offset view throws, the copy works).
 - Electron smoke (`convert-smoke-entry.ts`): the same JPEG merge runs in the real utilityProcess
   and from app.asar (asserts `Buffer.poolSize === 65536` there and the PDF's three page sizes).
+
+## Hermetic temp folders in the ImageIO tests
+
+`codecs-imageio.test.ts` used to diff the shared OS temp folder, which raced with other test files
+that run (fake or real) ImageIO helpers in parallel (`tools-output-format`, `tools-thumbnail`). Now
+every test gets its own `TMPDIR` (the bridge creates its work folders under `os.tmpdir()`, which
+reads `TMPDIR` on each call), and an `afterEach` asserts that this private folder holds no
+`orbitdrop-imageio-*` leftovers — also after timeouts and cancellation. Nothing reads the global temp
+folder any more. Six consecutive full `vitest run --root packages/processors` runs: 225/225 each.
 
 ## Korean font consistency (processors-edit request)
 
@@ -188,9 +229,10 @@ core's `ANNOTATION_FONT_CANDIDATES` that really draws Hangul), so the probe and 
 |---|---|
 | `node_modules/.bin/tsc -p packages/processors/tsconfig.json` | clean |
 | `node_modules/.bin/tsc -p tests/integration/tsconfig.json` | clean |
-| `node_modules/.bin/vitest run --root packages/processors` | 17 files / 187 tests pass (mine: 8 files / 104 tests) |
+| `node_modules/.bin/vitest run --root packages/processors` | 23 files / 225 tests pass (mine: 9 files / 107 tests) |
 | `node_modules/.bin/vitest run --root tests/integration` | 4 files / 11 tests pass (mine: 2 files / 6 tests; lead's video-flow passes) |
 | `node tests/integration/convert-electron-smoke.mjs [node] [utility] [asar] [asar-native]` | all modes pass (~2 s) |
+| `node tests/integration/convert-electron-smoke.mjs memory` (`CONVERT_MEMORY_MB`, `CONVERT_MEMORY_ACTIONS`) | opt-in memory probe, numbers above (~15 s for 200 MiB) |
 | `node scripts/gen-fixtures.mjs` | 22 fixtures → `tests/fixtures/generated/` (~30 ms) |
 | `node tests/fixtures/static/make-static-fixtures.mjs [pdfs] [bmp] [jpx]` | macOS only: Swift/CoreGraphics + sips |
 

@@ -244,14 +244,29 @@ export function mapPdfError(error: unknown): OrbitError {
 }
 
 /**
- * Open a PDF from bytes. The bytes are copied (PDF.js transfers its buffer to
- * the in-process worker). Throws PDF_ENCRYPTED for PDFs that need a user
- * password, PDF_CORRUPT for unreadable files.
+ * Bytes PDF.js can take without a copy: a plain Uint8Array (PDF.js rejects Node
+ * Buffers in Node mode, and Buffers from Node's pool cannot be transferred)
+ * that spans its whole ArrayBuffer. Anything else is copied once.
+ */
+function ownedBytes(bytes: Uint8Array): Uint8Array {
+  const plain = Object.getPrototypeOf(bytes) === Uint8Array.prototype;
+  const shared = typeof SharedArrayBuffer !== 'undefined' && bytes.buffer instanceof SharedArrayBuffer;
+  if (plain && !shared && bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength) return bytes;
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy;
+}
+
+/**
+ * Open a PDF from bytes. Takes ownership of `bytes`: a plain, exactly sized
+ * Uint8Array (see readInputBytes) is handed to PDF.js without a copy and its
+ * buffer is transferred (detached) to the in-process worker; other arrays are
+ * copied. Throws PDF_ENCRYPTED for PDFs that need a user password, PDF_CORRUPT
+ * for unreadable files.
  */
 export async function openPdf(bytes: Uint8Array, engine?: PdfEngine, options: { maxImagePixels?: number } = {}): Promise<OpenedPdf> {
   const e = engine ?? (await loadPdfEngine());
-  const data = new Uint8Array(bytes.byteLength);
-  data.set(bytes);
+  const data = ownedBytes(bytes);
   const { assets } = e;
   const params = {
     data,
