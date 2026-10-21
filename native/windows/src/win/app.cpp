@@ -75,8 +75,13 @@ bool App::initialize() {
     if (msgWnd_ == nullptr) return false;
 
     stdio_ = new StdioChannel();
-    if (!stdio_->start(msgWnd_, stdin_, stdout_)) return false;
+    if (!stdio_->start(msgWnd_, stdin_, stdout_, GetStdHandle(STD_ERROR_HANDLE))) return false;
     SetCoalescableTimer(msgWnd_, kHousekeepingTimer, 1000, nullptr, 500);
+    folders_ = new FolderChecker();
+    if (!folders_->start(msgWnd_)) {
+        delete folders_;
+        folders_ = nullptr;  // folder wording then simply falls back to the generic text
+    }
 
     std::string error;
     rendererOk_ = renderer_.init(error);
@@ -84,6 +89,7 @@ bool App::initialize() {
     std::string wheelError;
     const bool wheelOk = wheel_.create(instance_, wheelError);
     if (!wheelOk) startupLogs_.emplace_back(proto::LogLevel::Error, wheelError);
+    wheel_.setDpiChangeNotify(msgWnd_, kMsgDisplayChanged);
     if (oleInitialized_ && wheelOk) {
         dropTarget_ = new DropTarget(this, wheel_.hwnd());
         const HRESULT hr = RegisterDragDrop(wheel_.hwnd(), dropTarget_);
@@ -151,6 +157,12 @@ void App::shutdown() {
         dropTarget_->Release();
         dropTarget_ = nullptr;
     }
+    if (folders_ != nullptr) {
+        folders_->stop(100);
+        if (folders_->stopped()) delete folders_;
+        // else: a check is stuck on a network path; leave it to process exit.
+        folders_ = nullptr;
+    }
     if (stdio_ != nullptr) {
         stdio_->stop(1000);  // flush the final cancelled/log lines
         if (stdio_->stopped()) delete stdio_;
@@ -206,10 +218,29 @@ void App::drainStdio() {
     if (d.inputClosed || d.outputBroken) core_.handleInputClosed();  // parent gone: hide everything and exit
 }
 
+void App::drainFolderChecks() {
+    if (folders_ == nullptr) return;
+    for (const FolderChecker::Result& r : folders_->drain()) core_.controller().fileInfo(r.sessionId, r.containsDirectory);
+}
+
+void App::onDisplayChanged() { core_.controller().displaysChanged(enumerateMonitors()); }
+
+void App::checkFolders(const std::string& sessionId, const std::vector<std::string>& paths) {
+    if (folders_ != nullptr && !paths.empty()) folders_->request(sessionId, paths);
+}
+
 LRESULT App::handleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
         case StdioChannel::kMsgWake:
             drainStdio();  // carries no data: a spoofed wake is just an empty drain
+            return 0;
+        case FolderChecker::kMsgWake:
+            drainFolderChecks();  // likewise payload-less
+            return 0;
+        case kMsgDisplayChanged:
+        case WM_DISPLAYCHANGE:
+        case WM_DPICHANGED:
+            onDisplayChanged();  // monitor added/removed/rescaled: cancel a wheel on a changed monitor
             return 0;
         case kMsgFlushVisuals:
             flushPosted_ = false;
@@ -222,7 +253,10 @@ LRESULT App::handleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         case WM_TIMER:
             if (wp == kPollTimer) poll();
-            if (wp == kHousekeepingTimer) drainStdio();
+            if (wp == kHousekeepingTimer) {
+                drainStdio();
+                drainFolderChecks();
+            }
             return 0;
         case WM_POWERBROADCAST:
             if (wp == PBT_APMSUSPEND) {
@@ -418,10 +452,8 @@ std::string App::newSessionId() { return idSeed_ + "-" + std::to_string(++idCoun
 void App::log(proto::LogLevel level, const std::string& message) {
     if (level >= proto::LogLevel::Warn || debug_) send(proto::serializeLog(level, message));
     if (debug_) {
-        const std::string text = std::string("[orbitdrop-helper] ") + proto::toString(level) + ": " + message + "\n";
-        HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
-        DWORD written = 0;
-        if (err != nullptr && err != INVALID_HANDLE_VALUE) WriteFile(err, text.data(), static_cast<DWORD>(text.size()), &written, nullptr);
+        // Written by the writer thread: a full stderr pipe never blocks the UI thread.
+        if (stdio_ != nullptr) stdio_->sendDiagnostic(std::string("[orbitdrop-helper] ") + proto::toString(level) + ": " + message + "\n");
     }
 }
 

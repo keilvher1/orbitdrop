@@ -299,6 +299,38 @@ TEST_CASE("protocol: strings limits") {
     EXPECT_FAIL(str("fileCount", std::string(61, 'n')), ParseErrorKind::InvalidMessage);
 }
 
+TEST_CASE("protocol: optional specific unsupported strings") {
+    // Present in the reference configure and parsed.
+    const auto r = proto::parseMainToHelper(defaults::configureToJson(*defaults::referenceConfigure(proto::Locale::En)));
+    REQUIRE(r.ok());
+    const auto& c = *std::get<std::shared_ptr<const proto::Configure>>(*r.message);
+    CHECK(c.strings.unsupportedFolder == std::optional<std::string>("Folders aren't supported"));
+    CHECK(c.strings.unsupportedNonFile == std::optional<std::string>("Not a file"));
+    CHECK(c.strings.unsupportedVirtual == std::optional<std::string>("No file on disk"));
+    for (const char* key : {"unsupportedFolder", "unsupportedNonFile", "unsupportedVirtual"}) {
+        // Absent: fine (fallback to `unsupported`).
+        const auto absent = mutated([&](json::Value& v) { removeMember(*member(v, "strings"), key); });
+        EXPECT_OK(absent);
+        if (absent.ok()) {
+            const auto& cfg = *std::get<std::shared_ptr<const proto::Configure>>(*absent.message);
+            const std::optional<std::string>& field = std::string(key) == "unsupportedFolder"    ? cfg.strings.unsupportedFolder
+                                                      : std::string(key) == "unsupportedNonFile" ? cfg.strings.unsupportedNonFile
+                                                                                                 : cfg.strings.unsupportedVirtual;
+            CHECK(!field.has_value());
+        }
+        EXPECT_OK(mutated([&](json::Value& v) { *member(*member(v, "strings"), key) = json::Value::makeString(std::string(60, 'f')); }));
+        EXPECT_OK(mutated([&](json::Value& v) { *member(*member(v, "strings"), key) = json::Value::makeString(""); }));
+        EXPECT_FAIL(mutated([&](json::Value& v) { *member(*member(v, "strings"), key) = json::Value::makeString(std::string(61, 'f')); }),
+                    ParseErrorKind::InvalidMessage);
+        EXPECT_FAIL(mutated([&](json::Value& v) { *member(*member(v, "strings"), key) = json::Value::makeNull(); }),
+                    ParseErrorKind::InvalidMessage);
+        EXPECT_FAIL(mutated([&](json::Value& v) { *member(*member(v, "strings"), key) = json::Value::makeNumber(1); }),
+                    ParseErrorKind::InvalidMessage);
+    }
+    EXPECT_FAIL(mutated([](json::Value& v) { member(v, "strings")->set("unsupportedOther", json::Value::makeString("x")); }),
+                ParseErrorKind::InvalidMessage);
+}
+
 TEST_CASE("protocol: helper → main serializers") {
     proto::ReadyInfo ready;
     ready.helperVersion = "0.1.0";

@@ -177,6 +177,9 @@ if (snapshotDir) {
     ['png-convert-hc-200', ['--menu', 'image/png', '--theme', 'high-contrast', '--scale', '2', '--highlight', '0']],
     ['pdf-disabled-docx', ['--menu', 'pdf', '--disable', '0', '--highlight', '0']],
     ['unsupported', ['--menu', 'pdf', '--state', 'unsupported']],
+    ['unsupported-folder-ko', ['--menu', 'pdf', '--state', 'folder', '--locale', 'ko']],
+    ['unsupported-virtual', ['--menu', 'pdf', '--state', 'virtual']],
+    ['unsupported-nonfile', ['--menu', 'pdf', '--state', 'nonfile']],
   ];
   for (const [name, args] of cases) {
     const out = join(snapshotDir, `windows-helper-${name}.png`);

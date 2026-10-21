@@ -1,7 +1,7 @@
 // --render-snapshot: renders one wheel state to a PNG without any drag.
 //
 //   OrbitDropHelper.exe --render-snapshot out.png [--menu pdf|image/jpeg|images|mixed|…]
-//       [--mode convert|tools] [--highlight N] [--state neutral|active|unsupported]
+//       [--mode convert|tools] [--highlight N] [--state neutral|active|unsupported|folder|virtual|nonfile]
 //       [--files N] [--scale 1.5 | --dpi 144] [--theme light|dark|high-contrast]
 //       [--locale ko|en] [--disable N[,M…]] [--config configure.json]
 //
@@ -228,6 +228,13 @@ int runSnapshot(const std::vector<std::wstring>& args) {
         payload.hasFileList = true;
         if (state == "unsupported") {
             payload.paths = {"C:\\OrbitDrop snapshot\\notes.txt"};
+        } else if (state == "folder") {
+            payload.paths = {"C:\\OrbitDrop snapshot\\Photos"};  // the folder check reports a directory below
+        } else if (state == "virtual") {
+            payload.hasFileList = false;  // e.g. an e-mail attachment: FileGroupDescriptorW only
+            payload.virtualFilesOnly = true;
+        } else if (state == "nonfile") {
+            payload.hasFileList = false;  // text or a URL
         } else {
             // 'images' needs two image formats and 'mixed' a PDF plus an image.
             const bool multiFormat = *menuKey == proto::MenuKey::Images || *menuKey == proto::MenuKey::Mixed;
@@ -241,6 +248,7 @@ int runSnapshot(const std::vector<std::wstring>& args) {
         }
         payload.totalCount = payload.paths.size();
         ctl.dragEnter(payload, center, true, o.timeMs);
+        if (state == "folder") ctl.fileInfo(ctl.sessionId(), true);
         const size_t count = host.model.sectors.size();
         if (highlight >= 0 && static_cast<size_t>(highlight) < count) {
             const layout::Layout L = layout::computeLayout(static_cast<int>(count), host.frame.diameter, cfg->geometry);

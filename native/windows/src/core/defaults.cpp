@@ -248,11 +248,17 @@ std::shared_ptr<proto::Configure> referenceConfigure(proto::Locale locale, Theme
         cfg->strings.unsupported = "\xEC\xA7\x80\xEC\x9B\x90\xED\x95\x98\xEC\xA7\x80 \xEC\x95\x8A\xEB\x8A\x94 \xED\x98\x95\xEC\x8B\x9D";  // 지원하지 않는 형식
         cfg->strings.multiFileUnsupported = "\xED\x95\x9C \xEB\xB2\x88\xEC\x97\x90 \xED\x95\x9C \xED\x8C\x8C\xEC\x9D\xBC\xEB\xA7\x8C";  // 한 번에 한 파일만
         cfg->strings.fileCount = "\xED\x8C\x8C\xEC\x9D\xBC {n}\xEA\xB0\x9C";  // 파일 {n}개
+        cfg->strings.unsupportedFolder = std::string("\xED\x8F\xB4\xEB\x8D\x94\xEB\x8A\x94 \xEC\xA7\x80\xEC\x9B\x90\xED\x95\x98\xEC\xA7\x80 \xEC\x95\x8A\xEC\x9D\x8C");  // 폴더는 지원하지 않음
+        cfg->strings.unsupportedNonFile = std::string("\xED\x8C\x8C\xEC\x9D\xBC\xEC\x9D\xB4 \xEC\x95\x84\xEB\x8B\x8C \xED\x95\xAD\xEB\xAA\xA9");  // 파일이 아닌 항목
+        cfg->strings.unsupportedVirtual = std::string("\xEB\x94\x94\xEC\x8A\xA4\xED\x81\xAC\xEC\x97\x90 \xEC\x97\x86\xEB\x8A\x94 \xED\x95\xAD\xEB\xAA\xA9");  // 디스크에 없는 항목
     } else {
         cfg->strings.dropHint = "Drop here";
         cfg->strings.unsupported = "Not supported";
         cfg->strings.multiFileUnsupported = "One file at a time";
         cfg->strings.fileCount = "{n} files";
+        cfg->strings.unsupportedFolder = std::string("Folders aren't supported");
+        cfg->strings.unsupportedNonFile = std::string("Not a file");
+        cfg->strings.unsupportedVirtual = std::string("No file on disk");
     }
     return cfg;
 }
@@ -352,6 +358,16 @@ std::string configureToJson(const proto::Configure& cfg) {
     w.str(cfg.strings.multiFileUnsupported);
     w.key("fileCount");
     w.str(cfg.strings.fileCount);
+    const std::pair<const char*, const std::optional<std::string>*> optionalStrings[] = {
+        {"unsupportedFolder", &cfg.strings.unsupportedFolder},
+        {"unsupportedNonFile", &cfg.strings.unsupportedNonFile},
+        {"unsupportedVirtual", &cfg.strings.unsupportedVirtual},
+    };
+    for (const auto& [key, value] : optionalStrings) {
+        if (!value->has_value()) continue;
+        w.key(key);
+        w.str(**value);
+    }
     w.endObject();
     w.endObject();
     return w.take();

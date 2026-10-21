@@ -101,6 +101,15 @@ public:
     /** Opaque id unique across helper instances (^[A-Za-z0-9_-]{1,64}$). */
     virtual std::string newSessionId() = 0;
     virtual void log(proto::LogLevel level, const std::string& message) = 0;
+    /**
+     * Find out, off the UI thread, whether any of the dragged paths is a folder
+     * and report back with Controller::fileInfo(sessionId, …). File-system calls
+     * never run inside the OLE callbacks. Hosts without this ability ignore it.
+     */
+    virtual void checkFolders(const std::string& sessionId, const std::vector<std::string>& paths) {
+        (void)sessionId;
+        (void)paths;
+    }
 };
 
 struct Tuning {
@@ -129,6 +138,13 @@ public:
 
     /** True while a DragEnter should read the drag data (first entry of a session). */
     bool wantsPayload() const;
+
+    /** Result of Host::checkFolders: a folder makes the drag unsupported (folder text). */
+    void fileInfo(const std::string& sessionId, bool containsDirectory);
+
+    /** Monitors changed (WM_DISPLAYCHANGE / WM_DPICHANGED): an open wheel whose
+     *  monitor disappeared or changed size or DPI is cancelled (`error`). */
+    void displaysChanged(const std::vector<coords::Win32Monitor>& monitors);
 
     /** main → helper cancelSession. */
     void cancelSession(const std::string& sessionId);
@@ -203,6 +219,7 @@ private:
     bool suspended_ = false;
     bool lastPrimaryDown_ = false;
     coords::PointI pressPoint_;
+    int64_t pressTime_ = 0;  // when the button press was first observed
     uint8_t heldMods_ = 0;
     bool heldGrew_ = false;  // the latest modifier change included a key press
     int64_t heldSince_ = 0;

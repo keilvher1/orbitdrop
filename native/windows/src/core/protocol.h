@@ -129,6 +129,10 @@ struct Strings {
     std::string unsupported;
     std::string multiFileUnsupported;
     std::string fileCount;
+    // Optional, more specific centre texts; fall back to `unsupported` when absent.
+    std::optional<std::string> unsupportedFolder;   // a folder is part of the drag
+    std::optional<std::string> unsupportedNonFile;  // text, URL or other non-file data
+    std::optional<std::string> unsupportedVirtual;  // virtual items without a file on disk
 };
 
 struct Configure {

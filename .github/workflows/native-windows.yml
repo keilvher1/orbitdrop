@@ -58,14 +58,18 @@ jobs:
         working-directory: native/windows
         run: cmake --build --preset msvc-x64-release --parallel
 
-      - name: Unit tests incl. golden vectors (tests/fixtures/wheel-golden.json, required)
+      - name: Unit tests incl. golden vectors (tests/fixtures/wheel-golden.json, required) and OLE glue tests
         working-directory: native/windows
-        # ctest runs `orbitdrop-core-tests --require-golden`: a missing golden file fails.
+        # ctest runs `orbitdrop-core-tests --require-golden` (a missing golden file fails) and `orbitdrop-ole-tests`.
         run: ctest --preset msvc-x64-release
 
       - name: Golden sections summary
         working-directory: native/windows
         run: build/msvc-x64/Release/orbitdrop-core-tests.exe --require-golden --filter golden
+
+      - name: OLE glue tests (DropTarget + fake IDataObject; effects, one drop, CF_HDROP, virtual/non-file)
+        working-directory: native/windows
+        run: build/msvc-x64/Release/orbitdrop-ole-tests.exe
 
       - name: Build script (tests, stdio smoke test, snapshots, staging with BUILD_INFO.txt)
         run: node scripts/build-native-win.mjs --arch x64

@@ -403,12 +403,26 @@ bool parseConfigure(Checker& c, const Value& root, Configure& cfg) {
     }
 
     const Value* strings = root.get("strings");
-    if (!c.strictObject(strings, "strings", {"dropHint", "unsupported", "multiFileUnsupported", "fileCount"})) return false;
+    if (!c.strictObject(strings, "strings", {"dropHint", "unsupported", "multiFileUnsupported", "fileCount"},
+                        {"unsupportedFolder", "unsupportedNonFile", "unsupportedVirtual"})) {
+        return false;
+    }
+    const auto optional = [&](const char* key, std::optional<std::string>& out) {
+        const Value* v = strings->get(key);
+        if (v == nullptr) return true;  // .optional(): absent is fine, null is not
+        std::string text;
+        if (!c.string(v, std::string("strings.") + key, 0, 60, text)) return false;
+        out = std::move(text);
+        return true;
+    };
     return c.string(strings->get("dropHint"), "strings.dropHint", 0, 60, cfg.strings.dropHint) &&
            c.string(strings->get("unsupported"), "strings.unsupported", 0, 60, cfg.strings.unsupported) &&
            c.string(strings->get("multiFileUnsupported"), "strings.multiFileUnsupported", 0, 60,
                     cfg.strings.multiFileUnsupported) &&
-           c.string(strings->get("fileCount"), "strings.fileCount", 0, 60, cfg.strings.fileCount);
+           c.string(strings->get("fileCount"), "strings.fileCount", 0, 60, cfg.strings.fileCount) &&
+           optional("unsupportedFolder", cfg.strings.unsupportedFolder) &&
+           optional("unsupportedNonFile", cfg.strings.unsupportedNonFile) &&
+           optional("unsupportedVirtual", cfg.strings.unsupportedVirtual);
 }
 
 ParseResult failWith(ParseErrorKind kind, std::string detail) {

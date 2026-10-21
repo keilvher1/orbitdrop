@@ -28,6 +28,7 @@ struct FakeHost : session::Host {
     session::PollMode poll = session::PollMode::Off;
     int ids = 0;
     std::vector<std::string> logs;
+    std::vector<std::pair<std::string, std::vector<std::string>>> folderChecks;
 
     void send(std::string line) override { sent.push_back(std::move(line)); }
     bool queryMonitors(std::vector<coords::Win32Monitor>& out) override {
@@ -51,6 +52,7 @@ struct FakeHost : session::Host {
     void setPollMode(session::PollMode m) override { poll = m; }
     std::string newSessionId() override { return "s" + std::to_string(++ids); }
     void log(proto::LogLevel, const std::string& m) override { logs.push_back(m); }
+    void checkFolders(const std::string& id, const std::vector<std::string>& paths) override { folderChecks.emplace_back(id, paths); }
 
     json::Value message(size_t i) const {
         json::Value v;
@@ -128,6 +130,7 @@ struct Driver {
     void mods(uint8_t m) { obs.modifiers = m; }
     /** Press at (x−10, y), drag to (x, y), hold the modifiers: the wheel appears centred at (x, y). */
     void startWheel(int x, int y, uint8_t m = proto::kModShift) {
+        mods(0);  // the combo is pressed after the button (a combo held at the press does not count)
         down(x - 10, y);
         moveTo(x, y);
         mods(m);
@@ -680,4 +683,140 @@ TEST_CASE("session: exactly one hide per wheel and no wheel without monitors") {
     CHECK_EQ(e.host.shows, 0);
     CHECK(e.ctl.phase() == Phase::Cooldown);
     CHECK(e.host.sent.empty());
+}
+
+TEST_CASE("session: a combo already held at the press never opens the wheel (Shift + selection)") {
+    Driver d;
+    d.mods(proto::kModShift);  // Shift + text selection / marquee
+    d.down(500, 500);
+    d.moveTo(560, 520);
+    d.wait(800);
+    CHECK(d.ctl.phase() == Phase::PotentialDrag);
+    CHECK_EQ(d.host.shows, 0);
+    CHECK(d.host.sent.empty());
+    d.mods(proto::kModShift | proto::kModAlt);  // a key press completing the tools combo does count
+    d.wait(64);
+    REQUIRE(d.ctl.phase() == Phase::AwaitingPayload);
+    CHECK(d.ctl.mode() == proto::WheelMode::Tools);
+    d.up();
+
+    Driver e;  // releasing and pressing Shift again during the drag opens convert
+    e.mods(proto::kModShift);
+    e.down(500, 500);
+    e.moveTo(560, 520);
+    e.wait(100);
+    e.mods(0);
+    e.wait(32);
+    e.mods(proto::kModShift);
+    e.wait(64);
+    CHECK(e.ctl.phase() == Phase::AwaitingPayload);
+    CHECK(e.ctl.mode() == proto::WheelMode::Convert);
+    CHECK_EQ(e.host.shows, 1);
+
+    Driver f;  // pressed before the drag threshold, after the button: counts once the drag starts
+    f.down(500, 500);
+    f.mods(proto::kModShift);
+    f.wait(64);
+    CHECK(f.ctl.phase() == Phase::Pressed);
+    f.moveTo(540, 500);
+    f.wait(32);
+    CHECK(f.ctl.phase() == Phase::AwaitingPayload);
+}
+
+TEST_CASE("session: folders are detected off the UI thread and change the outcome") {
+    Driver d;
+    d.startWheel(800, 500);
+    d.enter(kPdf, 920, 500);
+    REQUIRE(d.host.folderChecks.size() == 1);
+    CHECK_EQ(d.host.folderChecks[0].first, d.ctl.sessionId());
+    CHECK(d.host.folderChecks[0].second == kPdf.paths);
+    CHECK(d.over(920, 500) == Effect::Copy);
+    d.ctl.fileInfo("someone-else", true);  // a late answer for another session is ignored
+    CHECK(d.over(920, 500) == Effect::Copy);
+    d.ctl.fileInfo(d.ctl.sessionId(), false);
+    CHECK(d.over(920, 500) == Effect::Copy);
+    const size_t statesBefore = d.host.ofType("state").size();
+    d.ctl.fileInfo(d.ctl.sessionId(), true);  // "Page 001.pdf" is a folder after all
+    const auto states = d.host.ofType("state");
+    REQUIRE(states.size() == statesBefore + 1);
+    CHECK(states.back().get("menuKey")->isNull());
+    CHECK(d.host.model.unsupported);
+    CHECK_EQ(d.host.model.capsuleText, std::string("Folders aren't supported"));
+    CHECK(d.over(920, 500) == Effect::None);
+    CHECK(d.drop(kPdf, 920, 500) == Effect::None);
+    CHECK_EQ(str(d.host.ofType("cancelled")[0], "reason"), std::string("invalidPayload"));
+
+    Driver e;  // an extensionless folder: already unsupported, only the wording changes
+    e.startWheel(800, 500);
+    e.enter(files({"C:\\Users\\me\\Pictures"}), 800, 500);
+    CHECK_EQ(e.host.model.capsuleText, std::string("Not supported"));
+    REQUIRE(e.host.folderChecks.size() == 1);
+    const size_t n = e.host.ofType("state").size();
+    e.ctl.fileInfo(e.ctl.sessionId(), true);
+    CHECK_EQ(e.host.model.capsuleText, std::string("Folders aren't supported"));
+    CHECK_EQ(e.host.ofType("state").size(), n);  // menuKey was already null: no new state
+
+    Driver v;  // nothing to check for virtual files or non-file data
+    v.startWheel(800, 500);
+    selection::DragPayload virt;
+    virt.virtualFilesOnly = true;
+    v.enter(virt, 800, 500);
+    CHECK(v.host.folderChecks.empty());
+}
+
+TEST_CASE("session: specific unsupported texts with fallback") {
+    Driver d;
+    d.startWheel(800, 500);
+    selection::DragPayload virt;
+    virt.virtualFilesOnly = true;
+    d.enter(virt, 800, 500);
+    CHECK_EQ(d.host.model.capsuleText, std::string("No file on disk"));
+
+    Driver t;
+    t.startWheel(800, 500);
+    t.enter(selection::DragPayload(), 800, 500);  // text / URL
+    CHECK_EQ(t.host.model.capsuleText, std::string("Not a file"));
+
+    Driver f;  // configure without the optional strings: generic text
+    auto cfg = std::make_shared<proto::Configure>(*f.cfg);
+    cfg->strings.unsupportedVirtual.reset();
+    cfg->strings.unsupportedNonFile = std::string();
+    f.ctl.configure(cfg);
+    f.startWheel(800, 500);
+    f.enter(virt, 800, 500);
+    CHECK_EQ(f.host.model.capsuleText, std::string("Not supported"));
+
+    Driver p;  // a PDF in the tools wheel is supported input with no sectors: generic text
+    p.startWheel(800, 500, proto::kModShift | proto::kModAlt);
+    p.enter(kPdf, 800, 500);
+    CHECK_EQ(p.host.model.capsuleText, std::string("Not supported"));
+}
+
+TEST_CASE("session: display changes cancel a wheel whose monitor changed") {
+    Driver d;
+    d.host.monitors = {monitor(0, 0, 1920, 1080, 96), monitor(-2880, 0, 2880, 1620, 144)};
+    d.host.monitors[0].id = "\\\\.\\DISPLAY1";
+    d.host.monitors[1].id = "\\\\.\\DISPLAY2";
+    d.startWheel(-1500, 400);
+    REQUIRE(d.ctl.phase() == Phase::AwaitingPayload);
+    auto same = d.host.monitors;
+    same[0].workArea.height -= 20;  // another monitor / taskbar change: keep the wheel
+    d.ctl.displaysChanged(same);
+    CHECK(d.ctl.phase() == Phase::AwaitingPayload);
+    auto rescaled = d.host.monitors;
+    rescaled[1].dpi = 192;  // the wheel's monitor changed scale
+    d.ctl.displaysChanged(rescaled);
+    CHECK(d.ctl.phase() == Phase::Cooldown);
+    CHECK(!d.host.visible);
+    CHECK_EQ(str(d.host.ofType("cancelled")[0], "reason"), std::string("error"));
+
+    Driver e;
+    e.host.monitors = {monitor(0, 0, 1920, 1080, 96), monitor(-2880, 0, 2880, 1620, 144)};
+    e.startWheel(-1500, 400);
+    e.enter(kPdf, -1500, 400);
+    e.ctl.displaysChanged({monitor(0, 0, 1920, 1080, 96)});  // unplugged
+    CHECK(!e.host.visible);
+    CHECK_EQ(str(e.host.ofType("cancelled")[0], "reason"), std::string("error"));
+    e.ctl.displaysChanged({});  // no session: nothing happens
+    CHECK_EQ(e.host.ofType("cancelled").size(), size_t{1});
 }

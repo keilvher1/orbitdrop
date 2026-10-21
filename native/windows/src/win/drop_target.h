@@ -6,9 +6,9 @@
 // (the IDataObject is never kept). The effect is DROPEFFECT_COPY only when the
 // source allows it, else DROPEFFECT_NONE — never MOVE or LINK.
 // IDropTargetHelper keeps the shell drag image visible over the wheel.
-// All calls arrive on the UI (STA) thread. File system access is limited to a
-// folder check (GetFileAttributesW) for paths with an extension on local fixed
-// drives, stopping at the first folder and after a 50 ms budget.
+// All calls arrive on the UI (STA) thread and only copy data: no file-system
+// calls run here (folders are detected off the UI thread, see folder_check.h;
+// main validates every dropped path anyway).
 #pragma once
 
 #include "win/win_util.h"
@@ -40,7 +40,11 @@ public:
 
 class DropTarget final : public IDropTarget {
 public:
-    DropTarget(DropSink* sink, HWND window);
+    /** Where the pointer is, in physical screen pixels (default: GetCursorPos). */
+    using CursorFn = bool (*)(POINT* out);
+
+    /** `useDragImageHelper` = false skips IDropTargetHelper (unit tests). */
+    DropTarget(DropSink* sink, HWND window, CursorFn cursorFn = nullptr, bool useDragImageHelper = true);
     DropTarget(const DropTarget&) = delete;
     DropTarget& operator=(const DropTarget&) = delete;
 
@@ -63,11 +67,12 @@ public:
 
 private:
     ~DropTarget();
-    static coords::PointI cursor(POINTL fallback, bool* valid = nullptr);
+    coords::PointI cursor(POINTL fallback, bool* valid = nullptr) const;
 
     volatile LONG refs_ = 1;
     DropSink* sink_;
     HWND window_;
+    CursorFn cursorFn_;
     ComPtr<IDropTargetHelper> helper_;
 };
 

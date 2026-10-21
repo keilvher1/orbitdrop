@@ -21,6 +21,7 @@
 
 #include "core/helper_core.h"
 #include "win/drop_target.h"
+#include "win/folder_check.h"
 #include "win/renderer.h"
 #include "win/stdio_channel.h"
 #include "win/wheel_window.h"
@@ -46,6 +47,7 @@ public:
     void setPollMode(session::PollMode mode) override;
     std::string newSessionId() override;
     void log(proto::LogLevel level, const std::string& message) override;
+    void checkFolders(const std::string& sessionId, const std::vector<std::string>& paths) override;
     // HelperCore::Platform
     void requestExit(int code) override;
 
@@ -61,6 +63,7 @@ public:
 private:
     static constexpr UINT kMsgFlushVisuals = WM_APP + 10;
     static constexpr UINT kMsgExit = WM_APP + 11;
+    static constexpr UINT kMsgDisplayChanged = WM_APP + 12;  // no payload: re-check the session's monitor
     static constexpr UINT_PTR kPollTimer = 1;
     static constexpr UINT_PTR kHousekeepingTimer = 2;  // drains stdio even if a wake message was lost
 
@@ -74,6 +77,8 @@ private:
     void requestVisualFlush();
     void updateSuspension();
     void drainStdio();
+    void drainFolderChecks();
+    void onDisplayChanged();
     static bool foregroundIsTracking();
 
     HINSTANCE instance_;
@@ -91,6 +96,7 @@ private:
     WheelWindow wheel_;
     DropTarget* dropTarget_ = nullptr;
     StdioChannel* stdio_ = nullptr;
+    FolderChecker* folders_ = nullptr;
     HelperCore core_;
 
     int oleDepth_ = 0;

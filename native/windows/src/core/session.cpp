@@ -104,6 +104,12 @@ void Controller::tick(const Observation& o) {
             if (o.primaryDown && o.pointerValid) {
                 phase_ = Phase::Pressed;
                 pressPoint_ = o.pointer;
+                pressTime_ = o.timeMs;
+                // A combo already held at the press does not count (Shift + text
+                // selection, Shift + marquee): it is the baseline, not a key press.
+                heldMods_ = o.modifiers;
+                heldSince_ = o.timeMs;
+                heldGrew_ = false;
             }
             break;
         case Phase::Pressed:
@@ -131,7 +137,10 @@ void Controller::tick(const Observation& o) {
             } else if (o.escapeDown || o.suppressed) {
                 endPotential();
                 phase_ = Phase::Cooldown;
-            } else if (o.pointerValid && o.timeMs - heldSince_ >= tuning_.activationStableMs) {
+            } else if (o.pointerValid && heldGrew_ && heldSince_ > pressTime_ &&
+                       o.timeMs - heldSince_ >= tuning_.activationStableMs) {
+                // The combo must be completed by a key press after the button
+                // press (as on macOS), then held stable for activationStableMs.
                 if (const auto m = comboMode(heldMods_)) activate(o, *m);
             }
             break;
@@ -345,6 +354,41 @@ proto::CancelReason Controller::zoneReason(const geo::WheelHit& hit, bool armed,
 
 bool Controller::wantsPayload() const { return phase_ == Phase::AwaitingPayload; }
 
+void Controller::fileInfo(const std::string& sessionId, bool containsDirectory) {
+    if (phase_ != Phase::WheelActive || session_.id.empty() || session_.id != sessionId || !session_.payloadKnown) return;
+    if (!containsDirectory || session_.cls.reason == selection::Unsupported::Directory) return;
+    const bool wasSupported = session_.cls.supported;
+    session_.cls.supported = false;
+    session_.cls.reason = selection::Unsupported::Directory;
+    session_.cls.menuKey.reset();
+    freezeSectors();  // no sectors for an unsupported payload
+    if (wasSupported) sendState(proto::SessionState::WheelActive);  // menuKey is now null
+    refreshModel(true);
+}
+
+void Controller::displaysChanged(const std::vector<coords::Win32Monitor>& monitors) {
+    if (phase_ != Phase::AwaitingPayload && phase_ != Phase::WheelActive) return;
+    // The wheel's placement and hit-testing use its monitor's physical bounds
+    // and DPI captured at activation; if those changed or the monitor is gone,
+    // the window no longer matches what is on screen.
+    const coords::Win32Display& d = session_.frame.display;
+    bool same = false;
+    for (const coords::Win32Monitor& m : monitors) {
+        if (!d.id.empty() && m.id != d.id) continue;
+        const geo::Rect& b = m.bounds;
+        if (b.x == d.physicalBounds.x && b.y == d.physicalBounds.y && b.width == d.physicalBounds.width &&
+            b.height == d.physicalBounds.height && m.dpi == d.dpi) {
+            same = true;
+            break;
+        }
+    }
+    if (same) return;
+    host_.log(proto::LogLevel::Info, "the wheel's monitor changed; session cancelled");
+    endWheel(proto::CancelReason::Error, false);
+    phase_ = lastPrimaryDown_ ? Phase::Cooldown : Phase::Idle;
+    updatePollMode();
+}
+
 Effect Controller::dragEnter(const selection::DragPayload& payload, coords::PointI pointer, bool copyAllowed, int64_t nowMs) {
     lastTime_ = nowMs;
     if (phase_ == Phase::AwaitingPayload) {
@@ -355,6 +399,12 @@ Effect Controller::dragEnter(const selection::DragPayload& payload, coords::Poin
         sendState(proto::SessionState::WheelActive);
         if (!session_.cls.supported) {
             host_.log(proto::LogLevel::Debug, std::string("drag payload not offered: ") + selection::toString(session_.cls.reason));
+        }
+        // Folders can only be told apart with a file-system call, which must not
+        // run inside DragEnter: ask the host to check off the UI thread. Only
+        // worth it when the folder would change the outcome or the wording.
+        if (session_.cls.reason == selection::Unsupported::None || session_.cls.reason == selection::Unsupported::UnknownType) {
+            host_.checkFolders(session_.id, payload.paths);
         }
     } else if (phase_ != Phase::WheelActive) {
         return Effect::None;
@@ -549,7 +599,15 @@ void Controller::refreshModel(bool push) {
             m.sectors.push_back(SectorVisual{s.label, s.icon, s.enabled && !m.unsupported});
         }
         if (m.unsupported) {
-            m.capsuleText = c.strings.unsupported;
+            // The specific wording when configure provides it, else the generic text.
+            const std::optional<std::string>* specific = nullptr;
+            switch (session_.cls.reason) {
+                case selection::Unsupported::Directory: specific = &c.strings.unsupportedFolder; break;
+                case selection::Unsupported::NoFiles: specific = &c.strings.unsupportedNonFile; break;
+                case selection::Unsupported::VirtualFiles: specific = &c.strings.unsupportedVirtual; break;
+                default: break;
+            }
+            m.capsuleText = specific != nullptr && specific->has_value() && !(*specific)->empty() ? **specific : c.strings.unsupported;
             m.capsuleStyle = CapsuleStyle::Reject;
         } else if (session_.hasHit && session_.hit.zone == geo::WheelHit::Zone::Sector) {
             const int i = session_.hit.index;

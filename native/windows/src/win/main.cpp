@@ -41,7 +41,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
                 "  (no arguments)          helper mode: NDJSON protocol v1 on stdin/stdout\n"
                 "  --version               print the version\n"
                 "  --render-snapshot OUT.png [--menu KEY] [--mode convert|tools] [--highlight N]\n"
-                "        [--state neutral|active|unsupported] [--files N] [--scale S | --dpi N]\n"
+                "        [--state neutral|active|unsupported|folder|virtual|nonfile] [--files N] [--scale S | --dpi N]\n"
                 "        [--theme light|dark|high-contrast] [--locale ko|en] [--disable N,..] [--config FILE]\n");
             return 0;
         }

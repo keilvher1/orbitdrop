@@ -131,8 +131,10 @@ if(ORBITDROP_BUILD_HELPER)
   configure_file(res/OrbitDropHelper.rc.in "${ORBITDROP_RC_FILE}" @ONLY)
 
   add_executable(OrbitDropHelper WIN32
+    src/win/accessibility.cpp
     src/win/app.cpp
     src/win/drop_target.cpp
+    src/win/folder_check.cpp
     src/win/main.cpp
     src/win/renderer.cpp
     src/win/snapshot.cpp
@@ -147,6 +149,31 @@ if(ORBITDROP_BUILD_HELPER)
   target_compile_definitions(OrbitDropHelper PRIVATE
     UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX WINVER=0x0A00 _WIN32_WINNT=0x0A00)
   set_target_properties(OrbitDropHelper PROPERTIES OUTPUT_NAME "OrbitDropHelper")
+
+  if(ORBITDROP_BUILD_TESTS)
+    # OLE glue tests (Windows only): the real DropTarget and session controller
+    # with a fake IDataObject — effects, one drop per session, CF_HDROP parsing,
+    # virtual and non-file data. Headless, no window or real drag needed.
+    add_executable(orbitdrop-ole-tests
+      tests/test_main.cpp
+      tests/win/test_ole_glue.cpp
+      src/win/drop_target.cpp
+      src/win/win_util.cpp
+    )
+    target_include_directories(orbitdrop-ole-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+    target_link_libraries(orbitdrop-ole-tests PRIVATE
+      orbitdrop_core orbitdrop_flags ole32 oleaut32 uuid shell32 user32 gdi32 shcore advapi32)
+    target_compile_definitions(orbitdrop-ole-tests PRIVATE
+      UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX WINVER=0x0A00 _WIN32_WINNT=0x0A00
+      OD_REPO_FIXTURES_DIR="${ORBITDROP_REPO_ROOT}/tests/fixtures"
+      OD_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
+    if(MINGW AND ORBITDROP_STATIC_RUNTIME)
+      target_link_options(orbitdrop-ole-tests PRIVATE -static)
+    endif()
+    if(NOT CMAKE_CROSSCOMPILING OR CMAKE_CROSSCOMPILING_EMULATOR)
+      add_test(NAME ole-glue-tests COMMAND orbitdrop-ole-tests)
+    endif()
+  endif()
 
   if(MSVC)
     # CMake passes .manifest sources to the manifest tool/linker, which merge

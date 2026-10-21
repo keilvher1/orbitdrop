@@ -12,6 +12,7 @@
 
 #include "core/coords.h"
 #include "core/session.h"
+#include "win/accessibility.h"
 #include "win/renderer.h"
 
 namespace od::win {
@@ -34,6 +35,11 @@ public:
     bool update(const session::RenderModel& model, Renderer& renderer);
     /** Hides (fade-out over disappearMs when `animate`). */
     void hide(bool animate);
+    /** Window that gets `message` (no payload) when the wheel's DPI changes. */
+    void setDpiChangeNotify(HWND window, UINT message) {
+        notifyWindow_ = window;
+        notifyMessage_ = message;
+    }
 
 private:
     static LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
@@ -41,9 +47,13 @@ private:
     void setAlpha(BYTE alpha);
     void startFade(BYTE from, BYTE to, double durationMs, bool hideAtEnd);
     void onFadeTimer();
+    void announce(const session::RenderModel& model, bool opening);
 
     HWND hwnd_ = nullptr;
     HINSTANCE instance_ = nullptr;
+    WheelAccessible* accessible_ = nullptr;
+    HWND notifyWindow_ = nullptr;
+    UINT notifyMessage_ = 0;
     coords::WheelFrame frame_;
     bool visible_ = false;
     BYTE alpha_ = 0;

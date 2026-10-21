@@ -19,20 +19,6 @@ CLIPFORMAT fileDescriptorFormat() {
     return cf;
 }
 
-/** Folder check for paths on local fixed drives only ("C:\..."). Network and
- *  removable volumes are left to main's validation so DragEnter never blocks
- *  on a slow server or prompts for a disk. Only needed for names with an
- *  extension: extensionless names are unsupported anyway (selection rule). */
-bool isLocalDirectory(const std::wstring& path) {
-    if (path.size() < 3 || path[1] != L':' || (path[2] != L'\\' && path[2] != L'/')) return false;
-    const wchar_t root[4] = {path[0], L':', L'\\', L'\0'};
-    if (GetDriveTypeW(root) != DRIVE_FIXED) return false;
-    std::wstring query = path;
-    if (query.size() >= MAX_PATH) query = L"\\\\?\\" + query;  // long paths without relying on longPathAware
-    const DWORD attrs = GetFileAttributesW(query.c_str());
-    return attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0;
-}
-
 /** Holds the sink's OLE depth for the whole IDropTarget method. */
 class OleGuard {
 public:
@@ -51,9 +37,12 @@ private:
 
 }  // namespace
 
-DropTarget::DropTarget(DropSink* sink, HWND window) : sink_(sink), window_(window) {
+DropTarget::DropTarget(DropSink* sink, HWND window, CursorFn cursorFn, bool useDragImageHelper)
+    : sink_(sink), window_(window), cursorFn_(cursorFn) {
     // Optional: shows the source's drag image (and drop tip) while over the wheel.
-    CoCreateInstance(kClsidDragDropHelper, nullptr, CLSCTX_INPROC_SERVER, __uuidof(IDropTargetHelper), helper_.putVoid());
+    if (useDragImageHelper) {
+        CoCreateInstance(kClsidDragDropHelper, nullptr, CLSCTX_INPROC_SERVER, __uuidof(IDropTargetHelper), helper_.putVoid());
+    }
 }
 
 DropTarget::~DropTarget() = default;
@@ -82,12 +71,12 @@ ULONG STDMETHODCALLTYPE DropTarget::Release() {
     return static_cast<ULONG>(n);
 }
 
-coords::PointI DropTarget::cursor(POINTL fallback, bool* valid) {
+coords::PointI DropTarget::cursor(POINTL fallback, bool* valid) const {
     // Our process is Per-Monitor DPI Aware v2, so GetCursorPos is in physical
     // pixels. The POINTL from OLE is in the *source's* coordinate space, which
     // is virtualised when the source is not per-monitor DPI aware; prefer ours.
     POINT p;
-    if (GetCursorPos(&p)) {
+    if (cursorFn_ != nullptr ? cursorFn_(&p) : GetCursorPos(&p) != 0) {
         if (valid) *valid = true;
         return coords::PointI{p.x, p.y};
     }
@@ -108,8 +97,6 @@ selection::DragPayload DropTarget::readPayload(IDataObject* data) {
             p.totalCount = count;
             if (count <= proto::kMaxFiles) {
                 p.paths.reserve(count);
-                // Bounded so a sleeping USB disk (also DRIVE_FIXED) cannot stall the source's drag.
-                const ULONGLONG folderCheckDeadline = GetTickCount64() + 50;
                 for (UINT i = 0; i < count; ++i) {
                     const UINT len = DragQueryFileW(drop, i, nullptr, 0);
                     if (len == 0 || len > proto::kMaxPathLength) {
@@ -127,10 +114,6 @@ selection::DragPayload DropTarget::readPayload(IDataObject* data) {
                     if (!ok || utf8.empty()) {  // unpaired surrogate: cannot be named in UTF-8 JSON
                         p.badPath = true;
                         break;
-                    }
-                    if (!p.containsDirectory && !selection::extensionOfPath(utf8).empty() && GetTickCount64() < folderCheckDeadline &&
-                        isLocalDirectory(path)) {
-                        p.containsDirectory = true;
                     }
                     p.paths.push_back(std::move(utf8));
                 }
@@ -190,8 +173,8 @@ HRESULT STDMETHODCALLTYPE DropTarget::DragLeave() {
     const OleGuard guard(sink_);
     try {
         if (sink_ != nullptr) {
-            POINT p;
-            const bool valid = GetCursorPos(&p) != 0;
+            POINT p{};
+            const bool valid = cursorFn_ != nullptr ? cursorFn_(&p) : GetCursorPos(&p) != 0;
             sink_->onDragLeave(valid, coords::PointI{valid ? p.x : 0, valid ? p.y : 0});
         }
     } catch (...) {

@@ -17,10 +17,11 @@ StdioChannel::~StdioChannel() { stop(0); }
 
 bool StdioChannel::stopped() const { return readerThread_ == nullptr && writerThread_ == nullptr; }
 
-bool StdioChannel::start(HWND notify, HANDLE input, HANDLE output) {
+bool StdioChannel::start(HWND notify, HANDLE input, HANDLE output, HANDLE error) {
     notify_ = notify;
     input_ = input;
     output_ = output;
+    error_ = error == INVALID_HANDLE_VALUE ? nullptr : error;
     writerThread_ = CreateThread(nullptr, 0, &StdioChannel::writerMain, this, 0, nullptr);
     if (writerThread_ == nullptr) return false;
     readerThread_ = CreateThread(nullptr, 0, &StdioChannel::readerMain, this, 0, nullptr);
@@ -99,17 +100,29 @@ DWORD StdioChannel::readerLoop() {
 
 DWORD StdioChannel::writerLoop() {
     for (;;) {
-        std::string line;
+        Outgoing item;
         AcquireSRWLockExclusive(&lock_);
         while (queue_.empty() && !stopping_) SleepConditionVariableSRW(&wake_, &lock_, INFINITE, 0);
         if (queue_.empty()) {  // stopping and drained
             ReleaseSRWLockExclusive(&lock_);
             return 0;
         }
-        line = std::move(queue_.front());
+        item = std::move(queue_.front());
         queue_.pop_front();
-        queuedBytes_ -= line.size();
+        queuedBytes_ -= item.data.size();
         ReleaseSRWLockExclusive(&lock_);
+        const std::string& line = item.data;
+
+        if (item.toStderr) {
+            // Diagnostics only: a failure never ends the helper, it just stops them.
+            DWORD written = 0;
+            if (!WriteFile(error_, line.data(), static_cast<DWORD>(std::min<size_t>(line.size(), 1u << 20)), &written, nullptr)) {
+                AcquireSRWLockExclusive(&lock_);
+                stderrBroken_ = true;
+                ReleaseSRWLockExclusive(&lock_);
+            }
+            continue;
+        }
 
         size_t offset = 0;
         while (offset < line.size()) {
@@ -137,7 +150,18 @@ void StdioChannel::send(std::string line, bool critical) {
     AcquireSRWLockExclusive(&lock_);
     if (!broken_ && !stopping_ && (critical || queuedBytes_ + line.size() <= kSoftQueueLimit)) {
         queuedBytes_ += line.size();
-        queue_.push_back(std::move(line));
+        queue_.push_back(Outgoing{std::move(line), false});
+    }
+    ReleaseSRWLockExclusive(&lock_);
+    WakeConditionVariable(&wake_);
+}
+
+void StdioChannel::sendDiagnostic(std::string text) {
+    if (error_ == nullptr) return;
+    AcquireSRWLockExclusive(&lock_);
+    if (!stderrBroken_ && !stopping_ && queuedBytes_ + text.size() <= kSoftQueueLimit) {
+        queuedBytes_ += text.size();
+        queue_.push_back(Outgoing{std::move(text), true});
     }
     ReleaseSRWLockExclusive(&lock_);
     WakeConditionVariable(&wake_);

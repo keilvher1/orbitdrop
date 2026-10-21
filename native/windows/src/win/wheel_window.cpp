@@ -34,10 +34,16 @@ bool WheelWindow::create(HINSTANCE instance, std::string& error) {
     // The first ShowWindow of a process may be overridden by STARTUPINFO
     // (e.g. spawn with windowsHide). Consume that special case now, hidden.
     ShowWindow(hwnd_, SW_HIDE);
+    accessible_ = new WheelAccessible(hwnd_);
     return true;
 }
 
 void WheelWindow::destroy() {
+    if (accessible_ != nullptr) {
+        accessible_->disconnect();
+        accessible_->Release();
+        accessible_ = nullptr;
+    }
     if (hwnd_ != nullptr) {
         KillTimer(hwnd_, kFadeTimer);
         SetWindowLongPtrW(hwnd_, GWLP_USERDATA, 0);
@@ -57,7 +63,15 @@ LRESULT CALLBACK WheelWindow::wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         case WM_MOUSEACTIVATE:
             return MA_NOACTIVATE;  // a click on the wheel never activates it
         case WM_DPICHANGED:
-            return 0;  // position and size are always computed for the target monitor
+            // Position and size are computed for the target monitor; a scale change
+            // while a wheel is open means the session must be re-checked.
+            if (self != nullptr && self->notifyWindow_ != nullptr) PostMessageW(self->notifyWindow_, self->notifyMessage_, 0, 0);
+            return 0;
+        case WM_GETOBJECT:
+            if (self != nullptr && self->accessible_ != nullptr) {
+                if (const LRESULT r = self->accessible_->handleGetObject(wp, lp)) return r;
+            }
+            break;
         case WM_ERASEBKGND:
             return 1;
         case WM_PAINT:
@@ -116,13 +130,33 @@ bool WheelWindow::show(const coords::WheelFrame& frame, const session::RenderMod
     }
     visible_ = true;
     if (animate) startFade(startAlpha, 255, model.tokens.appearMs, false);
+    announce(model, true);
     return true;
 }
 
 bool WheelWindow::update(const session::RenderModel& model, Renderer& renderer) {
     if (hwnd_ == nullptr || !visible_ || !frame_.valid) return false;
     if (!renderer.render(model, frame_)) return false;
-    return push(renderer, alpha_, false);
+    const bool ok = push(renderer, alpha_, false);
+    announce(model, false);
+    return ok;
+}
+
+void WheelWindow::announce(const session::RenderModel& model, bool opening) {
+    if (accessible_ == nullptr) return;
+    if (opening) {
+        const bool ko = model.locale == proto::Locale::Ko;
+        accessible_->setNames(ko ? L"OrbitDrop \uD720" : L"OrbitDrop wheel", ko ? L"\uC6D0\uD615 \uBA54\uB274" : L"radial menu");
+    }
+    // The armed, selectable sector under the pointer; otherwise the centre text
+    // (drop hint, disabled reason, unsupported text, file count).
+    std::wstring text;
+    if (model.highlight >= 0 && static_cast<size_t>(model.highlight) < model.sectors.size()) {
+        text = utf8ToWide(model.sectors[static_cast<size_t>(model.highlight)].label);
+    } else {
+        text = utf8ToWide(model.capsuleText);
+    }
+    accessible_->announce(text, opening);
 }
 
 void WheelWindow::hide(bool animate) {

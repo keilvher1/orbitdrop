@@ -31,12 +31,16 @@ public:
     StdioChannel& operator=(const StdioChannel&) = delete;
     ~StdioChannel();
 
-    /** Starts both threads. `notify` receives kMsgWake. */
-    bool start(HWND notify, HANDLE input, HANDLE output);
+    /** Starts both threads. `notify` receives kMsgWake. `error` (stderr) may be null. */
+    bool start(HWND notify, HANDLE input, HANDLE output, HANDLE error);
 
     /** Queues one line (a '\n' is appended). Never blocks. `critical` lines are
      *  kept even when the queue is over its soft limit (parent not reading). */
     void send(std::string line, bool critical);
+
+    /** Queues free-form diagnostics for stderr (written by the writer thread;
+     *  dropped when stderr is missing, broken or the queue is over its limit). */
+    void sendDiagnostic(std::string text);
 
     struct Drained {
         std::vector<proto::ParseResult> messages;  // in arrival order (line-too-long = a LineTooLong failure)
@@ -62,16 +66,22 @@ private:
     HWND notify_ = nullptr;
     HANDLE input_ = nullptr;
     HANDLE output_ = nullptr;
+    HANDLE error_ = nullptr;
     HANDLE readerThread_ = nullptr;
     HANDLE writerThread_ = nullptr;
 
     // Outgoing queue (UI → writer).
     SRWLOCK lock_ = SRWLOCK_INIT;
     CONDITION_VARIABLE wake_ = CONDITION_VARIABLE_INIT;
-    std::deque<std::string> queue_;
+    struct Outgoing {
+        std::string data;
+        bool toStderr = false;
+    };
+    std::deque<Outgoing> queue_;
     size_t queuedBytes_ = 0;
     bool stopping_ = false;
     bool broken_ = false;
+    bool stderrBroken_ = false;
 
     // Incoming inbox (reader → UI).
     SRWLOCK inboxLock_ = SRWLOCK_INIT;

@@ -3,7 +3,7 @@
 //
 //   node scripts/build-native-win.mjs [--arch x64] [--config Release|Debug] [--skip-tests] [--no-stage]
 //        On Windows: MSVC x64 (static CRT /MT) via the CMake preset `msvc-x64`, then
-//        core unit tests (incl. tests/fixtures/wheel-golden.json), the stdio smoke test,
+//        core unit tests (incl. tests/fixtures/wheel-golden.json), the OLE glue tests, the stdio smoke test,
 //        wheel snapshots (PNG), and stages OrbitDropHelper.exe + BUILD_INFO.txt into
 //        apps/desktop/resources/helper/win32-x64/.
 //
@@ -201,11 +201,12 @@ function windows() {
   let status = 'BUILT WITH MSVC ON WINDOWS (tests skipped).';
   if (!skipTests) {
     run(join(outDir, 'orbitdrop-core-tests.exe'), ['--require-golden']);
+    run(join(outDir, 'orbitdrop-ole-tests.exe'), []);  // DropTarget + fake IDataObject (headless)
     const snapshots = option('--snapshots', join(src, 'build', 'msvc-x64', 'snapshots'));
     run(process.execPath, [join(src, 'tests', 'tools', 'stdio-smoke.mjs'), exe, '--snapshots', snapshots], { cwd: repo });
     if (wantParity) runParity(join(outDir, 'orbitdrop-protocol-tool.exe'));
     status =
-      'BUILT WITH MSVC ON WINDOWS (static CRT). Core unit tests incl. wheel-golden.json and the stdio smoke test (pipes, ready/ping/errors/EOF exit, snapshots) passed.';
+      'BUILT WITH MSVC ON WINDOWS (static CRT). Core unit tests incl. wheel-golden.json, the OLE glue tests (DropTarget + fake IDataObject) and the stdio smoke test (pipes, ready/ping/errors/EOF exit, snapshots) passed.';
   }
   if (stage) stageHelper(exe, status, `${compilerVersion(join(src, 'build', 'msvc-x64'))}, /MT`, null);
 }

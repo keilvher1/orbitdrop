@@ -26,12 +26,16 @@ have not been run yet.
 | Session state machine (`DragSessionController`) | yes | 23 scenario tests (drop, dead zone, disabled, Copy-only, leave/re-enter, grace, Esc, modes, arming, multi-file, unsupported, sleep, cancel, config freeze, 150 % negative coords) | MSVC | real drags |
 | Win32 app: stdio threads, Per-Monitor V2, OLE, message loop, polling observer, power/session events | yes | — | MinGW GCC 16 `-Wall -Wextra -Wshadow -Werror`: 0 warnings | **all GUI behaviour** |
 | Wheel window (layered, topmost, no-activate) + Direct2D/DirectWrite rendering | yes | geometry preview rasterised on macOS (no fonts) | MinGW | look on Windows, icons, Hangul fallback |
-| `IDropTarget` (CF_HDROP, virtual files, `IDropTargetHelper`, Copy/None) | yes | — | MinGW | **Explorer drag & drop** |
+| `IDropTarget` (CF_HDROP, virtual files, `IDropTargetHelper`, Copy/None), no file-system calls in callbacks | yes | — | MinGW | **Explorer drag & drop** |
+| OLE glue tests (`orbitdrop-ole-tests`: real `DropTarget` + controller, fake `IDataObject`; COPY/MOVE/LINK mapping, one drop per session, CF_HDROP Unicode/long paths, virtual and non-file data) | yes | — (Windows-only) | MinGW (built, **not run**); runs in CI under MSVC | first CI run |
+| Folder detection off the UI thread (`folder_check`) + specific unsupported texts | yes | controller side unit-tested (`fileInfo`, folder/non-file/virtual texts, fallback) | worker thread: MinGW | real folders, network shares |
+| UI Automation (window name, notification of the armed sector for Narrator) | yes | — | MinGW | Narrator (checklist 24) |
+| Display/DPI changes cancel a wheel on a changed monitor; diagnostics written by the writer thread | yes | `displaysChanged` unit-tested | MinGW | real hot-plug (checklist 25) |
 | `--render-snapshot` (WIC PNG) | yes | — | MinGW | runs in CI on Windows (not yet run) |
 | Built-in defaults (snapshot/test configure) vs `packages/contracts/design-tokens.json` | yes | drift test reads the JSON (all 42 wheel colours, sizes, motion); light `sectorActive` = `#D4441C` (WCAG AA update) | MSVC | — |
 | Build: CMake + presets (MSVC /MT, MinGW, host tests, ASan), build script, CI | yes | host + ASan + MinGW presets, script modes `--core-tests --parity` and `--cross` | MSVC presets, CI workflow | first CI run |
 
-The staged `apps/desktop/resources/helper/win32-x64/OrbitDropHelper.exe` (1,608,704 bytes,
+The staged `apps/desktop/resources/helper/win32-x64/OrbitDropHelper.exe` (1,638,912 bytes,
 stripped) is the **MinGW cross build**; its `BUILD_INFO.txt` says *CROSS-COMPILED …
 NOT VERIFIED ON WINDOWS — do not ship*. Ship the MSVC artifact from CI or from
 `node scripts/build-native-win.mjs` run on Windows.
@@ -60,11 +64,14 @@ native/windows/
     app         message window, stdio, polling, OLE, power/lock, deferred window ops
     stdio_channel  reader thread (parse off the UI thread) + serialized writer thread
     drop_target IDropTarget
-    wheel_window  layered window, UpdateLayeredWindow, fades
+    wheel_window  layered window, UpdateLayeredWindow, fades, WM_GETOBJECT
+    accessibility UI Automation provider (name, notifications for Narrator)
+    folder_check  worker thread: are dragged paths folders? (no FS calls in OLE callbacks)
     renderer    Direct2D DC render target + DirectWrite + alpha mask
     snapshot    --render-snapshot (WIC PNG)
     win_util    ComPtr, UTF-16, monitors, OS version, elevation
   tests/      test_*.cpp (tiny built-in framework), data/jsmath-vectors.txt
+  tests/win/  test_ole_glue.cpp (Windows-only: DropTarget + fake IDataObject)
   tests/tools/ protocol_tool.cpp + protocol-parity.mjs (zod cross-check), stdio-smoke.mjs
                (Windows runtime smoke test), layout_preview.cpp, gen-jsmath-vectors.mjs
 scripts/build-native-win.mjs
@@ -93,7 +100,12 @@ docs/screenshots/windows-helper-layout-preview-*.png   (geometry only, see below
 * **Writer thread**: drains a queue to stdout, so an OLE callback never blocks on a full
   pipe. A failed write means main is gone → exit. Non-critical lines (`log`) are dropped
   above 8 MiB of backlog; `drop`/`cancelled`/`ready`/`pong`/`error` are never dropped.
-  Stopping retries `CancelSynchronousIo` until the reader leaves `ReadFile`.
+  Stopping retries `CancelSynchronousIo` until the reader leaves `ReadFile`. Debug
+  diagnostics (`ORBITDROP_HELPER_DEBUG=1`) go to stderr through the same thread, never
+  synchronously from the UI thread.
+* **Folder worker thread** (`folder_check`): answers "is any dragged path a folder?" with
+  `GetFileAttributesW` off the UI thread. The latest request wins, and results come back
+  through a locked slot plus a payload-less wake message.
 * A hidden **top-level** window (not `HWND_MESSAGE`) receives these broadcasts:
   - `WM_POWERBROADCAST` and `WM_WTSSESSION_CHANGE` (`WTSRegisterSessionNotification`).
   - `WM_QUERYENDSESSION`/`WM_ENDSESSION`, including Restart Manager's `ENDSESSION_CLOSEAPP`.
@@ -130,20 +142,28 @@ first `configure`, while the session is locked or the system sleeps.
 ### Session state machine (`src/core/session.cpp`)
 
 ```
-Idle ─ button down ─▶ Pressed ─ moved beyond drag rect ─▶ PotentialDrag (not announced)
-PotentialDrag ─ exact modifier combo held ≥ 40 ms ─▶ AwaitingPayload: neutral wheel, centre fixed  → state AwaitingPayload
+Idle ─ button down (held modifiers = baseline) ─▶ Pressed ─ moved beyond drag rect ─▶ PotentialDrag (not announced)
+PotentialDrag ─ a key press after the button press completes an exact combo, held ≥ 40 ms ─▶ AwaitingPayload: neutral wheel  → state AwaitingPayload
 AwaitingPayload ─ OLE DragEnter ─▶ WheelActive: menu from the extension map, order frozen        → state WheelActive
 WheelActive ─ Drop on enabled + armed sector, source allows Copy ─▶ drop (once), hide
-any wheel ─ Esc / drag ended / refused release / sleep / lock / cancelSession / disable / EOF ─▶ cancelled, hide
+any wheel ─ Esc / drag ended / refused release / sleep / lock / cancelSession / disable / EOF / monitor changed ─▶ cancelled, hide
 ```
 
-Same rules as the macOS helper (aligned after reading its controller):
+Rules shared with the macOS helper (checked against its controller), followed by the
+Windows-only additions:
 
+* **Shift held before the button press never opens the wheel.** Shift + text selection,
+  Shift + marquee and Shift + click-drag in an editor therefore show nothing. Modifiers
+  held when the button goes down are the baseline. Only a key **press** observed after
+  the button press that completes an exact combo opens a wheel: press the button, drag,
+  then press Shift. Pressing Alt while still holding that Shift completes the tools combo
+  and does open the tools wheel. macOS behaves the same way (it ignores a combo already
+  held at mouse-down).
 * Modifier sets must match a configured combo **exactly** (Ctrl+Shift does not open the
-  convert wheel). Activation waits 40 ms of a stable set, so Shift-then-Alt opens tools
-  without flashing convert. While open, a key **press** that completes the other combo
-  switches mode; releases never switch. Each switch freezes that mode's order and
-  restarts arming.
+  convert wheel). *Windows only:* activation also waits for 40 ms of a stable set, so
+  Shift-then-Alt opens tools without flashing convert. While open, a key press that
+  completes the other combo switches mode; releases never switch. Each switch freezes
+  that mode's order and restarts arming.
 * Wheel-less candidates are not reported (no `PotentialDrag`/`Idle` traffic for every text
   selection). A session is announced with `AwaitingPayload` and ends with exactly one
   `drop` or `cancelled`. This helper never sends `Idle`.
@@ -162,9 +182,22 @@ Same rules as the macOS helper (aligned after reading its controller):
 * A refused release on the disc (OLE calls `DragLeave` instead of `Drop`) reports
   `outsideRing` (dead zone or outside, or not armed), `disabledSector` or `invalidPayload`
   (unsupported payload or Copy not allowed). The result is the same for either event order.
-* No DragEnter while the pointer moves ≥ 24 DIP over the neutral wheel for ≥ 350 ms means
-  this is not an OLE drag (e.g. a Shift text selection): `cancelled invalidPayload`, hidden
-  until release.
+* *Windows only, second guard:* no DragEnter while the pointer moves ≥ 24 DIP over the
+  neutral wheel for ≥ 350 ms means this is not an OLE drag (e.g. Shift pressed during a
+  text selection): `cancelled invalidPayload`, hidden until release.
+* Unsupported drags get the specific optional texts from `configure.strings` and fall
+  back to `unsupported`:
+  - `unsupportedFolder`: a folder.
+  - `unsupportedNonFile`: text, a URL or other non-file data.
+  - `unsupportedVirtual`: virtual items such as e-mail attachments or zip contents.
+* **No file-system calls in DragEnter/Drop.** Folders are detected by a worker thread
+  (`src/win/folder_check.*`, `GetFileAttributesW`, latest request wins). The result is
+  applied to the open session through `Controller::fileInfo`: the drag becomes unsupported
+  with the folder text, and `state WheelActive` is re-sent with `menuKey: null` if it was
+  supported. A drop that happens before the answer arrives is validated by main
+  (`NOT_A_FILE`, `CLOUD_PLACEHOLDER`).
+* `WM_DISPLAYCHANGE`/`WM_DPICHANGED` re-check the open session's monitor. If it disappeared
+  or changed size or DPI, the session ends with `cancelled error`.
 * Esc cancels (`escape`) and suppresses the wheel until the button is released.
 * `configure` during a session: the session keeps its snapshot. `enabled:false` cancels
   (`parentRequest`).
@@ -209,6 +242,13 @@ source's coordinate space, which is virtualised for DPI-unaware sources.
   `windowMargin` stays transparent.
 * High contrast tokens get sector and capsule outlines. Fades use `appearMs`/`disappearMs`
   (none with reduced motion), changing only the constant alpha.
+* **UI Automation**: the window answers `WM_GETOBJECT` with a server-side provider.
+  - Name "OrbitDrop wheel" / "OrbitDrop 휠", control type Pane, localized type "radial menu",
+    not keyboard-focusable.
+  - When the armed sector (or the centre text) changes, it raises a UIA notification
+    event (`NotificationProcessing_MostRecent`), so Narrator speaks the choice without the
+    wheel taking focus. It also sends an MSAA name change.
+  - `uiautomationcore.dll` is loaded on demand, so the import table does not change.
 * Window operations requested inside an `IDropTarget` method are deferred with
   `PostMessage`, so OLE callbacks return immediately. The guard covers the whole method,
   including `IDataObject::GetData` and the `IDropTargetHelper` calls, whose COM wait loops
@@ -226,15 +266,17 @@ source's coordinate space, which is virtualised for DPI-unaware sources.
   owned UTF-8 strings. Lone UTF-16 surrogates are rejected (`WC_ERR_INVALID_CHARS`)
   rather than corrupted. More than 200 files, a path over 32,767 units, or a payload
   whose `drop` line could exceed 1 MiB means unsupported.
-* `CFSTR_FILEDESCRIPTORW` without `CF_HDROP` means virtual files, which are unsupported.
-* Folders: paths without a known extension are unsupported (core rule).
-  - Paths *with* an extension on local **fixed** drives also get `GetFileAttributesW`, so a
-    folder named `x.pdf` is rejected too.
-  - The check stops at the first folder and after a 50 ms budget, so a sleeping USB disk
-    cannot stall the source's drag.
-  - Network and removable volumes are left to main's validation (`SEM_FAILCRITICALERRORS`:
-    no disk prompts).
+* `CFSTR_FILEDESCRIPTORW` without `CF_HDROP` means virtual files (`unsupportedVirtual`).
+  Neither format present means non-file data (`unsupportedNonFile`).
+* The callbacks only copy data. There is no `GetDriveTypeW` or `GetFileAttributesW` in
+  DragEnter/Drop.
+  - Folders are detected afterwards by the folder worker (see above).
+  - `SEM_FAILCRITICALERRORS` means a disk-less drive never prompts.
+  - Cloud placeholders are not hydrated (attributes only) and are reported by main
+    (`CLOUD_PLACEHOLDER`).
 * `IDropTargetHelper` keeps the source's drag image visible over the wheel.
+* Test seams: an injectable cursor source and an optional drag-image helper, used by the
+  Windows-only OLE glue tests (`tests/win/test_ole_glue.cpp`).
 * COM exceptions never cross the boundary (`try/catch` → `DROPEFFECT_NONE`).
 
 ### Protocol details
@@ -255,9 +297,9 @@ source's coordinate space, which is virtualised for DPI-unaware sources.
 
 | Where | Command | What it does |
 |---|---|---|
-| any OS | `node scripts/build-native-win.mjs --core-tests [--parity]` | host compiler, 81 tests incl. all golden sections and the design-token drift check (`--require-golden`); `--parity` = zod cross-check (needs `node_modules/tsx`) |
+| any OS | `node scripts/build-native-win.mjs --core-tests [--parity]` | host compiler, 86 tests incl. all golden sections and the design-token drift check (`--require-golden`); `--parity` = zod cross-check (needs `node_modules/tsx`) |
 | macOS/Linux | `node scripts/build-native-win.mjs --cross` | MinGW-w64 build, warnings as errors, DLL import allowlist, stages a stripped exe + `BUILD_INFO.txt` (UNVERIFIED) |
-| Windows | `node scripts/build-native-win.mjs` | MSVC x64 `/MT` (preset `msvc-x64`), core tests, `stdio-smoke.mjs` (pipes, ready/ping/errors/EOF exit + 8 PNG snapshots), stages exe + `BUILD_INFO.txt` |
+| Windows | `node scripts/build-native-win.mjs` | MSVC x64 `/MT` (preset `msvc-x64`), core tests, OLE glue tests, `stdio-smoke.mjs` (pipes, ready/ping/errors/EOF exit + 11 PNG snapshots incl. folder/virtual/non-file texts), stages exe + `BUILD_INFO.txt` |
 | CMake directly | `cmake --preset host-tests && cmake --build --preset host-tests && ctest --preset host-tests` | also `host-tests-asan`, `mingw-x64`, `msvc-x64`, `ninja-msvc-x64` |
 
 * **Static CRT**: the MSVC preset sets `CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded` (`/MT`),
@@ -276,17 +318,22 @@ source's coordinate space, which is virtualised for DPI-unaware sources.
 
 ### Evidence from this machine (macOS 26.6 arm64, Apple clang 21, MinGW-w64 14 / GCC 16.2)
 
-* `orbitdrop-core-tests --require-golden`: 81 tests, 0 failures. This includes every
+* `orbitdrop-core-tests --require-golden`: 86 tests, 0 failures. This includes every
   section of `tests/fixtures/wheel-golden.json`: derived 4, hitTest 2,185 (incl. 5 non-finite),
   placeWheel 260, isArmed 25, selection 42, fileCount 10, coords.win 302,
   displayForPoint/clamp/rounding 34. Also clean under AddressSanitizer + UBSan.
 * Protocol parity: 56/56 helper→main samples valid. Main→helper verdicts are identical on
-  5,036 lines (default) and 30,015 lines (`PARITY_ITERATIONS=15000`).
+  5,034 lines (default), 12,025 lines (`PARITY_ITERATIONS=6000`, after adding the three
+  optional `strings` keys) and earlier 30,015 lines (`PARITY_ITERATIONS=15000`).
+* `orbitdrop-ole-tests.exe` (Windows-only OLE glue tests) **compiles and links under MinGW
+  with `-Werror` but has not been run**. It runs in CI under MSVC (`ctest` plus a dedicated
+  step) and in the build script on Windows.
 * `Math.atan2`/`Math.hypot`: 1,000,800 Node vectors bit-exact at `-O0`/`-O2` with
   contraction off (the C libm differs on 21 % of them).
 * MinGW from a clean build: 0 warnings with `-Werror`.
-  - Imports: KERNEL32, USER32, GDI32, ole32, SHELL32, SHCORE, ADVAPI32, WTSAPI32, d2d1,
-    DWrite, and `api-ms-win-crt-*` (UCRT) only.
+  - Imports: KERNEL32, USER32, GDI32, ole32, OLEAUT32 (BSTRs for UIA), SHELL32, SHCORE,
+    ADVAPI32, WTSAPI32, d2d1, DWrite, and `api-ms-win-crt-*` (UCRT) only.
+    `uiautomationcore.dll` is loaded on demand.
   - GUI subsystem; DllCharacteristics 0x160 (ASLR, high-entropy VA, NX).
   - `RT_MANIFEST` #1 with PerMonitorV2 and the version resource are embedded.
 
@@ -311,7 +358,7 @@ ring, capsule, highlight and alpha mask, with dots where labels go. They are *no
 Direct2D output. The real renderer's PNGs come from the CI artifact
 `windows-helper-snapshots`.
 
-## Manual verification checklist (Windows 11 x64)
+## Manual verification checklist (Windows 11 x64, items 1–25)
 
 Use the MSVC build (CI artifact or `node scripts/build-native-win.mjs` on Windows) and the
 app's normal start. Set `ORBITDROP_HELPER_DEBUG=1` to get helper diagnostics on stderr and
@@ -351,8 +398,12 @@ as `log` messages. Record the OS build, display setup and result for each item.
     - Text from a browser, and a URL: the wheel shows "unsupported" and refuses.
     - An Outlook attachment or a file inside a .zip (virtual files): unsupported.
     - A folder: unsupported.
-    - Shift + text selection in an editor (no OLE drag): the neutral wheel disappears
-      after a short movement.
+    - Shift held, then a text selection or marquee in an editor/Explorer: **no wheel at
+      all**.
+    - Shift pressed during such a selection: the neutral wheel disappears after a short
+      movement.
+    - A folder shows the folder text, an attachment the virtual text, plain text the
+      non-file text.
 12. **Multi-file**: two JPGs show "파일 2개". Crop/Edit/Annotate/Add BG/Redact are greyed
     with the multi-file reason; Compress works. PDF + PNG → mixed menu (DOCX, JPG, PNG).
 13. **Rapid drops**: five drops in quick succession. Each produces exactly one job and no
@@ -382,6 +433,13 @@ as `log` messages. Record the OS build, display setup and result for each item.
     visible, no fade.
 23. **Swapped mouse buttons** (left-handed): the drag with the primary (right) button opens
     the wheel.
+24. **Narrator** (Win+Ctrl+Enter):
+    - On opening, the wheel is announced ("OrbitDrop wheel: Drop here"). Moving over
+      sectors speaks each armed sector ("JPG") or a disabled sector's reason, without the
+      wheel taking focus.
+    - Inspect.exe shows the window as "OrbitDrop wheel" (Pane, not keyboard-focusable).
+25. **Display change during a drag**: unplug a monitor or change its scale while the wheel
+    is open on it. The wheel disappears (`cancelled error`) and the next drag works.
 
 ## Known limitations and risks
 
@@ -391,15 +449,21 @@ as `log` messages. Record the OS build, display setup and result for each item.
     ~140 ms.
   - The Segoe icon code points (visual check).
   - Alt+Shift as the input-language hotkey (item 6).
-* There is no global "OLE drag in progress" signal without hooks. A neutral wheel can appear
-  briefly for Shift + mouse drags that are not file drags. It hides after movement
-  without DragEnter, or on release.
+* There is no global "OLE drag in progress" signal without hooks.
+  - Ordinary Shift + drags (Shift held before the button) never show the wheel.
+  - Pressing the combo *during* a non-file mouse drag (e.g. pressing Shift mid text
+    selection) can show the neutral wheel briefly. It hides after movement without
+    DragEnter, or on release.
 * `GetAsyncKeyState`/`GetCursorPos` return nothing useful on the secure desktop (UAC prompt,
   lock screen). Behaviour with an elevated foreground window is unverified.
 * Touch and pen drags: unverified (async button state may not reflect touch).
-* Win key as a modifier (`command`) opens the Start menu on release. It is discouraged in
-  settings.
-* Folder detection for network and removable paths is left to main's `validateInputFile`.
+* The Win key is accepted as a modifier (`command`), but releasing it alone opens the Start
+  menu. Settings do not currently warn about this; a Windows note is being added on the
+  renderer side.
+* Folder detection runs after DragEnter on a worker thread. A drop made before it answers
+  (normally milliseconds; longer on a slow network share) is validated by main instead.
+* The UI Automation provider (window name and notifications of the armed sector) has not
+  been checked with Narrator (checklist item 24).
 * Lock and session disconnect are reported as `sleep` (there is no dedicated cancel reason).
 
 ## Requests
