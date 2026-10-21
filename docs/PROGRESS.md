@@ -59,7 +59,7 @@ also had an independent code review; all findings were fixed and re-tested.
 | processors-convert | PDF↔image, image formats, BMP codec, images→PDF, PDF→TXT/DOCX, probe; Electron-pool JPEG bug fixed | 797ba39 |
 | processors-edit | crop, add background, compress, metadata, edit, annotate, redact; review: 16-bit/wide-gamut/memory fixes | f148070, b6245d7 |
 | macos-helper | Swift/AppKit observer, wheel panel, Copy-only drop target, imageio CLI; 116 Swift tests | ca13dd1 |
-| windows-helper | C++/Win32/OLE; mingw compile + host tests (golden passes); see its status file | (pending) |
+| windows-helper | C++/Win32/OLE; 81 host tests incl. golden (ASan/UBSan clean), zod parity fuzzing, MinGW -Werror cross-build; never run on Windows | 678271c |
 | desktop-main | main, preload, workers, helper manager, smoke; review: pool size, cleanup, path redaction, env overrides | 2b5b268 |
 | desktop-renderer | wheel, editors, jobs, settings, Drop Zone, ko/en; review fixes; macOS modifier rule | 84d25c2, 5b18167 |
 | packaging-docs | electron-builder mac/win, native-check, CI, docs, licences | 1563f4f |
@@ -73,6 +73,7 @@ Lead changes after the workstreams landed:
   warning colours moved into the shared tokens; macOS defaults/fixtures follow.
 - PNG compression level 9 → 6 in `encodeImage`.
 - Packaged builds ignore `ORBITDROP_HELPER_PATH` (security review); docs updated.
+- `package.mjs` refuses a Windows build whose staged helper says CROSS-COMPILED.
 
 Verification on the dev Mac (macOS 26.6 arm64), all passing:
 
