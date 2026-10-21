@@ -102,7 +102,7 @@ the first file, "clear finished jobs", a generic retry for retryable errors,
 `PreviewResult.outputFormat`, live wheel-size preview in Settings, unsaved-change
 prompt for Annotate/Redact, a dark high-contrast token set.
 
-## Stage 3 — spec audit and fixes (2026-10-21, in progress)
+## Stage 3 — spec audit and fixes (2026-10-21, done)
 
 An independent read-only audit compared the spec section by section with the
 code (31 findings). Lead fixes so far: Swift rendering test after the accent
@@ -129,3 +129,20 @@ Next actions after they land:
    new SHA-256s and source commit in verification.md.
 4. Hand the user the Finder PoC checklist (macos-helper.md §8) and record
    the results as "PoC 결과" in verification.md and the support matrix.
+
+Stage 3 result (all landed and re-verified by the lead):
+- macos-helper f3cc53a, windows-helper b16f472, processors-convert 123b5c6,
+  polish df1c903 + d279bc0 (incl. processors-edit's font warning),
+  screenshots d4f6d1e.
+- vitest 902 passed / 1 skipped (twice in a row); Playwright 25/25;
+  electron-verify 36/36; swift test exit 0 (138); Windows host tests 86 +
+  zod parity + MinGW -Werror; packaged smoke ok on arm64 and x64 (Rosetta).
+- Final macOS packages: see verification.md (source d4f6d1e).
+
+Remaining (cannot be done here):
+1. The user runs the Finder PoC checklist (macos-helper.md §8) and the
+   packaged-app steps (verification.md) and records results.
+2. Windows: push to a GitHub remote to run ci.yml / native-windows.yml (needs
+   the user's decision), then the windows-helper.md checklist on a real PC.
+3. Signing/notarization credentials; product id and licence decisions.
+

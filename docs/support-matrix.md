@@ -29,14 +29,15 @@
 
 | 명령 | 결과 |
 |---|---|
-| `node_modules/.bin/vitest run` (contracts·core·processors·desktop·integration) | 65 파일, 768 통과, 1 건너뜀(옵트인 FAT32 테스트, 별도 실행 시 통과) |
-| `cd apps/desktop && ../../node_modules/.bin/playwright test` (빌드된 실제 앱, CDP 클릭 — OS 입력 합성 없음) | 16/16 통과 |
-| `node apps/desktop/src/renderer/dev/electron-verify.mjs` (실제 앱의 모든 창·편집기) | 26/26 통과, 콘솔 오류·CSP 위반 없음 |
-| `swift test --package-path native/macos` | 종료 코드 0, Core 80 · Kit 29 · Process 7 (116개). 토큰 변경 뒤 렌더링 테스트 1개가 옛 색을 비교해 실패했던 것을 `98c0ac8`에서 고침 |
+| `node_modules/.bin/vitest run` (contracts·core·processors·desktop·integration) | 77 파일, 902 통과, 1 건너뜀(옵트인 FAT32 테스트, 별도 실행 시 통과) |
+| `cd apps/desktop && ../../node_modules/.bin/playwright test` (빌드된 실제 앱, CDP 클릭 — OS 입력 합성 없음) | 25/25 통과 (오프라인 테스트 포함: http(s) 요청·소켓 0) |
+| `node apps/desktop/src/renderer/dev/electron-verify.mjs` (실제 앱의 모든 창·편집기, 결과 파일을 디코딩해 크기·픽셀 확인) | 36/36 통과, 콘솔 오류·CSP 위반 없음 |
+| `swift test --package-path native/macos` | 종료 코드 0, Core 86 · Kit 45 · Process 7 (138개). 토큰 변경 뒤 렌더링 테스트 1개가 옛 색을 비교해 실패했던 것을 `98c0ac8`에서 고침 |
+| `node scripts/build-native-win.mjs --core-tests --parity`, `--cross` | 포터블 코어 86개 통과(ASan/UBSan 포함), zod 대조 일치, MinGW `-Werror` 경고 0 — Win32 부분은 컴파일만 |
 | `node scripts/gen-golden.mjs --check` | 휠 기준값 최신 |
 | `node tests/integration/convert-electron-smoke.mjs` | node / utilityProcess / app.asar 세 모드 통과 |
 | `electron . --smoke-test` (개발 빌드, 실제 arm64 헬퍼) | `ok:true`, helper `ready`, PNG→JPG·PDF→PNG |
-| `node scripts/package.mjs mac --arch all` | arm64·x64 DMG/ZIP, 패키지 smoke `ok:true` (x64는 Rosetta 2) |
+| `node scripts/package.mjs mac --arch all` | arm64·x64 DMG/ZIP(소스 `d4f6d1e`), 패키지 smoke `ok:true` (x64는 Rosetta 2) — 해시는 [verification.md](verification.md#자동-검증-증거) |
 
 ## 패키징·설치
 

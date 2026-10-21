@@ -73,22 +73,38 @@
 
 ---
 
+## PoC 결과 — 실제 외부 드래그 (스펙 §3)
+
+| 항목 | macOS | Windows |
+|---|---|---|
+| 구현 | Swift/AppKit helper: 전역 마우스 모니터 + 보조키 폴링 + 드래그 페이스트보드 changeCount로 후보 감지, 포커스를 빼앗지 않는 NSPanel이 휠이자 드롭 대상, Copy만 수락, 세션당 drop 1회 | C++/Win32: 폴링 관찰(훅·주입 없음), 레이어드 비활성 창(디스크 밖 알파 0), OLE `IDropTarget`(CF_HDROP), Copy 또는 None만 반환 |
+| 권한 실측 | 필요 권한 없음(손쉬운 사용·입력 모니터링 요청 안 함). Esc는 입력 모니터링이 이미 허용된 경우에만 전역 감지 | 해당 없음(권한 대화상자 없음). 관리자 권한 실행 시 UIPI로 일반 탐색기 드래그 불가 |
+| 자동 확인 | 드롭 대상(가짜 `NSDraggingInfo`), 실제 이벤트 순서를 재생하는 관찰자 테스트, 세션 상태 기계, 휠 기준값 전 구간, 패키지 안 helper `ready`·`globalDrag.available: true` | 포터블 코어(세션·좌표·프로토콜) 86개 테스트와 골든 기준값을 macOS 호스트에서 실행. OLE 드롭 테스트는 컴파일만 |
+| **실제 Finder/탐색기 드래그** | **미실시** — 사용자가 `node --import tsx native/macos/scripts/poc-harness.mjs`로 [macos-helper.md §8](workstreams/macos-helper.md) 20단계를 수행하고 아래 표에 기록 | **미실시** — Windows 기기 없음. [windows-helper.md](workstreams/windows-helper.md) 점검표 25항목 |
+
+자동 확인으로 대신할 수 없는 핵심 질문은 셋이다. 실제 드래그 중에 전역 마우스 이벤트가 오는지, 드래그 도중 나타난
+패널이 drag-enter를 받는지, 휠 바깥 투명 영역에 놓은 드롭이 아래 Finder 창으로 가는지(§8 9단계). 사용자 실측 전까지
+지원표의 전역 드래그 칸은 **GUI 미검증**이다.
+
+---
+
 ## 자동 검증 증거
 
 ### 패키징 (macOS, 이 저장소의 개발 Mac)
 
 환경: macOS 26.6 (25G72) arm64, Xcode 27.1, Node 24.7.0, pnpm 11.27.1, electron-builder 26.15.3, Electron 44.9.0.
 
-명령: `node scripts/package.mjs mac --arch all` (2026-10-21 14:56, 건너뛴 단계 없음: 라이선스 목록 재생성 → 아이콘 검증 →
+명령: `node scripts/package.mjs mac --arch all` (2026-10-21 16:50 CST, 소스 커밋 `d4f6d1e` — 미커밋 변경은 이 문서뿐, 건너뛴 단계 없음: 라이선스 목록 재생성 → 아이콘 검증 →
 `scripts/build-native.mjs mac`로 helper 빌드·서명·stdio smoke → `electron-vite build`(현재 소스) → arm64·x64 electron-builder →
 검사 → DMG 안의 앱으로 smoke test → 네이티브 모듈 검사). 종료 코드 0, 미완료 항목 없음. 산출물은 **미서명(ad-hoc)** 이며
 이름에 `-unsigned`가 붙는다.
 
 | 항목 | macOS arm64 | macOS x64 |
 |---|---|---|
-| DMG | `apps/desktop/release/OrbitDrop-0.1.0-mac-arm64-unsigned.dmg` 137.9 MB, sha256 `c7572db466c40c0ffafe7e1395f3fd6ca87eb411121b29c2137cd207887cf7ea` | `apps/desktop/release/OrbitDrop-0.1.0-mac-x64-unsigned.dmg` 146.7 MB, sha256 `54d560aaed7f22792f6e6ba015b90f700ea93e02180722a199a84f90f8e5bab9` |
-| ZIP | `…-mac-arm64-unsigned.zip` 137.6 MB, sha256 `18dcd02b6657914611eed4181109e0ca920cfdc0b805fb8c23b05dbc9da6082b` | `…-mac-x64-unsigned.zip` 146.4 MB, sha256 `626b559bd758e62314a806d8cb892c68c3bf8a5669ae173a07adc5d42224516b` |
-| 앱 크기(설치 시) | 328.9 MB | 342.6 MB |
+| DMG | `apps/desktop/release/OrbitDrop-0.1.0-mac-arm64-unsigned.dmg` 137.9 MiB, sha256 `234836d3cd9c9c369bc81c6f1040941dac433dc3a3e87d3d1912bfa4145ef45b` | `apps/desktop/release/OrbitDrop-0.1.0-mac-x64-unsigned.dmg` 146.7 MiB, sha256 `b3cfebbc1069a08b9a09d554e7333c9d7c1d459e5eccd21b4702eb99fecd7592` |
+| ZIP | `…-mac-arm64-unsigned.zip` 137.6 MiB, sha256 `61dc80e1247296fb1ed25c9c985618ba3e3732863de9c907527dbcbf1a03ca80` | `…-mac-x64-unsigned.zip` 146.5 MiB, sha256 `0272ecc4da8b48c33923ef33636b2788554e85ebcc781d11561b2e681932cd1c` |
+| 빌드 보고서 | `build-report-darwin-arm64.json` (`source.commit` d4f6d1e…) | `build-report-darwin-x64.json` |
+| 앱 크기(설치 시) | 329.0 MiB | 342.8 MiB |
 | `app.asar` / `app.asar.unpacked` | 23.6 MB (1,294 항목) / 44.9 MB | 23.6 MB (1,294 항목) / 51.7 MB |
 | Info.plist | `CFBundleIdentifier=app.orbitdrop.desktop`, `LSUIElement=true`, `LSMinimumSystemVersion=14.0`, `ElectronAsarIntegrity` 있음 | 동일 |
 | 메인 실행 파일 (`lipo -archs`) | arm64 | x86_64 |
@@ -104,7 +120,7 @@
 | Electron fuses | RunAsNode·NODE_OPTIONS·CLI inspect 꺼짐, asar 무결성 검증·OnlyLoadAppFromAsar·쿠키 암호화 켜짐 | 동일 |
 | Resources | `THIRD_PARTY_LICENSES.md`, `LICENSE.electron.txt`, `LICENSES.chromium.html`, `tray/trayTemplate{,@2x}.png`, `ko.lproj`, `en.lproj` | 동일 |
 | DMG 읽기 전용 마운트 | `Applications → /Applications`, `OrbitDrop.app`; 내부 앱 `codesign --verify` valid | 동일 |
-| smoke test (DMG 안의 앱을 직접 실행) | 종료 0, 3.2초 (앱 내부 785 ms), `helper.ready: true` | `arch -x86_64`(Rosetta 2) 종료 0, 48.8초 (앱 내부 24.9초, 첫 번역 포함), `helper.ready: true` |
+| smoke test (DMG 안의 앱을 직접 실행) | 종료 0, 앱 내부 761 ms, `helper.ready: true` | `arch -x86_64`(Rosetta 2) 종료 0, 앱 내부 23.8초(첫 번역 포함), `helper.ready: true` |
 | 네이티브 모듈 검사 | librsvg 2.63.2 / libvips 8.18.7, 그라데이션·둥근 모서리 마스크 정상, canvas `app.asar.unpacked`에서 로드, Apple SD Gothic Neo 한글 739 px | 동일(Rosetta 2) |
 
 패키지된 앱의 smoke test 출력(arm64, 한 줄):
