@@ -1,0 +1,352 @@
+import { extname } from 'node:path';
+import sharp, { type Metadata, type Sharp } from 'sharp';
+import {
+  ACTIONS,
+  FORMAT_INFO,
+  OrbitError,
+  isImageFormat,
+  parseActionOptions,
+  type ActionOptions,
+  type ImageFormat,
+  type JobProgress,
+  type ProcessingLimits,
+  type ProcessorInput,
+  type ProcessorJob,
+  type ProcessorOutput,
+  type ProcessorSettings,
+  type ToolActionId,
+  type ToolOutputFormat,
+} from '@orbitdrop/contracts';
+import { toolResultName } from '@orbitdrop/core';
+import { defaultQuality, encodeImage, mapSharpError, openImage, outputDirFor, readInputBuffer, writeBytes } from '../common/io';
+
+/**
+ * Helpers shared by the tool executors (crop, add background, compress,
+ * metadata, edit, annotate, redact) and their previews.
+ *
+ * Colour policy (documented in docs/workstreams/processors-edit.md):
+ *  - Same-image tools (crop, edit, annotate, redact) keep the embedded ICC profile
+ *    and the stored pixel values (no gamut clipping). CMYK inputs are converted
+ *    to sRGB because PNG/WebP cannot store CMYK.
+ *  - Add Background converts the content to sRGB (the backgrounds are sRGB).
+ *  - EXIF/XMP/IPTC are never copied by these tools (orientation is applied to
+ *    the pixels first, so dropping EXIF never rotates the result).
+ *  - Output is 8 bits per channel.
+ */
+
+export function throwIfCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new OrbitError('CANCELLED', 'Cancelled');
+}
+
+/** Normalize any thrown value into an OrbitError (cancellation wins over decoder noise). */
+export function toToolError(error: unknown, signal?: AbortSignal): OrbitError {
+  if (error instanceof OrbitError) return error;
+  if (signal?.aborted || (error instanceof Error && error.name === 'AbortError')) {
+    return new OrbitError('CANCELLED', 'Cancelled', { cause: error });
+  }
+  return mapSharpError(error);
+}
+
+/** Validate tool options with the shared schemas; zod issues become INVALID_OPTIONS (paths only, no values). */
+export function parseToolOptions<A extends ToolActionId>(actionId: A, raw: unknown): ActionOptions<A> {
+  try {
+    return parseActionOptions(actionId, raw);
+  } catch (error) {
+    const issues = (error as { issues?: readonly { path?: readonly PropertyKey[]; code?: string }[] }).issues;
+    const detail = Array.isArray(issues)
+      ? issues
+          .slice(0, 5)
+          .map((i) => `${(i.path ?? []).map(String).join('.') || '(root)'}: ${i.code ?? 'invalid'}`)
+          .join('; ')
+      : undefined;
+    throw new OrbitError('INVALID_OPTIONS', `Invalid options for ${actionId}`, detail === undefined ? { cause: error } : { detail, cause: error });
+  }
+}
+
+export function invalidOptions(message: string): OrbitError {
+  return new OrbitError('INVALID_OPTIONS', message);
+}
+
+export function requireImageInput(input: ProcessorInput | undefined): ProcessorInput & { readonly format: ImageFormat } {
+  if (!input) throw new OrbitError('INVALID_OPTIONS', 'No input file');
+  if (!isImageFormat(input.format)) throw new OrbitError('UNSUPPORTED_FORMAT', 'This tool only accepts images');
+  return input as ProcessorInput & { readonly format: ImageFormat };
+}
+
+export function singleInput(job: ProcessorJob): ProcessorInput & { readonly format: ImageFormat } {
+  if (job.inputs.length !== 1) throw new OrbitError('INVALID_OPTIONS', 'Tools process exactly one input per job');
+  return requireImageInput(job.inputs[0]);
+}
+
+export function stage(onProgress: ((p: JobProgress) => void) | undefined, s: 'reading' | 'decoding' | 'rendering' | 'encoding' | 'writing'): void {
+  onProgress?.({ kind: 'indeterminate', stage: s });
+}
+
+/** A decoded-on-demand, auto-oriented image. `open()` returns a fresh pipeline each time. */
+export interface LoadedImage {
+  readonly input: ProcessorInput & { readonly format: ImageFormat };
+  readonly buffer: Buffer;
+  readonly meta: Metadata;
+  /** Oriented size (what the user sees). */
+  readonly width: number;
+  readonly height: number;
+  readonly hasAlpha: boolean;
+  /**
+   * Embedded ICC profile kept by same-image tools: only for RGB images (P3, Adobe RGB…).
+   * CMYK and greyscale profiles are converted to sRGB instead, because the tools
+   * composite RGB(A) drawings/patches and PNG/WebP cannot store CMYK.
+   */
+  readonly keepIcc: boolean;
+  open(): Sharp;
+}
+
+export async function loadImage(input: ProcessorInput, limits: ProcessingLimits, signal?: AbortSignal): Promise<LoadedImage> {
+  const image = requireImageInput(input);
+  const buffer = await readInputBuffer(image, limits, signal);
+  throwIfCancelled(signal);
+  try {
+    const base = await openImage(buffer, image.format, limits);
+    const meta = await base.metadata();
+    const width = meta.autoOrient?.width ?? meta.width;
+    const height = meta.autoOrient?.height ?? meta.height;
+    if (!width || !height) throw new OrbitError('IMAGE_CORRUPT', 'Image has no size');
+    if (width * height > limits.maxInputPixels) throw new OrbitError('IMAGE_TOO_LARGE', 'Image exceeds the pixel limit');
+    return {
+      input: image,
+      buffer,
+      meta,
+      width,
+      height,
+      hasAlpha: meta.hasAlpha === true,
+      keepIcc: meta.hasProfile === true && (meta.space === 'srgb' || meta.space === 'rgb16'),
+      open: () => base.clone(),
+    };
+  } catch (error) {
+    throw toToolError(error, signal);
+  }
+}
+
+/** Raw pixels with their layout. */
+export interface RawImage {
+  readonly data: Buffer;
+  readonly width: number;
+  readonly height: number;
+  readonly channels: number;
+}
+
+export async function toRaw(pipeline: Sharp): Promise<RawImage> {
+  const { data, info } = await pipeline.raw().toBuffer({ resolveWithObject: true });
+  return { data, width: info.width, height: info.height, channels: info.channels };
+}
+
+export function sharpFromRaw(raw: RawImage): Sharp {
+  return sharp(raw.data, { raw: { width: raw.width, height: raw.height, channels: raw.channels as 1 | 2 | 3 | 4 } });
+}
+
+/** True when an RGBA (or grey+alpha) buffer has at least one pixel that is not fully opaque. */
+export function rawHasTransparency(raw: RawImage): boolean {
+  if (raw.channels !== 4 && raw.channels !== 2) return false;
+  const step = raw.channels;
+  for (let i = step - 1; i < raw.data.length; i += step) if (raw.data[i]! < 255) return true;
+  return false;
+}
+
+/** Whether the alpha channel of (a region of) the oriented image has transparent pixels. */
+export async function regionHasTransparency(
+  image: LoadedImage,
+  region?: { left: number; top: number; width: number; height: number },
+): Promise<boolean> {
+  if (!image.hasAlpha) return false;
+  let pipeline = image.open();
+  if (region) pipeline = pipeline.extract(region);
+  const alpha = await toRaw(pipeline.extractChannel('alpha'));
+  for (let i = 0; i < alpha.data.length; i += 1) if (alpha.data[i]! < 255) return true;
+  return false;
+}
+
+let avifEncodable: Promise<boolean> | null = null;
+let tiffEncodable: Promise<boolean> | null = null;
+
+async function probeEncode(fn: (s: Sharp) => Sharp): Promise<boolean> {
+  try {
+    await fn(sharp({ create: { width: 2, height: 2, channels: 3, background: '#808080' } })).toBuffer();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Whether the bundled sharp can encode a format (measured once by encoding a tiny image). */
+export async function canEncode(format: ImageFormat): Promise<boolean> {
+  switch (format) {
+    case 'jpeg':
+    case 'png':
+    case 'webp':
+      return true;
+    case 'avif':
+      avifEncodable ??= probeEncode((s) => s.avif({ quality: 50, effort: 0 }));
+      return avifEncodable;
+    case 'tiff':
+      tiffEncodable ??= probeEncode((s) => s.tiff({ compression: 'lzw' }));
+      return tiffEncodable;
+    default:
+      // gif (first frame only → PNG), bmp/heic go through the codecs with a PNG fallback.
+      return false;
+  }
+}
+
+/**
+ * Output format for tools with a ToolOutputFormat option. 'input' keeps
+ * JPEG/PNG/WebP (and AVIF/TIFF when sharp can encode them, BMP/HEIC when their
+ * codecs are available — see encodeToolImage's fallback); GIF becomes PNG
+ * because tools work on the first frame only.
+ */
+export async function resolveToolFormat(option: ToolOutputFormat, inputFormat: ImageFormat): Promise<ImageFormat> {
+  if (option !== 'input') return option;
+  switch (inputFormat) {
+    case 'jpeg':
+    case 'png':
+    case 'webp':
+    case 'bmp':
+    case 'heic':
+      return inputFormat;
+    case 'avif':
+    case 'tiff':
+      return (await canEncode(inputFormat)) ? inputFormat : 'png';
+    case 'gif':
+      return 'png';
+  }
+}
+
+export interface EncodeToolRequest {
+  readonly format: ImageFormat;
+  readonly settings: ProcessorSettings;
+  /** Lossy formats; defaults to the settings for the format. */
+  readonly quality?: number | undefined;
+  /** Whether the pipeline's output has an alpha channel. */
+  readonly hasAlpha: boolean;
+  /** Background for alpha when the target cannot store it. */
+  readonly flattenBackground?: string;
+  readonly keepIcc?: boolean;
+  /** Keep EXIF/XMP/ICC (compress keepMetadata). Orientation was already applied, sharp writes Orientation = 1. */
+  readonly keepMetadata?: boolean;
+  readonly png?: { readonly palette?: boolean; readonly compressionLevel?: number };
+  readonly webp?: { readonly lossless?: boolean; readonly effort?: number };
+  readonly jpegChroma?: '4:2:0' | '4:4:4';
+}
+
+export interface EncodedImage {
+  readonly data: Buffer;
+  readonly width: number;
+  readonly height: number;
+  readonly format: ImageFormat;
+  /** Alpha was merged onto `flattenBackground`. */
+  readonly flattened: boolean;
+}
+
+function applyEncoder(pipeline: Sharp, format: 'jpeg' | 'png' | 'webp' | 'avif' | 'tiff', quality: number, req: EncodeToolRequest): Sharp {
+  switch (format) {
+    case 'jpeg':
+      return pipeline.jpeg({ quality, mozjpeg: true, chromaSubsampling: req.jpegChroma ?? (quality >= 90 ? '4:4:4' : '4:2:0') });
+    case 'png':
+      return pipeline.png(
+        req.png?.palette
+          ? { palette: true, quality, effort: 8, compressionLevel: req.png.compressionLevel ?? 9 }
+          : { compressionLevel: req.png?.compressionLevel ?? 6 },
+      );
+    case 'webp':
+      return pipeline.webp(req.webp?.lossless ? { lossless: true, effort: req.webp.effort ?? 4 } : { quality, effort: req.webp?.effort ?? 4 });
+    case 'avif':
+      return pipeline.avif({ quality, effort: 4 });
+    case 'tiff':
+      return pipeline.tiff({ compression: 'lzw' });
+  }
+}
+
+/**
+ * Encode a pipeline built by `make()` (called again for a fallback). Formats
+ * the bundled engines cannot write (HEIC without the ImageIO helper, BMP
+ * without the builtin codec, GIF) fall back to PNG; the returned `format` is
+ * what was actually written.
+ */
+export async function encodeToolImage(make: () => Sharp, req: EncodeToolRequest): Promise<EncodedImage> {
+  const target = req.format;
+  const flatten = req.hasAlpha && !FORMAT_INFO[target].alpha;
+  const prepare = (): Sharp => {
+    let p = make();
+    if (flatten) p = p.flatten({ background: req.flattenBackground ?? '#FFFFFF' });
+    if (req.keepMetadata) p = p.keepMetadata();
+    else if (req.keepIcc) p = p.keepIccProfile();
+    return p;
+  };
+  if (target === 'bmp' || target === 'heic') {
+    try {
+      const out = await encodeImage(prepare(), target, req.settings, {
+        ...(req.quality === undefined ? {} : { quality: req.quality }),
+        flattenBackground: req.flattenBackground ?? '#FFFFFF',
+      });
+      return { data: out.data, width: out.width, height: out.height, format: target, flattened: flatten || out.flattened };
+    } catch (error) {
+      if (!(error instanceof OrbitError) || error.code !== 'ENGINE_UNAVAILABLE') throw error;
+      return encodeToolImage(make, { ...req, format: 'png' });
+    }
+  }
+  if (target === 'gif') return encodeToolImage(make, { ...req, format: 'png' });
+  if ((target === 'avif' || target === 'tiff') && !(await canEncode(target))) return encodeToolImage(make, { ...req, format: 'png' });
+  const quality = req.quality ?? defaultQuality(target, req.settings);
+  const { data, info } = await applyEncoder(prepare(), target, quality, req).toBuffer({ resolveWithObject: true });
+  return { data, width: info.width, height: info.height, format: target, flattened: flatten };
+}
+
+/**
+ * Output file name: "<base><suffix><ext>". When the format is unchanged the
+ * input's own extension spelling is kept (photo.JPEG → photo Cropped.JPEG),
+ * otherwise the canonical extension is used.
+ */
+export function toolOutputName(input: ProcessorInput, actionId: ToolActionId, format: ImageFormat): string {
+  const inputExt = extname(input.displayName);
+  const ext = format === input.format && FORMAT_INFO[format].extensions.includes(inputExt.toLowerCase()) ? inputExt : FORMAT_INFO[format].extension;
+  return toolResultName(input.displayName, ACTIONS[actionId].outputSuffix, ext);
+}
+
+export async function writeToolOutput(
+  job: ProcessorJob,
+  input: ProcessorInput,
+  encoded: Pick<EncodedImage, 'data' | 'format' | 'width' | 'height'>,
+  signal?: AbortSignal,
+): Promise<ProcessorOutput> {
+  throwIfCancelled(signal);
+  const name = toolOutputName(input, job.actionId as ToolActionId, encoded.format);
+  const path = await writeBytes(outputDirFor(job, input), name, job.jobId, encoded.data, signal);
+  return { path, format: encoded.format, bytes: encoded.data.length, width: encoded.width, height: encoded.height };
+}
+
+/** "#RRGGBB" → {r,g,b}. */
+export function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) throw invalidOptions('Expected a #RRGGBB colour');
+  const n = Number.parseInt(m[1]!, 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+export interface PreviewImage {
+  readonly data: Uint8Array;
+  readonly mime: 'image/png' | 'image/jpeg';
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * Encode a preview: JPEG (quality 90) for opaque images, PNG (fast zlib level)
+ * when the image has transparent pixels or `lossless` is requested.
+ */
+export async function encodePreview(raw: RawImage, options: { lossless?: boolean } = {}): Promise<PreviewImage> {
+  const transparent = rawHasTransparency(raw);
+  const pipeline = sharpFromRaw(raw);
+  if (transparent || options.lossless) {
+    const data = await pipeline.png({ compressionLevel: 2, adaptiveFiltering: false }).toBuffer();
+    return { data, mime: 'image/png', width: raw.width, height: raw.height };
+  }
+  const data = await (raw.channels === 4 ? pipeline.removeAlpha() : pipeline).jpeg({ quality: 90, chromaSubsampling: '4:4:4' }).toBuffer();
+  return { data, mime: 'image/jpeg', width: raw.width, height: raw.height };
+}
