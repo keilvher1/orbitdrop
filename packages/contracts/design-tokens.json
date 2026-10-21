@@ -11,14 +11,14 @@
       "sectorIcon": "#4A3426",
       "sectorDisabled": "#F1E5DAD9",
       "sectorDisabledText": "#A8978A",
-      "sectorActive": "#F2552C",
+      "sectorActive": "#D4441C",
       "sectorActiveText": "#FFFFFF",
       "capsule": "#F7B98AF2",
       "capsuleText": "#3B2A1E",
       "capsuleReject": "#E9D9CCF2",
-      "accent": "#F2552C",
-      "accentHover": "#E64A22",
-      "accentPressed": "#CF3F1A",
+      "accent": "#D4441C",
+      "accentHover": "#C23B16",
+      "accentPressed": "#A93413",
       "accentText": "#FFFFFF",
       "windowBg": "#FFF6EE",
       "surface": "#FFFFFF",
@@ -29,7 +29,10 @@
       "danger": "#C62828",
       "success": "#2E7D32",
       "focusRing": "#1E5FD6",
-      "mask": "#1A120C8C"
+      "mask": "#1A120C8C",
+      "warningBg": "#FFF1D6",
+      "warningBorder": "#EFC06A",
+      "warningText": "#6E4300"
     },
     "dark": {
       "wheelDisc": "#2C211BCC",
@@ -59,7 +62,10 @@
       "danger": "#FF7A70",
       "success": "#7BD389",
       "focusRing": "#7FB0FF",
-      "mask": "#000000A6"
+      "mask": "#000000A6",
+      "warningBg": "#3B2C12",
+      "warningBorder": "#7D5C1F",
+      "warningText": "#FFD590"
     },
     "highContrast": {
       "wheelDisc": "#FFFFFFFF",
@@ -89,7 +95,10 @@
       "danger": "#A30000",
       "success": "#005A00",
       "focusRing": "#0039B3",
-      "mask": "#000000B3"
+      "mask": "#000000B3",
+      "warningBg": "#FFFFFF",
+      "warningBorder": "#000000",
+      "warningText": "#000000"
     }
   },
   "font": {

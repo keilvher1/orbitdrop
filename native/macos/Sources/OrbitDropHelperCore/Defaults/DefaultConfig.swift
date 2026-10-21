@@ -127,7 +127,7 @@ public enum DefaultConfig {
       palette = [
         "wheelDisc": "#FFF3E6B8", "wheelRing": "#FFFFFFD9", "wheelShadow": "#7A2E0040", "sector": "#FCE4CCF2",
         "sectorHover": "#FFD9B8F7", "sectorText": "#3B2A1E", "sectorIcon": "#4A3426", "sectorDisabled": "#F1E5DAD9",
-        "sectorDisabledText": "#A8978A", "sectorActive": "#F2552C", "sectorActiveText": "#FFFFFF", "capsule": "#F7B98AF2",
+        "sectorDisabledText": "#A8978A", "sectorActive": "#D4441C", "sectorActiveText": "#FFFFFF", "capsule": "#F7B98AF2",
         "capsuleText": "#3B2A1E", "capsuleReject": "#E9D9CCF2",
       ]
     case .dark:

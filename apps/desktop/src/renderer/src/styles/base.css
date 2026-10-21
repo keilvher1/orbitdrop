@@ -1,7 +1,7 @@
 /*
  * Base styles. Colours come from design tokens (see theme/tokensCss.ts):
  * --c-* per theme, --radius-*, --space-*, --font-*, --motion-*, --editor-*.
- * A few derived colours that the shared tokens do not define (warning tints,
+ * A few derived colours that the shared tokens do not define (status tints,
  * transparency checkerboard) are declared here per theme.
  */
 
@@ -23,9 +23,6 @@
 }
 
 :root[data-theme='light'] {
-  --c-warning-bg: #fff1d6;
-  --c-warning-border: #efc06a;
-  --c-warning-text: #6e4300;
   --c-danger-bg: #fdecea;
   --c-success-bg: #e8f4e9;
   --c-checker-a: #ffffff;
@@ -35,9 +32,6 @@
 }
 
 :root[data-theme='dark'] {
-  --c-warning-bg: #3b2c12;
-  --c-warning-border: #7d5c1f;
-  --c-warning-text: #ffd590;
   --c-danger-bg: #3b201d;
   --c-success-bg: #1f3322;
   --c-checker-a: #3a2e27;
@@ -47,9 +41,6 @@
 }
 
 :root[data-theme='highContrast'] {
-  --c-warning-bg: #ffffff;
-  --c-warning-border: #000000;
-  --c-warning-text: #000000;
   --c-danger-bg: #ffffff;
   --c-success-bg: #ffffff;
   --c-checker-a: #ffffff;

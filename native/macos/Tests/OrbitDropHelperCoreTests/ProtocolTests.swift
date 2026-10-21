@@ -49,7 +49,7 @@ final class ProtocolTests: XCTestCase {
       XCTAssertEqual(config.extensions.count, (raw["extensions"] as! [String: Any]).count)
       XCTAssertEqual(config.extensions[".pdf"], .pdf)
       XCTAssertEqual(config.extensions[".jpeg"], .image(.jpeg))
-      XCTAssertEqual(config.tokens.sectorActive, RGBA(hex: "#F2552C"))
+      XCTAssertEqual(config.tokens.sectorActive, RGBA(hex: "#D4441C"))
       XCTAssertEqual(config.tokens.labelWeight, 700)
       // Reference order from the recording, as built by buildHelperMenus.
       XCTAssertEqual(config.menu(for: .pdf)?.convert.map(\.actionId), [.convertDocx, .convertJpeg, .convertPng, .convertTxt])
