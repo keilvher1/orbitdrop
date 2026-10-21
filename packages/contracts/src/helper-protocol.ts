@@ -15,6 +15,11 @@ import { ActionIdSchema, Id, LocaleSchema, MenuKeySchema, ModifierCombo, WheelMo
  * types and unknown action ids. The helper exits when stdin reaches EOF
  * (parent gone) after hiding any wheel.
  *
+ * String length limits are counted in Unicode code points (zod 4 semantics),
+ * not UTF-16 units; native implementations count the same way. Lines with a
+ * duplicated JSON key are rejected by the helpers (JSON.parse keeps the last
+ * value, Foundation the first, and JSON.stringify never emits duplicates).
+ *
  * Session flow (owned by the helper):
  *   Idle → PotentialDrag → AwaitingPayload → WheelActive → (drop | cancelled) → Idle
  * `drop` is sent at most once per sessionId and only for a real OS drop on an
