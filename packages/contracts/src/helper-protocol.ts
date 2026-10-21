@@ -124,6 +124,15 @@ export const HelperConfigureSchema = z.strictObject({
     multiFileUnsupported: z.string().max(60),
     /** "{n} files" — {n} is replaced by the count. */
     fileCount: z.string().max(60),
+    /**
+     * Optional, more specific center texts for unsupported drags; helpers fall
+     * back to `unsupported` when one is absent. Folder; text/URL or other
+     * non-file data; virtual items without a file on disk (file promises,
+     * e-mail attachments, Photos items).
+     */
+    unsupportedFolder: z.string().max(60).optional(),
+    unsupportedNonFile: z.string().max(60).optional(),
+    unsupportedVirtual: z.string().max(60).optional(),
   }),
 });
 

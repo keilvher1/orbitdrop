@@ -186,6 +186,24 @@ export const ACTIONS: Readonly<Record<ActionId, ActionDescriptor>> = {
   ),
 };
 
+const DOCX_FROM_IMAGES_TITLE: LocalizedText = { ko: 'DOCX로 변환 (이미지 삽입, OCR 없음)', en: 'Convert to DOCX (image embedded, no OCR)' };
+const DOCX_MIXED_TITLE: LocalizedText = {
+  ko: 'DOCX로 변환 (PDF는 텍스트 중심, 이미지는 삽입)',
+  en: 'Convert to DOCX (PDF text-focused, images embedded)',
+};
+
+/**
+ * Title of an action for the kinds of inputs it runs on. Only DOCX differs:
+ * PDFs give a text-focused document, images are embedded as pictures without
+ * OCR. Use this wherever an action is named for a concrete selection or job.
+ */
+export function actionTitle(actionId: ActionId, kinds: readonly InputKind[]): LocalizedText {
+  if (actionId === 'convert.docx' && kinds.includes('image')) {
+    return kinds.includes('pdf') ? DOCX_MIXED_TITLE : DOCX_FROM_IMAGES_TITLE;
+  }
+  return ACTIONS[actionId].title;
+}
+
 export function needsEditor(action: ActionDescriptor, fileCount: number): boolean {
   if (action.interactive === 'always') return true;
   if (action.interactive === 'multiple') return fileCount > 1;

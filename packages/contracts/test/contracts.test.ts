@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ACTIONS,
+  actionTitle,
   ACTION_IDS,
   ACTION_OPTION_SCHEMAS,
   DEFAULT_SETTINGS,
@@ -60,6 +61,15 @@ describe('menus follow the reference recording', () => {
     expect(formatFromExtension('.JPEG')).toBe('jpeg');
     expect(formatFromExtension('heif')).toBe('heic');
     expect(formatFromExtension('.exe')).toBeUndefined();
+  });
+});
+
+describe('action titles', () => {
+  it('names DOCX by what it does for the selected inputs', () => {
+    expect(actionTitle('convert.docx', ['pdf']).ko).toBe('DOCX로 변환 (텍스트 중심)');
+    expect(actionTitle('convert.docx', ['image']).ko).toBe('DOCX로 변환 (이미지 삽입, OCR 없음)');
+    expect(actionTitle('convert.docx', ['pdf', 'image']).en).toBe('Convert to DOCX (PDF text-focused, images embedded)');
+    expect(actionTitle('convert.jpeg', ['image'])).toBe(ACTIONS['convert.jpeg'].title);
   });
 });
 
@@ -127,6 +137,9 @@ describe('helper protocol', () => {
       strings: { dropHint: '놓기', unsupported: '지원 안 함', multiFileUnsupported: '한 장씩', fileCount: '{n}개' },
     };
     expect(MainToHelperSchema.safeParse(msg).success).toBe(true);
+    const specific = { ...msg, strings: { ...msg.strings, unsupportedFolder: '폴더', unsupportedNonFile: '파일 아님', unsupportedVirtual: '가상 파일' } };
+    expect(MainToHelperSchema.safeParse(specific).success).toBe(true);
+    expect(MainToHelperSchema.safeParse({ ...msg, strings: { ...msg.strings, unsupportedOther: 'x' } }).success).toBe(false);
   });
 
   it('measures UTF-8 lengths', () => {
