@@ -20,11 +20,19 @@ export interface EditorCommit {
 
 export function useEditorCommit(editorId: string): EditorCommit {
   const { orbit } = useEnv();
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusyState] = useState(false);
   const [error, setError] = useState<OrbitErrorInfo | null>(null);
+  // Read synchronously by cancel(): once "Saving…" started, closing must not
+  // cancel the editor (main may already be writing the result).
+  const busyRef = useRef(false);
+  const setBusy = useCallback((value: boolean) => {
+    busyRef.current = value;
+    setBusyState(value);
+  }, []);
 
   const commit = useCallback(
     async (options: unknown, stayOpen = false) => {
+      if (busyRef.current) return null;
       setBusy(true);
       setError(null);
       try {
@@ -43,10 +51,11 @@ export function useEditorCommit(editorId: string): EditorCommit {
         return null;
       }
     },
-    [orbit, editorId],
+    [orbit, editorId, setBusy],
   );
 
   const cancel = useCallback(() => {
+    if (busyRef.current) return;
     void orbit.cancelEditor(editorId).catch(() => undefined);
     orbit.closeWindow();
   }, [orbit, editorId]);
@@ -112,7 +121,7 @@ export function EditorFrame({
 
   return (
     <div className="view editor-view" ref={rootRef} style={width === undefined ? undefined : { width }}>
-      <TitleBar title={title} onClose={commit.cancel} closeLabel={t('common.cancelAndClose')} />
+      <TitleBar title={title} onClose={commit.cancel} closeDisabled={commit.busy} closeLabel={t('common.cancelAndClose')} />
       <div className="editor-body">{children}</div>
       {commit.error ? (
         <div className="editor-error">

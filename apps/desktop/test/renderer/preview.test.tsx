@@ -30,6 +30,18 @@ describe('PreviewSequencer', () => {
     expect(s.accept(4)).toBe(false); // never requested
     expect(s.accept(Number.NaN)).toBe(false);
   });
+
+  it('invalidate() makes every outstanding request stale; later requests work', () => {
+    const s = new PreviewSequencer();
+    s.next();
+    s.next();
+    s.invalidate();
+    expect(s.pending).toBe(false);
+    expect(s.accept(1)).toBe(false);
+    expect(s.accept(2)).toBe(false);
+    const next = s.next();
+    expect(s.accept(next)).toBe(true);
+  });
 });
 
 function ok(seq: number, url: string): PreviewOutcome {
@@ -177,6 +189,55 @@ describe('usePreview', () => {
       vi.advanceTimersByTime(PREVIEW_DEBOUNCE_MS);
     });
     expect(calls[0]?.request.maxEdge).toBe(2400);
+  });
+
+  it('clearing the options invalidates requests in flight — a late answer cannot bring the preview back', async () => {
+    const { result, rerender } = renderHook(({ options }) => usePreview('ed1', options, { maxEdge: 900 }), { wrapper, initialProps: { options: { regions: [1] } as unknown } });
+    await act(async () => {
+      vi.advanceTimersByTime(PREVIEW_DEBOUNCE_MS);
+    });
+    expect(calls).toHaveLength(1);
+    rerender({ options: null }); // e.g. the only redaction region was deleted
+    expect(result.current.preview).toBeNull();
+    calls[0]?.resolve(ok(1, 'stale-blacked-out'));
+    await flush();
+    expect(result.current.preview).toBeNull();
+    expect(result.current.pending).toBe(false);
+    // A new region: its request works normally, and a failure doesn't resurrect the old one.
+    rerender({ options: { regions: [2] } });
+    await act(async () => {
+      vi.advanceTimersByTime(PREVIEW_DEBOUNCE_MS);
+    });
+    calls[1]?.resolve({ ok: false, seq: calls[1]!.request.seq, error: { code: 'INTERNAL', message: 'x', retryable: false } });
+    await flush();
+    expect(result.current.preview).toBeNull();
+    expect(result.current.error?.code).toBe('INTERNAL');
+  });
+
+  it('upToDate only while the shown preview belongs to the current options', async () => {
+    const { result, rerender } = renderHook(({ options }) => usePreview('ed1', options, { maxEdge: 900 }), { wrapper, initialProps: { options: { v: 1 } as unknown } });
+    await act(async () => {
+      vi.advanceTimersByTime(PREVIEW_DEBOUNCE_MS);
+    });
+    calls[0]?.resolve(ok(1, 'v1'));
+    await flush();
+    expect(result.current.upToDate).toBe(true);
+    rerender({ options: { v: 2 } });
+    expect(result.current.upToDate).toBe(false); // newer settings, preview still shows v1
+    await act(async () => {
+      vi.advanceTimersByTime(PREVIEW_DEBOUNCE_MS);
+    });
+    calls[1]?.resolve({ ok: false, seq: 2, error: { code: 'INTERNAL', message: 'x', retryable: false } });
+    await flush();
+    expect(result.current.preview?.url).toBe('v1');
+    expect(result.current.upToDate).toBe(false); // v2 failed: v1 must not describe the current settings
+    rerender({ options: { v: 3 } });
+    await act(async () => {
+      vi.advanceTimersByTime(PREVIEW_DEBOUNCE_MS);
+    });
+    calls[2]?.resolve(ok(3, 'v3'));
+    await flush();
+    expect(result.current.upToDate).toBe(true);
   });
 
   it('ignores responses after unmount', async () => {

@@ -35,15 +35,6 @@
   padding: 4px 0;
 }
 
-.selection-wheel-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--c-wheel-disc);
-  color: var(--c-text-muted);
-}
-
 .selection-hint {
   min-height: 2.8em;
   max-width: 100%;

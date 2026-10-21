@@ -226,6 +226,25 @@ describe('keyboard nudging', () => {
     expect(nudgeRect(r, 'ArrowUp', 500, false, 'free', b)).toEqual({ x: 100, y: 0, width: 200, height: 100 });
   });
 
+  it('with a portrait ratio (9:16, 3:4), Option/Alt+↓/↑ change the size on every press', () => {
+    const big = { width: 400, height: 600 };
+    let r = { x: 10, y: 10, width: 90, height: 160 };
+    for (let i = 0; i < 10; i += 1) {
+      const next = nudgeRect(r, 'ArrowDown', 1, true, '9:16', big);
+      expect(next.width).toBeGreaterThan(r.width);
+      expect(next.height).toBeGreaterThan(r.height);
+      r = next;
+    }
+    expect(r).toEqual({ x: 10, y: 10, width: 100, height: 178 });
+    const shrunk = nudgeRect(r, 'ArrowUp', 1, true, '9:16', big);
+    expect(shrunk.width).toBe(99);
+    expect(nudgeRect({ x: 10, y: 10, width: 90, height: 120 }, 'ArrowDown', 1, true, '3:4', big)).toEqual({ x: 10, y: 10, width: 91, height: 121 });
+    expect(nudgeRect({ x: 10, y: 10, width: 90, height: 120 }, 'ArrowUp', 1, true, '3:4', big)).toEqual({ x: 10, y: 10, width: 89, height: 119 });
+    // At the image edge nothing grows past it.
+    const edge = { x: 0, y: 0, width: 225, height: 400 };
+    expect(nudgeRect(edge, 'ArrowDown', 1, true, '9:16', { width: 225, height: 400 })).toEqual(edge);
+  });
+
   it('resizes the right/bottom edge with the modifier, keeping a fixed ratio', () => {
     expect(nudgeRect(r, 'ArrowRight', 10, true, 'free', b)).toEqual({ x: 100, y: 100, width: 210, height: 100 });
     expect(nudgeRect(r, 'ArrowDown', 10, true, 'free', b)).toEqual({ x: 100, y: 100, width: 200, height: 110 });

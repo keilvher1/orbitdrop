@@ -148,12 +148,16 @@ export function BackgroundEditor({ ctx, title }: { readonly ctx: EditorContext; 
   const box = usePreviewBox(RESERVED_HEIGHT, 340);
   const ranges = useMemo(() => sliderRanges(oriented, spec.maxEdge), [oriented, spec.maxEdge]);
 
-  const { preview, pending, error } = usePreview(ctx.editorId, spec, { maxEdge: previewEdgeFor(box) });
+  const { preview, pending, error, upToDate } = usePreview(ctx.editorId, spec, { maxEdge: previewEdgeFor(box) });
   const shown = useDecodedPreview(preview);
   const details = useMemo(() => safeLayout(oriented, spec), [oriented, spec]);
-  // The processor's layout is authoritative; the local one gives instant feedback while a preview renders.
-  const layout: CompositionLayout | null = (pending ? details?.layout : (preview?.layout ?? details?.layout)) ?? null;
-  const outputSize: Size | null = layout?.canvas ?? (preview?.outputWidth && preview.outputHeight ? { width: preview.outputWidth, height: preview.outputHeight } : null);
+  // The processor's layout is authoritative only for the settings it rendered; while a
+  // newer preview is pending or after one failed, the shared core layout (same math)
+  // describes the current settings.
+  const current = upToDate ? preview : null;
+  const layout: CompositionLayout | null = current?.layout ?? details?.layout ?? null;
+  const outputSize: Size | null =
+    layout?.canvas ?? (current?.outputWidth && current.outputHeight ? { width: current.outputWidth, height: current.outputHeight } : null);
   const display = fitSize(shown ? { width: shown.width, height: shown.height } : (details?.layout.canvas ?? oriented), box);
 
   const update = (patch: Partial<CompositionSpec>) => setSpec((s) => ({ ...s, ...patch }));

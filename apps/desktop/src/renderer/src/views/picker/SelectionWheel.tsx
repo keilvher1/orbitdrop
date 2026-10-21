@@ -7,10 +7,11 @@ import {
   type SubmitActionResult,
   type WheelMenu,
   type WheelMode,
+  type WheelSector,
 } from '@orbitdrop/contracts';
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useEnv } from '../../app/env';
-import { Notice, Spinner } from '../../components/Notice';
+import { Notice } from '../../components/Notice';
 import { Segmented } from '../../components/Segmented';
 import { formatBytes } from '../../i18n/format';
 import { Wheel } from '../../wheel/Wheel';
@@ -36,6 +37,8 @@ export function usableFiles(selection: FileSelection) {
  * File summary + wheel + mode toggle (변환 / 도구). The wheel comes before the
  * toggle in the tab order so Tab moves from the wheel to the toggle.
  */
+const NO_SECTORS: readonly WheelSector[] = [];
+
 export function SelectionWheel({ selection, initialMode, diameter, onSubmitted, onEscape, autoFocus = true }: SelectionWheelProps) {
   const { orbit, t, platform, settings } = useEnv();
   const key = selection.menuKey;
@@ -47,6 +50,15 @@ export function SelectionWheel({ selection, initialMode, diameter, onSubmitted, 
   const [error, setError] = useState<OrbitErrorInfo | null>(null);
   const [active, setActive] = useState<number | null>(null);
   const instructionsId = useId();
+  // A submit that resolves after this view went away (Back in the Drop Zone,
+  // another selection) must not report back to the parent.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (key === null) return undefined;
@@ -78,6 +90,7 @@ export function SelectionWheel({ selection, initialMode, diameter, onSubmitted, 
       setError(null);
       try {
         const result = await orbit.submitAction({ selectionId: selection.selectionId, actionId });
+        if (!mounted.current) return;
         if (result.kind === 'rejected') {
           setError(result.error);
           setBusy(false);
@@ -85,6 +98,7 @@ export function SelectionWheel({ selection, initialMode, diameter, onSubmitted, 
         }
         onSubmitted(result);
       } catch (reason) {
+        if (!mounted.current) return;
         setError(asErrorInfo(reason));
         setBusy(false);
       }
@@ -96,7 +110,8 @@ export function SelectionWheel({ selection, initialMode, diameter, onSubmitted, 
     return <UnsupportedSelection selection={selection} />;
   }
 
-  const sectors = menu?.sectors ?? [];
+  const loading = menu === null && menuError === null;
+  const sectors = menu?.sectors ?? NO_SECTORS;
   const activeSector = active === null ? undefined : sectors[active];
   let hint = t('wheel.instructions');
   if (activeSector !== undefined) {
@@ -118,24 +133,20 @@ export function SelectionWheel({ selection, initialMode, diameter, onSubmitted, 
         </Notice>
       ) : null}
       <div className="selection-wheel-stage">
-        {menu === null && menuError === null ? (
-          <div className="selection-wheel-placeholder" style={{ width: diameter, height: diameter }}>
-            <Spinner size={18} label={t('common.loading')} />
-          </div>
-        ) : (
-          <Wheel
-            sectors={sectors}
-            diameter={diameter}
-            label={mode === 'convert' ? t('wheel.label.convert') : t('wheel.label.tools')}
-            centerText={usable.length > 1 ? t.plural('common.files', usable.length) : sizeText}
-            onActivate={(sector) => void submit(sector.actionId)}
-            onEscape={onEscape}
-            onActiveChange={setActive}
-            busy={busy}
-            autoFocus={autoFocus}
-            describedBy={instructionsId}
-          />
-        )}
+        {/* The wheel stays mounted while its menu (re)loads — mode or language change —
+            so focus stays where it is (toggle or wheel) instead of being re-grabbed. */}
+        <Wheel
+          sectors={sectors}
+          diameter={diameter}
+          label={mode === 'convert' ? t('wheel.label.convert') : t('wheel.label.tools')}
+          centerText={loading ? t('common.loading') : usable.length > 1 ? t.plural('common.files', usable.length) : sizeText}
+          onActivate={(sector) => void submit(sector.actionId)}
+          onEscape={onEscape}
+          onActiveChange={setActive}
+          busy={busy}
+          autoFocus={autoFocus}
+          describedBy={instructionsId}
+        />
       </div>
       <span id={instructionsId} className="visually-hidden">
         {t('wheel.instructions')}

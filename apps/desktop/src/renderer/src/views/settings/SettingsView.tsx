@@ -21,7 +21,16 @@ import { SliderField } from '../../components/SliderField';
 import { TitleBar } from '../../components/TitleBar';
 import type { Translator } from '../../i18n/catalog';
 import { AboutContent } from './AboutView';
-import { MODIFIER_ORDER, normalizeCombo, sameCombo, toggleModifier, validateIntegerInRange, validateModifierCombos } from './settingsValidation';
+import {
+  MODIFIER_ORDER,
+  isModifierSupported,
+  normalizeCombo,
+  sameCombo,
+  toggleModifier,
+  validateIntegerInRange,
+  validateModifierCombos,
+  type ComboError,
+} from './settingsValidation';
 import './settings.css';
 
 type TabId = 'general' | 'output' | 'drag' | 'processing' | 'accessibility' | 'about';
@@ -319,6 +328,7 @@ function ModifierCombos({ settings, apply }: PanelProps) {
   const [draft, setDraft] = useState(() => ({ convert: normalizeCombo(convert), tools: normalizeCombo(tools) }));
   const [announcement, setAnnouncement] = useState('');
   const hintId = useId();
+  const macNoteId = useId();
   const savedKey = JSON.stringify([normalizeCombo(convert), normalizeCombo(tools)]);
 
   // Follow changes saved elsewhere (or our own save coming back).
@@ -326,12 +336,12 @@ function ModifierCombos({ settings, apply }: PanelProps) {
     setDraft({ convert: normalizeCombo(convert), tools: normalizeCombo(tools) });
   }, [savedKey]); // savedKey encodes both combos
 
-  const validation = validateModifierCombos(draft.convert, draft.tools);
+  const validation = validateModifierCombos(draft.convert, draft.tools, platform);
 
   const toggle = (field: 'convert' | 'tools', key: ModifierKey) => {
     const next = { ...draft, [field]: toggleModifier(draft[field], key) };
     setDraft(next);
-    const result = validateModifierCombos(next.convert, next.tools);
+    const result = validateModifierCombos(next.convert, next.tools, platform);
     if (result.valid) {
       setAnnouncement('');
       if (!sameCombo(next.convert, convert) || !sameCombo(next.tools, tools)) {
@@ -348,16 +358,31 @@ function ModifierCombos({ settings, apply }: PanelProps) {
       <p id={hintId} className="settings-hint">
         {t('settings.keysHint')}
       </p>
+      {platform === 'darwin' ? (
+        <p id={macNoteId} className="settings-hint">
+          {t('settings.keysMacNote')}
+        </p>
+      ) : null}
       <ModifierPicker
         field="convert"
         label={t('settings.convertKeys')}
         combo={draft.convert}
         error={validation.convert}
         hintId={hintId}
+        macNoteId={macNoteId}
         platform={platform}
         onToggle={toggle}
       />
-      <ModifierPicker field="tools" label={t('settings.toolsKeys')} combo={draft.tools} error={validation.tools} hintId={hintId} platform={platform} onToggle={toggle} />
+      <ModifierPicker
+        field="tools"
+        label={t('settings.toolsKeys')}
+        combo={draft.tools}
+        error={validation.tools}
+        hintId={hintId}
+        macNoteId={macNoteId}
+        platform={platform}
+        onToggle={toggle}
+      />
       <div className="visually-hidden" aria-live="assertive" aria-atomic="true">
         {announcement}
       </div>
@@ -371,14 +396,16 @@ function ModifierPicker({
   combo,
   error,
   hintId,
+  macNoteId,
   platform,
   onToggle,
 }: {
   readonly field: 'convert' | 'tools';
   readonly label: string;
   readonly combo: readonly ModifierKey[];
-  readonly error: 'empty' | 'tooMany' | 'same' | null;
+  readonly error: ComboError | null;
   readonly hintId: string;
+  readonly macNoteId: string;
   readonly platform: Platform;
   readonly onToggle: (field: 'convert' | 'tools', key: ModifierKey) => void;
 }) {
@@ -392,23 +419,33 @@ function ModifierPicker({
         {label}
       </span>
       <div className="modifier-group" role="group" aria-labelledby={labelId} aria-describedby={describedBy} data-invalid={error !== null}>
-        {MODIFIER_ORDER.map((key) => (
-          <button
-            key={key}
-            type="button"
-            className="btn-tool modifier-key"
-            aria-pressed={combo.includes(key)}
-            aria-describedby={error ? errorId : undefined}
-            onClick={() => onToggle(field, key)}
-          >
-            {platform === 'darwin' ? (
-              <span className="modifier-glyph" aria-hidden="true">
-                {MAC_GLYPHS[key]}
-              </span>
-            ) : null}
-            {modifierLabel(t, key, platform)}
-          </button>
-        ))}
+        {MODIFIER_ORDER.map((key) => {
+          const pressed = combo.includes(key);
+          const supported = isModifierSupported(key, platform);
+          // Unsupported keys (Control/Command on macOS) can't be added; one that is
+          // already in a saved combo stays enabled so it can be removed.
+          const describedByKey = [error ? errorId : null, supported ? null : macNoteId].filter(Boolean).join(' ') || undefined;
+          return (
+            <button
+              key={key}
+              type="button"
+              className="btn-tool modifier-key"
+              aria-pressed={pressed}
+              aria-describedby={describedByKey}
+              data-unsupported={!supported || undefined}
+              disabled={!supported && !pressed}
+              title={supported ? undefined : t('settings.keys.error.macUnsupported')}
+              onClick={() => onToggle(field, key)}
+            >
+              {platform === 'darwin' ? (
+                <span className="modifier-glyph" aria-hidden="true">
+                  {MAC_GLYPHS[key]}
+                </span>
+              ) : null}
+              {modifierLabel(t, key, platform)}
+            </button>
+          );
+        })}
       </div>
       {error ? (
         <p id={errorId} className="field-error">

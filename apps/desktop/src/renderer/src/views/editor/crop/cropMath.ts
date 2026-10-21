@@ -315,8 +315,20 @@ export function nudgeRect(r: Rect, key: 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' |
   if (!resize) return moveRect(r, dx, dy, bounds);
   const ratio = aspectValue(aspect);
   if (ratio === null) return resizeRect(r, dx !== 0 ? 'e' : 's', dx, dy, aspect, bounds);
-  // Fixed ratio: top-left stays, the size changes along the pressed axis.
-  const wanted = Math.max(1, r.width + (dx !== 0 ? dx : dy * ratio));
-  const size = maxSizeForRatio(ratio, { width: Math.min(Math.floor(bounds.width) - r.x, wanted), height: Math.floor(bounds.height) - r.y });
+  // Fixed ratio: top-left stays, the size changes along the pressed axis. For
+  // up/down the width follows the target height, rounded away from the current
+  // width so every press changes the size (otherwise a sub-pixel width step —
+  // e.g. 0.5625 px at 9:16 — would be floored away and the key would do nothing).
+  let wanted: number;
+  if (dx !== 0) {
+    wanted = r.width + dx;
+  } else {
+    const exact = (r.height + dy) * ratio;
+    wanted = dy > 0 ? Math.max(r.width + 1, Math.ceil(exact)) : Math.min(r.width - 1, Math.floor(exact));
+  }
+  const size = maxSizeForRatio(ratio, {
+    width: Math.min(Math.floor(bounds.width) - r.x, Math.max(1, wanted)),
+    height: Math.floor(bounds.height) - r.y,
+  });
   return clampRect({ x: r.x, y: r.y, ...size }, bounds);
 }

@@ -231,3 +231,10 @@
     fill: Highlight;
   }
 }
+
+/* macOS: Control/Command in a saved combo are flagged (they can only be removed). */
+.modifier-key[data-unsupported='true'][aria-pressed='true'] {
+  border-color: var(--c-warning-border);
+  background: var(--c-warning-bg);
+  color: var(--c-warning-text);
+}

@@ -1,6 +1,6 @@
 import { type FileSelection, type OrbitErrorInfo } from '@orbitdrop/contracts';
 import { ArrowDownToLine, ChevronLeft, FolderOpen } from 'lucide-react';
-import { useCallback, useRef, useState, type DragEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
 import { useEnv } from '../../app/env';
 import { useEscapeKey } from '../../app/useEscapeKey';
 import { useWindowFit } from '../../app/useWindowFit';
@@ -39,10 +39,30 @@ export function DropZoneView() {
   const [dragOver, setDragOver] = useState(false);
   const depth = useRef(0);
   const rootRef = useRef<HTMLDivElement>(null);
+  const openButtonRef = useRef<HTMLButtonElement>(null);
+  /**
+   * Bumped by every user action that replaces what the window shows (drop, open,
+   * back, submit). An async result (registration, open dialog) only applies if no
+   * newer action happened meanwhile, so the latest action always wins.
+   */
+  const generation = useRef(0);
+  const restoreFocus = useRef(false);
   useWindowFit(rootRef);
 
-  const reset = useCallback(() => setState({ kind: 'idle' }), []);
-  useEscapeKey(reset, state.kind === 'choose' || state.kind === 'unsupported');
+  /** Back to the drop target; focus moves to a stable control instead of <body>. */
+  const returnToIdle = useCallback(() => {
+    generation.current += 1;
+    restoreFocus.current = true;
+    setState({ kind: 'idle' });
+  }, []);
+  useEscapeKey(returnToIdle, state.kind === 'choose' || state.kind === 'unsupported');
+
+  useEffect(() => {
+    if (state.kind !== 'idle' || !restoreFocus.current) return;
+    restoreFocus.current = false;
+    const active = document.activeElement;
+    if (active === null || active === document.body || !rootRef.current?.contains(active)) openButtonRef.current?.focus();
+  }, [state.kind]);
 
   const accept = useCallback((selection: FileSelection) => {
     setStatus(null);
@@ -72,21 +92,29 @@ export function DropZoneView() {
       setStatus({ kind: 'notFiles' });
       return;
     }
+    const gen = ++generation.current;
     setStatus(null);
     setState({ kind: 'registering' });
     try {
-      accept(await orbit.registerDroppedFiles(files));
+      const selection = await orbit.registerDroppedFiles(files);
+      if (gen !== generation.current) return; // a newer drop/open/back happened
+      accept(selection);
     } catch (reason) {
+      if (gen !== generation.current) return;
+      restoreFocus.current = true;
       setState({ kind: 'idle' });
       setStatus({ kind: 'error', error: asErrorInfo(reason) });
     }
   };
 
   const openFiles = async () => {
+    const gen = ++generation.current;
     try {
       const selection = await orbit.openFileDialog();
-      if (selection !== null) accept(selection);
+      if (gen !== generation.current || selection === null) return;
+      accept(selection);
     } catch (reason) {
+      if (gen !== generation.current) return;
       setStatus({ kind: 'error', error: asErrorInfo(reason) });
     }
   };
@@ -110,7 +138,7 @@ export function DropZoneView() {
       <div className="dropzone-body">
         {choosing ? (
           <>
-            <button type="button" className="btn btn-ghost btn-small dropzone-back" onClick={reset}>
+            <button type="button" className="btn btn-ghost btn-small dropzone-back" onClick={returnToIdle}>
               <ChevronLeft size={14} aria-hidden="true" />
               {t('dropzone.back')}
             </button>
@@ -120,9 +148,10 @@ export function DropZoneView() {
                 selection={state.selection}
                 initialMode="convert"
                 diameter={diameter}
-                onEscape={reset}
+                onEscape={returnToIdle}
                 onSubmitted={(result) => {
-                  setState({ kind: 'idle' });
+                  // SelectionWheel reports only while mounted, i.e. for the selection on screen.
+                  returnToIdle();
                   setStatus(result.kind === 'jobs' ? { kind: 'started' } : { kind: 'editor' });
                 }}
               />
@@ -146,7 +175,7 @@ export function DropZoneView() {
                 </>
               )}
             </div>
-            <button type="button" className="btn dropzone-open" onClick={() => void openFiles()} disabled={state.kind === 'registering'}>
+            <button ref={openButtonRef} type="button" className="btn dropzone-open" onClick={() => void openFiles()} disabled={state.kind === 'registering'}>
               <FolderOpen size={15} aria-hidden="true" />
               {t('dropzone.open')}
             </button>

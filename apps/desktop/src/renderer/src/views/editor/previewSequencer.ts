@@ -22,6 +22,14 @@ export class PreviewSequencer {
     return true;
   }
 
+  /**
+   * Treat every outstanding request as stale (e.g. the options were cleared):
+   * their responses will be rejected by `accept`. Later requests work normally.
+   */
+  invalidate(): void {
+    this.applied = this.requested;
+  }
+
   /** A newer request than the last applied response is still outstanding. */
   get pending(): boolean {
     return this.applied < this.requested;

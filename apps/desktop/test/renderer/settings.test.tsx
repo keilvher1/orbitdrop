@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import './setup';
-import { isAllowedExternalUrl, type HelperStatus } from '@orbitdrop/contracts';
+import { DEFAULT_SETTINGS, isAllowedExternalUrl, type HelperStatus, type ModifierKey } from '@orbitdrop/contracts';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { PERMISSION_URLS, SettingsView } from '../../src/renderer/src/views/settings/SettingsView';
 import {
+  isModifierSupported,
   normalizeCombo,
   sameCombo,
   toggleModifier,
@@ -29,6 +30,18 @@ describe('modifier combo validation', () => {
   it('rejects empty and too many keys per field', () => {
     expect(validateModifierCombos([], ['shift'])).toMatchObject({ convert: 'empty', tools: null, valid: false });
     expect(validateModifierCombos(['shift'], ['shift', 'alt', 'control', 'command'])).toMatchObject({ convert: null, tools: 'tooMany', valid: false });
+  });
+
+  it('on macOS rejects Control and Command (AppKit turns the drag into Link/Generic, no Copy)', () => {
+    expect(validateModifierCombos(['control', 'shift'], ['alt', 'shift'], 'darwin')).toEqual({ convert: 'macUnsupported', tools: null, valid: false });
+    expect(validateModifierCombos(['shift'], ['command'], 'darwin')).toMatchObject({ convert: null, tools: 'macUnsupported', valid: false });
+    expect(validateModifierCombos(['control', 'shift'], ['alt', 'shift'], 'win32')).toMatchObject({ valid: true });
+    expect(validateModifierCombos(['shift'], ['alt', 'shift'], 'darwin')).toMatchObject({ valid: true });
+    // The "must differ" rule still applies on macOS.
+    expect(validateModifierCombos(['alt', 'shift'], ['shift', 'alt'], 'darwin')).toMatchObject({ convert: 'same', tools: 'same', valid: false });
+    expect(isModifierSupported('command', 'darwin')).toBe(false);
+    expect(isModifierSupported('command', 'win32')).toBe(true);
+    expect(isModifierSupported('alt', 'darwin')).toBe(true);
   });
 
   it('normalizes and toggles in canonical order', () => {
@@ -72,10 +85,10 @@ describe('SettingsView modifier keys', () => {
     const errorId = within(tools).getByRole('button', { name: 'Shift' }).getAttribute('aria-describedby');
     expect(errorId && document.getElementById(errorId)?.textContent).toBe(SAME_ERROR);
 
-    // Convert gets Control → valid again → both combos are saved together.
-    await user.click(within(convert).getByRole('button', { name: 'Control' }));
+    // Convert gets Option → valid again → both combos are saved together.
+    await user.click(within(convert).getByRole('button', { name: 'Option' }));
     expect(orbit.updateSettings).toHaveBeenCalledTimes(1);
-    expect(orbit.updateSettings).toHaveBeenCalledWith({ globalDrag: { convertModifiers: ['shift', 'control'], toolsModifiers: ['shift'] } });
+    expect(orbit.updateSettings).toHaveBeenCalledWith({ globalDrag: { convertModifiers: ['shift', 'alt'], toolsModifiers: ['shift'] } });
     await waitFor(() => expect(screen.queryAllByText(SAME_ERROR)).toHaveLength(0));
   });
 
@@ -86,6 +99,49 @@ describe('SettingsView modifier keys', () => {
     await user.click(within(convert).getByRole('button', { name: 'Shift' }));
     expect(screen.getAllByText('키를 하나 이상 고르세요.').length).toBeGreaterThan(0);
     expect(orbit.updateSettings).not.toHaveBeenCalled();
+  });
+
+  it('on macOS Control and Command cannot be chosen and the reason is explained', async () => {
+    const { orbit, user } = setup({ platform: 'darwin' });
+    await user.click(screen.getByRole('tab', { name: '드래그' }));
+    const note = screen.getByText(/macOS에서는 Control·Command 키를 쓸 수 없습니다\. 이 키를 누른 채/);
+    for (const name of ['변환 메뉴 키', '도구 메뉴 키']) {
+      const group = screen.getByRole('group', { name });
+      for (const key of ['Control', 'Command']) {
+        const button = within(group).getByRole('button', { name: key }) as HTMLButtonElement;
+        expect(button.disabled).toBe(true);
+        expect(button.getAttribute('aria-describedby')).toContain(note.id);
+      }
+      expect((within(group).getByRole('button', { name: 'Option' }) as HTMLButtonElement).disabled).toBe(false);
+    }
+    await user.click(within(screen.getByRole('group', { name: '변환 메뉴 키' })).getByRole('button', { name: 'Control' }));
+    expect(orbit.updateSettings).not.toHaveBeenCalled();
+  });
+
+  it('on macOS flags a saved combo with Command, lets the user remove it, then saves', async () => {
+    const orbit = createFakeOrbit({ platform: 'darwin' });
+    const settings = { ...DEFAULT_SETTINGS, globalDrag: { ...DEFAULT_SETTINGS.globalDrag, toolsModifiers: ['command', 'shift'] as ModifierKey[] } };
+    renderWithEnv(<SettingsView />, { orbit, settings });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: '드래그' }));
+    const tools = screen.getByRole('group', { name: '도구 메뉴 키' });
+    expect(screen.getByText('macOS에서는 Control·Command 키를 쓸 수 없습니다. 다른 키를 고르세요.')).toBeTruthy();
+    const command = within(tools).getByRole('button', { name: 'Command' }) as HTMLButtonElement;
+    expect(command.getAttribute('aria-pressed')).toBe('true');
+    expect(command.disabled).toBe(false);
+    await user.click(command); // tools = Shift, same as convert → still invalid, nothing saved
+    expect(orbit.updateSettings).not.toHaveBeenCalled();
+    await user.click(within(tools).getByRole('button', { name: 'Option' }));
+    expect(orbit.updateSettings).toHaveBeenCalledWith({ globalDrag: { convertModifiers: ['shift'], toolsModifiers: ['shift', 'alt'] } });
+  });
+
+  it('on Windows Control and the Windows key stay available', async () => {
+    const { user } = setup({ platform: 'win32' });
+    await user.click(screen.getByRole('tab', { name: '드래그' }));
+    expect(screen.queryByText(/macOS에서는 Control·Command/)).toBeNull();
+    const convert = screen.getByRole('group', { name: '변환 메뉴 키' });
+    expect((within(convert).getByRole('button', { name: 'Ctrl' }) as HTMLButtonElement).disabled).toBe(false);
+    expect((within(convert).getByRole('button', { name: 'Windows' }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('labels keys for Windows', async () => {

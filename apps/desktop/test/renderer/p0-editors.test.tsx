@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import './setup';
-import { BACKGROUND_PRESETS, CompositionSpecSchema, CropOptionsSchema, DEFAULT_SETTINGS } from '@orbitdrop/contracts';
-import { screen, waitFor, within } from '@testing-library/react';
+import { BACKGROUND_PRESETS, CompositionSpecSchema, CropOptionsSchema, DEFAULT_SETTINGS, type CompositionSpec, type SubmitActionResult } from '@orbitdrop/contracts';
+import { computeCompositionLayout } from '@orbitdrop/core';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { presetBackgroundStyle } from '../../src/renderer/src/views/editor/background/backgroundCss';
 import { BackgroundEditor, readCompositionDefaults, sliderRanges } from '../../src/renderer/src/views/editor/background/BackgroundEditor';
 import { CropEditor } from '../../src/renderer/src/views/editor/crop/CropEditor';
-import { createFakeOrbit, renderWithEnv, sampleEditorContext, sampleImageInfo } from './helpers';
+import { createFakeOrbit, deferred, renderWithEnv, sampleEditorContext, sampleImageInfo } from './helpers';
 
 const pageInfo = sampleImageInfo({ width: 2550, height: 3300, orientedWidth: 2550, orientedHeight: 3300, orientation: 1 });
 
@@ -103,6 +104,43 @@ describe('Crop editor', () => {
     expect(orbit.cancelEditor).toHaveBeenCalledWith('ed1');
   });
 
+  it('after Enter confirms a W value, further typing + Esc reverts to the confirmed value and keeps the editor open', async () => {
+    const { orbit } = renderWithEnv(<CropEditor ctx={cropCtx()} title="이미지 자르기" />);
+    const user = userEvent.setup();
+    const w = screen.getByLabelText('너비') as HTMLInputElement;
+    await user.clear(w);
+    await user.type(w, '1000{Enter}');
+    await user.type(w, 'x');
+    expect(w.value).toBe('1000x');
+    await user.keyboard('{Escape}');
+    expect(w.value).toBe('1000');
+    expect(orbit.cancelEditor).not.toHaveBeenCalled();
+    expect(orbit.closeWindow).not.toHaveBeenCalled();
+  });
+
+  it('while saving, × is disabled and Esc does nothing — the save completes and then closes', async () => {
+    const orbit = createFakeOrbit();
+    const pending = deferred<SubmitActionResult>();
+    orbit.commitEditor.mockImplementation(() => pending.promise);
+    renderWithEnv(<CropEditor ctx={cropCtx()} title="이미지 자르기" />, { orbit });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: '적용' }));
+    expect(screen.getByRole('button', { name: /저장하는 중/ })).toBeTruthy();
+    const close = screen.getByRole('button', { name: '취소하고 닫기' }) as HTMLButtonElement;
+    expect(close.disabled).toBe(true);
+    await user.click(close);
+    await user.keyboard('{Escape}');
+    expect(orbit.cancelEditor).not.toHaveBeenCalled();
+    expect(orbit.closeWindow).not.toHaveBeenCalled();
+    await act(async () => {
+      pending.resolve({ kind: 'jobs', jobIds: ['j1'] });
+      await Promise.resolve();
+    });
+    expect(orbit.closeWindow).toHaveBeenCalledTimes(1);
+    expect(orbit.cancelEditor).not.toHaveBeenCalled();
+    expect(orbit.commitEditor).toHaveBeenCalledTimes(1);
+  });
+
   it('Reset restores the defaults; Esc cancels without writing', async () => {
     const { orbit } = renderWithEnv(<CropEditor ctx={cropCtx()} title="이미지 자르기" />);
     const user = userEvent.setup();
@@ -189,6 +227,33 @@ describe('Add Background editor', () => {
     await waitFor(() => expect(orbit.commitEditor).toHaveBeenCalledTimes(1));
     const options = orbit.commitEditor.mock.calls[0]![0].options;
     expect(CompositionSpecSchema.parse(options)).toEqual({ ...defaults, background: { kind: 'preset', presetId: 'peach' }, padding: 300, ratio: '16:9' });
+  });
+
+  it('after a failed preview the output size and notes describe the current settings, not the last good preview', async () => {
+    const info = sampleImageInfo({ width: 2000, height: 1000, orientedWidth: 2000, orientedHeight: 1000 });
+    const start: CompositionSpec = { background: { kind: 'preset', presetId: 'ember' }, padding: 100, cornerRadius: 0, shadow: 0, ratio: 'auto', maxEdge: 2400, format: 'png', quality: 92 };
+    const orbit = createFakeOrbit();
+    let calls = 0;
+    orbit.requestPreview.mockImplementation(async (request) => {
+      calls += 1;
+      if (calls > 1) return { ok: false, seq: request.seq, error: { code: 'INTERNAL', message: 'render failed', retryable: false } };
+      const layout = computeCompositionLayout(2000, 1000, request.options as CompositionSpec);
+      return { ok: true, seq: request.seq, url: 'orbit-preview://p/first', width: 440, height: 240, outputWidth: layout.canvas.width, outputHeight: layout.canvas.height, layout };
+    });
+    const ctx = sampleEditorContext('tool.addBackground', { image: info, defaults: start });
+    renderWithEnv(<BackgroundEditor ctx={ctx} title="배경 추가" />, { orbit });
+    await screen.findByAltText('처리 결과 미리보기'); // first preview rendered for 'auto'
+    expect(calls).toBe(1);
+    expect(screen.getByText('출력 2200 × 1200 px')).toBeTruthy();
+    await userEvent.setup().click(screen.getByRole('radio', { name: '16:9' }));
+    await waitFor(() => expect(calls).toBe(2));
+    expect(await screen.findByText(/미리보기를 만들지 못했습니다/)).toBeTruthy();
+    const expected = computeCompositionLayout(2000, 1000, { ...start, ratio: '16:9' }).canvas;
+    expect(expected).toEqual({ width: 2200, height: 1238 });
+    expect(screen.getByText('출력 2200 × 1238 px')).toBeTruthy();
+    expect(screen.getByText('선택한 비율에 맞추느라 한쪽 여백이 설정값보다 넓어졌습니다.')).toBeTruthy();
+    // The last good image stays on screen.
+    expect(screen.getByAltText('처리 결과 미리보기').getAttribute('src')).toBe('orbit-preview://p/first');
   });
 
   it('picks a background image through main and selects it', async () => {
