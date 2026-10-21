@@ -129,7 +129,8 @@ export async function encodeImage(
       pipeline = pipeline.jpeg({ quality, mozjpeg: true, chromaSubsampling: quality >= 90 ? '4:4:4' : '4:2:0' });
       break;
     case 'png':
-      pipeline = pipeline.png(options.pngPalette ? { palette: true, quality, effort: 8, compressionLevel: 9 } : { compressionLevel: 9, effort: 7 });
+      // Level 6 (zlib's default) is ~12× faster than 9 on large images for ~20% larger files.
+      pipeline = pipeline.png(options.pngPalette ? { palette: true, quality, effort: 8, compressionLevel: 9 } : { compressionLevel: 6 });
       break;
     case 'webp':
       pipeline = pipeline.webp({ quality, effort: 5 });

@@ -55,12 +55,15 @@ re-running its checks.
 |---|---|---|
 | core | landed: golden vectors, coords, selection, hardened queue/output/validate (221 tests) | 0e016b6 |
 | processors-convert | running | |
-| processors-edit | finishing (own review pass) | |
+| processors-edit | landed: crop, add background, compress, metadata, edit, annotate, redact (83 tool tests + 20 core + editors integration) | f148070 |
 | macos-helper | running | |
 | windows-helper | running (mingw compile + host tests only) | |
 | desktop-main | running | |
-| desktop-renderer | running | |
+| desktop-renderer | landed: wheel, all editors, jobs, settings, Drop Zone, ko/en (182 tests; 25/26 real-app checks, the failure is convert.pdf) | 84d25c2 |
 | packaging-docs | running | |
+
+All workstream agents were interrupted twice on 2026-10-21 (API connection
+drop, then the account usage limit) and were resumed from their transcripts.
 
 Lead-owned checks so far:
 - `tests/integration/video-flow.test.ts` reproduces the reference recording
@@ -76,3 +79,15 @@ other workstreams compile against, so they wait until everyone has landed):
   as PDF_CORRUPT / IMAGE_CORRUPT / UNSUPPORTED_FORMAT); needs ko/en strings.
 - Done now (doc comments only): sessionId uniqueness across helper restarts,
   `Idle` ends a session, effective minimum diameter `min(minDiameter, diameter)`.
+- Tokens: white on light `accent`/`sectorActive` #F2552C is 3.44:1 but is used
+  for 13–15 px bold labels. Change to #D4441C (4.52:1; the reference's active
+  sector is this deep red-orange too), hover/pressed darker, and update the
+  native defaults (`DefaultConfig.swift`, `defaults.cpp`) and the macOS
+  ProtocolTests assertion in the same commit. Add `warning`/`warningBg` tokens.
+- Document `JobWarning.params` names (UI reads `pages`, `width`, `height`).
+- Optional, from processors-edit: `CompositionLayout.paddingReducedByMaxEdge` /
+  `effectivePadding`, a lossless-vs-re-encoded flag for metadata removal,
+  `PreviewResult.outputFormat`; re-export `clearPreviewCaches` /
+  `detectKoreanFont` from `@orbitdrop/processors` if main uses them.
+- Renderer API gaps (P1/P2 polish): PDF-order thumbnails, batch Compress
+  estimates beyond the first file, "clear finished jobs", generic retry.
