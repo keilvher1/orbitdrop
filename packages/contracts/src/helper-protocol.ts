@@ -33,7 +33,10 @@ import { ActionIdSchema, Id, LocaleSchema, MenuKeySchema, ModifierCombo, WheelMo
 export const HELPER_PROTOCOL_VERSION = 1 as const;
 export const HELPER_MAX_LINE_BYTES = 1_048_576;
 export const HELPER_MAX_FILES = 200;
-/** Long Windows paths can reach 32767 UTF-16 units. */
+/**
+ * Long Windows paths can reach 32767 UTF-16 units. zod counts code points,
+ * which is never more than the UTF-16 count, so such paths still pass.
+ */
 export const HELPER_MAX_PATH_LENGTH = 32_767;
 
 const v = z.literal(HELPER_PROTOCOL_VERSION);

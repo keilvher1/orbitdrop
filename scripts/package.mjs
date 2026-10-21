@@ -212,6 +212,12 @@ for (const a of archs) {
   }
   if (existsSync(stagedHelper(a))) console.log(`  helper staged: ${rel(stagedHelper(a))} (${mb(statSync(stagedHelper(a)).size)})`);
   else incomplete.push(`native helper not staged at ${rel(stagedHelper(a))}`);
+  // A MinGW cross-build from macOS is a compile check only; never package it as a real installer.
+  const buildInfo = join(dirname(stagedHelper(a)), 'BUILD_INFO.txt');
+  if (target === 'win' && existsSync(buildInfo) && readFileSync(buildInfo, 'utf8').includes('CROSS-COMPILED')) {
+    if (process.env.ORBITDROP_ALLOW_CROSS_HELPER === '1') console.log(`  WARNING: ${rel(buildInfo)} says CROSS-COMPILED (allowed by ORBITDROP_ALLOW_CROSS_HELPER=1; not for release)`);
+    else fatal(`${rel(buildInfo)} says CROSS-COMPILED / NOT VERIFIED ON WINDOWS. Build the helper on Windows (node scripts/build-native-win.mjs), or set ORBITDROP_ALLOW_CROSS_HELPER=1 for a config-only test build.`);
+  }
 }
 const helperMissing = archs.some((a) => !existsSync(stagedHelper(a)));
 if (incomplete.length && !opts.allowIncomplete) fatal(`cannot package:\n  - ${incomplete.join('\n  - ')}\n  (use --allow-incomplete to test the pipeline anyway; artifacts will be labelled "-incomplete")`);
