@@ -136,6 +136,20 @@ export function clearCompressCaches(): void {
   previewCache.clear();
 }
 
+/**
+ * Full-resolution preview encodes run one at a time per worker. A request that
+ * was superseded (aborted) while waiting never starts its encode, and a queued
+ * request whose options were encoded in the meantime is served from the cache —
+ * so dragging the quality slider cannot pile up full-size encodes.
+ */
+let encodeChain: Promise<unknown> = Promise.resolve();
+
+function serially<T>(task: () => Promise<T>): Promise<T> {
+  const run = encodeChain.then(task, task);
+  encodeChain = run.catch(() => undefined);
+  return run;
+}
+
 export async function previewCompress(request: PreviewRequest, signal: AbortSignal): Promise<PreviewResult> {
   const options = parseToolOptions('tool.compress', request.options);
   try {
@@ -153,18 +167,24 @@ export async function previewCompress(request: PreviewRequest, signal: AbortSign
     const hit = previewCache.get(previewKey);
     if (hit) return hit;
 
-    let entry = encodeCache.get(encodeKey);
-    if (!entry) {
-      const image = await loadImage(request.input, request.limits, signal);
-      throwIfCancelled(signal);
-      entry = { encoded: await encodeCompressed(image, options, request.settings), sourceWidth: image.width, sourceHeight: image.height };
-      encodeCache.set(encodeKey, entry, entry.encoded.data.length);
-    }
+    const entry =
+      encodeCache.get(encodeKey) ??
+      (await serially(async () => {
+        const cached = encodeCache.get(encodeKey);
+        if (cached) return cached;
+        throwIfCancelled(signal);
+        const image = await loadImage(request.input, request.limits, signal);
+        throwIfCancelled(signal);
+        const fresh: EncodeCacheEntry = { encoded: await encodeCompressed(image, options, request.settings), sourceWidth: image.width, sourceHeight: image.height };
+        encodeCache.set(encodeKey, fresh, fresh.encoded.data.length);
+        return fresh;
+      }));
     throwIfCancelled(signal);
     const { encoded } = entry;
-    // Decode the real encoded bytes so the preview shows the actual artefacts.
+    // Decode the real encoded bytes so the preview shows the actual artefacts. The result is never
+    // larger than the input, so the input pixel limit applies (jobs accept that much, too).
     const raw = await toRaw(
-      sharp(encoded.data, { limitInputPixels: request.limits.maxOutputPixels })
+      sharp(encoded.data, { limitInputPixels: request.limits.maxInputPixels })
         .resize({ width: maxEdge, height: maxEdge, fit: 'inside', withoutEnlargement: true })
         .toColourspace('srgb')
         .ensureAlpha(),

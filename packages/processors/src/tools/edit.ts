@@ -31,9 +31,11 @@ import { getScaledSource } from './source-cache';
  *   ks = 1 + saturation/100   (−100 → greyscale, +100 → ×2)  CSS saturate() matrix
  *                                                            (luma 0.213/0.715/0.072)
  * Brightness and contrast are folded into one linear op a·x + b with
- * a = kb·kc, b = ½·(1 − kc) (½ = 127.5 for 8-bit, 32767.5 for 16-bit input);
- * the saturation matrix rows sum to 1, so it commutes with that op (results
- * only differ where values clip). Alpha is untouched.
+ * a = kb·kc, b = 127.5·(1 − kc). Pipelines from `loadImage` are always 8-bit
+ * (16-bit inputs are normalized at load), which matters: sharp runs recomb
+ * before linear and recomb casts to 8-bit sRGB, so a 16-bit offset would land
+ * on 8-bit data. The saturation matrix rows sum to 1, so it commutes with the
+ * linear op (results only differ where values clip). Alpha is untouched.
  */
 
 /** CSS `saturate(s)` colour matrix (Filter Effects Level 1). */
@@ -56,7 +58,7 @@ export function editedSize(width: number, height: number, rotate: EditOptions['r
  * mirrors: for 90°/270° a horizontal mirror after the rotation is a vertical
  * mirror before it (R⁻¹·H·R = V); for 0°/180° they are unchanged.
  */
-export function applyEdit(pipeline: Sharp, options: EditOptions, info: { sixteenBit: boolean; grey: boolean }): Sharp {
+export function applyEdit(pipeline: Sharp, options: EditOptions, info: { grey: boolean }): Sharp {
   let p = pipeline;
   const swap = options.rotate === 90 || options.rotate === 270;
   const mirrorLeftRight = swap ? options.flipV : options.flipH;
@@ -67,9 +69,8 @@ export function applyEdit(pipeline: Sharp, options: EditOptions, info: { sixteen
   const kb = 1 + options.brightness / 100;
   const kc = 1 + options.contrast / 100;
   const ks = 1 + options.saturation / 100;
-  const mid = info.sixteenBit ? 32767.5 : 127.5;
   const a = kb * kc;
-  const b = mid * (1 - kc);
+  const b = 127.5 * (1 - kc);
   if (a !== 1 || b !== 0) p = p.linear(a, b);
   if (ks !== 1 && !info.grey) p = p.recomb(saturationMatrix(ks));
   return p;
@@ -83,7 +84,7 @@ export async function runEdit(job: ProcessorJob, ctx: ProcessorRunContext): Prom
     stage(ctx.onProgress, 'reading');
     const image = await loadImage(input, job.limits, signal);
     const format = await resolveToolFormat(options.outputFormat, input.format);
-    const info = { sixteenBit: image.meta.depth === 'ushort', grey: image.meta.space === 'b-w' || image.meta.space === 'grey16' };
+    const info = { grey: image.grey };
     throwIfCancelled(signal);
     stage(ctx.onProgress, 'rendering');
     const encoded = await encodeToolImage(() => applyEdit(image.open(), options, info), {
@@ -109,7 +110,7 @@ export async function previewEdit(request: PreviewRequest, signal: AbortSignal):
     const maxEdge = Math.max(16, Math.floor(request.maxEdge));
     const source = await getScaledSource(request.input, request.limits, () => maxEdge, signal);
     throwIfCancelled(signal);
-    const raw = await toRaw(applyEdit(sharpFromRaw(source), options, { sixteenBit: false, grey: false }));
+    const raw = await toRaw(applyEdit(sharpFromRaw(source), options, { grey: false }));
     const preview = await encodePreview(raw);
     const out = editedSize(source.sourceWidth, source.sourceHeight, options.rotate);
     return {

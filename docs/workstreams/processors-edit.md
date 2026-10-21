@@ -34,9 +34,10 @@ tools fall back to PNG output when HEIC/BMP encoders are unavailable.
 node_modules/.bin/tsc -p packages/core/tsconfig.json
 node_modules/.bin/tsc -p packages/processors/tsconfig.json
 node_modules/.bin/vitest run --root packages/core          # composition-layout (14), annotations-draw (6) + core's own
-node_modules/.bin/vitest run --root packages/processors    # tools-*.test.ts (83): crop 8, add-background 10, compress 7,
+node_modules/.bin/vitest run --root packages/processors    # tools-*.test.ts (92): crop 8, add-background 10, compress 7,
                                                            # metadata 14, edit 7, annotate 7, redact 8, preview/runTool 9,
-                                                           # matrix 13 (every tool × 13 input variants)
+                                                           # matrix 13 (every tool × 13 input variants),
+                                                           # colour 9 (16-bit + wide-gamut outputs decoded, resource use)
 node_modules/.bin/vitest run --root tests/integration      # editors.test.ts (4) + video-flow
 ```
 
@@ -45,7 +46,7 @@ node_modules/.bin/vitest run --root tests/integration      # editors.test.ts (4)
 - `core/src/composition-layout.ts` — layout math (documented at the top of the file).
 - `core/src/annotations-draw.ts` — one drawing routine for the browser canvas and @napi-rs/canvas.
 - `processors/src/tools/index.ts` — `runTool`, `renderToolPreview`, `inspectImage` (dispatcher entry points) + `renderComposition`, `resolveAnnotationFont`, `detectKoreanFont`, `clearPreviewCaches`, `clearCompressCaches`.
-- `tools/common.ts` (option parsing → INVALID_OPTIONS, loading, format resolution, encoding with PNG fallback, naming, writing, preview encoding), `source-cache.ts` (LRU of downscaled decodes), `preview.ts` (preview dispatcher + `source`), `crop.ts`, `add-background.ts`, `backgrounds.ts` (preset SVG, CSS-angle gradients, masks), `compress.ts`, `metadata.ts`, `metadata-lossless.ts`, `exif.ts`, `icc.ts`, `edit.ts`, `annotate.ts`, `fonts.ts`, `redact.ts`.
+- `tools/common.ts` (option parsing → INVALID_OPTIONS, loading + 8-bit normalization, format resolution, encoding with PNG fallback, naming, writing, preview encoding), `profile.ts` (sRGB overlay colours → kept ICC profile), `boxes.ts` (clustering of overlay/region boxes), `source-cache.ts` (LRU of downscaled decodes), `preview.ts` (preview dispatcher + `source`), `crop.ts`, `add-background.ts`, `backgrounds.ts` (preset SVG, CSS-angle gradients, masks), `compress.ts`, `metadata.ts`, `metadata-lossless.ts`, `exif.ts`, `icc.ts`, `edit.ts`, `annotate.ts`, `fonts.ts`, `redact.ts`.
 
 ## Design decisions
 
@@ -73,12 +74,15 @@ node_modules/.bin/vitest run --root tests/integration      # editors.test.ts (4)
 - Measured preview ↔ downscaled final mean |Δ| (2400×1600 source, previews 480/960 px): Add BG 0.66–0.77, Edit 0.47–0.88, Annotate 0.79–0.90, Redact 0.58–0.68 (of 255). Tests assert < 3–4.
 - `source`: JPEG q90, PNG when transparent; `sourceWidth/Height` = oriented full size.
 - Result fields per kind: crop → region preview, `output*` = rect; addBackground → canvas preview + `layout`; edit → edited preview, `output*` = rotated full size; compress → image decoded from the real full-size encode (PNG, no extra artefacts), `output*` = encoded size, `estimatedBytes` = its byte length (encode cached per options; a new maxEdge reuses it); annotate/redact → full image with overlays, `output*` = source size.
-- Measured (6000×4000 JPEG, M-series Mac): first `source` decode 42 ms, cached 6 ms; addBackground previews 30–70 ms; edit/annotate/redact previews ~10 ms; compress preview 0.44 s first (full-res encode), cached 0 ms. Jobs: crop 0.7 s, addBackground (2400) 0.3 s, edit 1.8 s, annotate 1.6 s, redact 1.4 s, compress 0.4 s, lossless strip 34 ms; extreme addBackground (8000 px, shadow 400) 4.5 s.
+- Compress previews: full-resolution encodes run one at a time per worker; a request superseded while queued never starts its encode, and a queued request whose options were encoded meanwhile is served from the cache (slider drags cannot pile up full-size encodes). Decoding the encoded result uses the input pixel limit (what jobs accept), not the output limit.
+- Crop preview: reuses the cached downscaled decode when the region needs at most a 2×maxEdge decode; otherwise (small rect on a big photo) only the region is decoded from the file — no full-resolution copy in the cache.
+- Measured (6000×4000 JPEG, M-series Mac): first `source` decode 41 ms, cached 6 ms; addBackground previews 27–42 ms; edit/annotate/redact previews ~10 ms (the first annotate in a worker also loads the canvas module and checks the Hangul font: ~0.25 s once); compress preview 0.45 s first (full-res encode), cached 0 ms; crop preview of a small region 18 ms. Jobs: crop 0.7 s, addBackground (2400) 0.3 s, edit 1.9 s, annotate 1.6 s, redact 1.4 s, compress 0.4 s, lossless strip 37 ms; extreme addBackground (8000 px, shadow 400) 2.3 s.
 
 ### Output formats and names — `common.ts`
 - `outputFormat: 'input'`: JPEG/PNG/WebP kept; AVIF/TIFF kept when sharp encodes them; BMP/HEIC kept when their codecs are available, else PNG; GIF → PNG (tools work on the first frame).
 - Name = `toolResultName(displayName, ACTIONS[id].outputSuffix, ext)`; when the format is unchanged the input's own extension spelling is kept (`IMG.JPEG` → `IMG Cropped.JPEG`), otherwise the canonical one.
-- Colour: crop/edit/annotate/redact keep an RGB ICC profile (P3/Adobe RGB stay exact, no gamut clipping; drawn colours are interpreted in that space); CMYK/grey profiles are converted to sRGB. Add Background and Compress (without keepMetadata) convert to sRGB. EXIF/XMP/IPTC are never copied by tools (orientation is applied to pixels first). Output is 8-bit.
+- Colour: crop/edit/annotate/redact keep an RGB ICC profile (P3/Adobe RGB stay exact, no gamut clipping); drawn colours (annotation strokes/text, solid redaction boxes) are converted from sRGB into that profile so they display as requested and as in the preview (profile.ts; the embedded profile is written to a private temp folder for sharp and removed). CMYK/grey profiles are converted to sRGB. Add Background and Compress (without keepMetadata) convert to sRGB. EXIF/XMP/IPTC are never copied by tools (orientation is applied to pixels first). Output is 8-bit.
+- Loading (`loadImage`): `open()` builds a fresh pipeline from one shared buffer (never `Sharp.clone()`, which deep-copies the input on every call). BMP is decoded once by the builtin codec. HEIC and every input that is not 8 bits per channel (16-bit PNG/TIFF, high-bit-depth AVIF, float TIFF) are normalized once into an 8-bit lossless PNG intermediate: depth only, no geometry, RGB profile kept, CMYK converted, EXIF/XMP carried (so Compress' keepMetadata still works); `open()` applies the EXIF orientation on that 8-bit data. Reason (all reproduced with sharp 0.35.5): RGB16 with a profile is processed in Display P3 and written back without conversion (wrong colours, no profile); recomb casts to 8-bit before linear (16-bit Edit offsets turned images black/white); rotating 16-bit data (incl. auto-orientation) drops a kept profile.
 - JPEG targets flatten alpha (`flattenBackground` for crop, white elsewhere); `ALPHA_FLATTENED` only when the image really had transparent pixels.
 
 ### Crop
@@ -99,7 +103,7 @@ node_modules/.bin/vitest run --root tests/integration      # editors.test.ts (4)
 
 ### Annotate
 - `drawAnnotations` rules: rect outline centred on the edge (miter); arrow shaft with round tail, filled head length max(4·stroke, 10), half-width ½·length (shrinks on short arrows), tip exactly at (x2, y2); text top-left anchored (`textBaseline: 'top'`), lines split on `\n`, advance 1.25·fontSize, bold flag; everything × `scale`; shapes in order.
-- Final render: transparent @napi-rs/canvas tiles covering only the shapes' bounding box (≤ 16 Mpx per tile), composited with sharp at full resolution; format kept (JPEG stays JPEG).
+- Final render: transparent @napi-rs/canvas tiles per cluster of nearby shapes (cluster boxes are disjoint, so marks in opposite corners of a 100 MP photo are two small tiles; ≤ 16 Mpx per tile), composited with sharp at full resolution; format kept (JPEG stays JPEG).
 - Font: first of `ANNOTATION_FONT_CANDIDATES` (Apple SD Gothic Neo, AppleGothic, Malgun Gothic, Noto Sans CJK KR, Noto Sans KR, NanumGothic) that the canvas backend has **and** that draws distinct Hangul glyphs; `(await resolveAnnotationFont()).css` puts it first in the family list (`detectKoreanFont()` returns just the family).
 - @napi-rs/canvas is imported lazily (`loadCanvas()`): a missing/broken canvas binary only makes Annotate fail with `ENGINE_UNAVAILABLE`; the other tools never load it.
 
@@ -107,13 +111,25 @@ node_modules/.bin/vitest run --root tests/integration      # editors.test.ts (4)
 - `solid`: opaque box in the exact colour. `mosaic`: blockSize cells aligned to the region's top-left (partial cells at the edges), each the alpha-weighted mean of its pixels. **Mosaic is not a guaranteed removal of information** — use solid for anything that must not be recoverable (UI should say so).
 - Regions partly outside are clipped; fully outside → `INVALID_OPTIONS`. On transparent images the region is cleared first (`dest-out`) so nothing shows through. Output re-encoded from pixels: no EXIF/GPS/thumbnail/XMP/IPTC (ICC kept for RGB).
 
+### Redact resource use
+- Solid boxes are sharp `create` inputs (no W×H×4 buffers); mosaic pixels are decoded per cluster of nearby mosaic regions, not for the union of all regions.
+
 ### Review log
 - 2026-10-21: independent code review (in progress when this was written) flagged the JFIF APP0
   thumbnail cutter: it read the thumbnail size at offsets 18/19 instead of 16/17 and cut the
   segment at 20 bytes, which corrupted APP0 when a JFIF thumbnail was present (verification then
   forced the re-encode path). Fixed (`jfifWithoutThumbnail`, 18-byte segment, malformed APP0
   dropped) and covered by a test with a real 2×2 JFIF thumbnail (lossless path proven by identical
-  scan data). Further findings, if any, are to be forwarded by the lead.
+  scan data).
+- Review verdict (REQUEST CHANGES), all reproduced and fixed with regression tests in
+  `test/tools-colour.test.ts`: (1) 16-bit Edit tone → black/white; (2) 16-bit profiled input written as
+  P3 numbers without a profile on every sRGB path (Compress, Add BG, Metadata convertToSrgb, previews);
+  (3) Edit rotate/flipV on 16-bit dropped the kept profile (also EXIF auto-orientation) — all three via the
+  8-bit normalization above; (4) overlay colours on wide-gamut images → converted into the profile;
+  (5) `open()` deep copies → factory; (6) overlays/mosaic decodes sized from the union of all shapes →
+  clusters, solid patches via `create`; (7) Compress preview queueing + pixel-limit mismatch; (8) crop
+  preview full-resolution decode for small rects → region decode; (9) shadow blur ran on 4 channels →
+  1-channel buffer (2.3 s instead of 4.5–5.2 s for the 8000 px / shadow 400 case).
 
 ## Notes for the renderer / main
 

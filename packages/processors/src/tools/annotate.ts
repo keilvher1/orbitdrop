@@ -15,20 +15,26 @@ import {
   toRaw,
   toToolError,
   writeToolOutput,
+  type LoadedImage,
 } from './common';
+import { clipBox, clusterBoxes } from './boxes';
 import { loadCanvas, resolveAnnotationFont } from './fonts';
+import { needsProfileConversion, srgbToProfile, withProfileFile } from './profile';
 import { getScaledSource } from './source-cache';
 
 /**
  * Annotate (P1). Shapes are drawn with the shared `drawAnnotations` routine
  * (@orbitdrop/core, also used by the renderer's live canvas) onto transparent
- * @napi-rs/canvas tiles covering only the shapes' bounding box, at full
- * resolution of the oriented image, then composited over the image with sharp.
+ * @napi-rs/canvas tiles at full resolution of the oriented image, then
+ * composited over the image with sharp. Tiles cover only clusters of nearby
+ * shapes (boxes.ts), so scattered marks on a huge photo stay cheap. On images
+ * that keep a wide-gamut profile the sRGB overlay colours are converted into
+ * that profile (profile.ts), so the export shows the colour the editor showed.
  * The input format is kept by default (JPEG stays JPEG). Text uses a
  * Hangul-capable system font (see fonts.ts).
  */
 
-/** Largest overlay tile, in pixels, so huge images never need one giant canvas. */
+/** Largest overlay tile, in pixels, so huge clusters never need one giant canvas. */
 const MAX_TILE_PIXELS = 16 * 1024 * 1024;
 
 export interface OverlayTile {
@@ -49,26 +55,38 @@ export async function renderAnnotationTiles(
 ): Promise<OverlayTile[]> {
   const { createCanvas } = await loadCanvas();
   const measure = createCanvas(1, 1).getContext('2d');
-  const bounds = annotationBounds(shapes, { scale, fontFamily }, measure);
-  if (!bounds) return [];
-  const left = Math.max(0, bounds.x);
-  const top = Math.max(0, bounds.y);
-  const right = Math.min(width, bounds.x + bounds.width);
-  const bottom = Math.min(height, bounds.y + bounds.height);
-  if (right <= left || bottom <= top) return [];
-  const w = right - left;
-  const tileRows = Math.max(1, Math.floor(MAX_TILE_PIXELS / w));
+  const boxes = shapes.map((shape) => {
+    const b = annotationBounds([shape], { scale, fontFamily }, measure);
+    return b ? clipBox(b, width, height) : null;
+  });
   const tiles: OverlayTile[] = [];
-  for (let y = top; y < bottom; y += tileRows) {
-    const h = Math.min(tileRows, bottom - y);
-    const canvas = createCanvas(w, h);
-    const ctx = canvas.getContext('2d');
-    ctx.translate(-left, -y);
-    drawAnnotations(ctx, shapes, { scale, fontFamily });
-    const pixels = ctx.getImageData(0, 0, w, h).data;
-    tiles.push({ data: Buffer.from(pixels.buffer, pixels.byteOffset, pixels.byteLength), left, top: y, width: w, height: h });
+  for (const cluster of clusterBoxes(boxes)) {
+    const members = cluster.members.map((i) => shapes[i]!);
+    const { x: left, y: top, width: w, height: h } = cluster.box;
+    const tileRows = Math.max(1, Math.floor(MAX_TILE_PIXELS / w));
+    for (let y = top; y < top + h; y += tileRows) {
+      const th = Math.min(tileRows, top + h - y);
+      const ctx = createCanvas(w, th).getContext('2d');
+      ctx.translate(-left, -y);
+      drawAnnotations(ctx, members, { scale, fontFamily });
+      const pixels = ctx.getImageData(0, 0, w, th).data;
+      tiles.push({ data: Buffer.from(pixels.buffer, pixels.byteOffset, pixels.byteLength), left, top: y, width: w, height: th });
+    }
   }
   return tiles;
+}
+
+/** Overlay tiles in the colour space of an image that keeps a wide-gamut profile. */
+async function tilesForImage(tiles: OverlayTile[], image: LoadedImage): Promise<OverlayTile[]> {
+  if (tiles.length === 0 || !needsProfileConversion(image)) return tiles;
+  return withProfileFile(image.meta.icc!, (path) =>
+    Promise.all(
+      tiles.map(async (t) => {
+        const raw = await srgbToProfile({ data: t.data, width: t.width, height: t.height, channels: 4 }, path);
+        return { ...t, data: raw.data };
+      }),
+    ),
+  );
 }
 
 function tileOverlays(tiles: readonly OverlayTile[]): OverlayOptions[] {
@@ -85,7 +103,7 @@ export async function runAnnotate(job: ProcessorJob, ctx: ProcessorRunContext): 
     const format = await resolveToolFormat(options.outputFormat, input.format);
     throwIfCancelled(signal);
     stage(ctx.onProgress, 'rendering');
-    const tiles = await renderAnnotationTiles(options.shapes, image.width, image.height, 1, (await resolveAnnotationFont()).css);
+    const tiles = await tilesForImage(await renderAnnotationTiles(options.shapes, image.width, image.height, 1, (await resolveAnnotationFont()).css), image);
     throwIfCancelled(signal);
     stage(ctx.onProgress, 'encoding');
     const overlays = tileOverlays(tiles);

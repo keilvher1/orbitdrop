@@ -14,8 +14,9 @@ import {
   toRaw,
   toToolError,
   writeToolOutput,
+  type RawImage,
 } from './common';
-import { getScaledSource } from './source-cache';
+import { getScaledSource, getSourceSize } from './source-cache';
 
 /**
  * Crop (spec §6). The rect is in oriented source pixels (after EXIF
@@ -70,35 +71,56 @@ export async function runCrop(job: ProcessorJob, ctx: ProcessorRunContext): Prom
   }
 }
 
-/** Preview of the cropped region at up to maxEdge, decoded at the resolution the region needs. */
+/**
+ * Preview of the cropped region at up to maxEdge. When the region needs at
+ * most a 2×maxEdge decode of the whole image, that (cached) decode is reused;
+ * otherwise — a small rect on a big photo — only the region is decoded from
+ * the file, so no full-resolution copy ends up in the preview cache.
+ */
 export async function previewCrop(request: PreviewRequest, signal: AbortSignal): Promise<PreviewResult> {
   const options = parseToolOptions('tool.crop', request.options);
   try {
     const { rect } = options;
     const maxEdge = Math.max(16, Math.floor(request.maxEdge));
+    const size = await getSourceSize(request.input, request.limits, signal);
+    assertRectInside(rect, size.width, size.height);
     const k = Math.min(1, maxEdge / Math.max(rect.width, rect.height));
-    const source = await getScaledSource(request.input, request.limits, (w, h) => Math.max(w, h) * k, signal);
-    assertRectInside(rect, source.sourceWidth, source.sourceHeight);
-    const s = source.width / source.sourceWidth;
-    const x0 = Math.min(source.width - 1, Math.floor(rect.x * s));
-    const y0 = Math.min(source.height - 1, Math.floor(rect.y * s));
-    const x1 = Math.max(x0 + 1, Math.min(source.width, Math.ceil((rect.x + rect.width) * s)));
-    const y1 = Math.max(y0 + 1, Math.min(source.height, Math.ceil((rect.y + rect.height) * s)));
     const outW = Math.max(1, Math.round(rect.width * k));
     const outH = Math.max(1, Math.round(rect.height * k));
-    throwIfCancelled(signal);
-    const raw = await toRaw(
-      sharpFromRaw(source)
-        .extract({ left: x0, top: y0, width: x1 - x0, height: y1 - y0 })
-        .resize(outW, outH, { fit: 'fill' }),
-    );
+    const neededEdge = Math.max(size.width, size.height) * k;
+    let raw: RawImage;
+    if (neededEdge <= 2 * maxEdge) {
+      const source = await getScaledSource(request.input, request.limits, () => neededEdge, signal);
+      const s = source.width / source.sourceWidth;
+      const x0 = Math.min(source.width - 1, Math.floor(rect.x * s));
+      const y0 = Math.min(source.height - 1, Math.floor(rect.y * s));
+      const x1 = Math.max(x0 + 1, Math.min(source.width, Math.ceil((rect.x + rect.width) * s)));
+      const y1 = Math.max(y0 + 1, Math.min(source.height, Math.ceil((rect.y + rect.height) * s)));
+      throwIfCancelled(signal);
+      raw = await toRaw(
+        sharpFromRaw(source)
+          .extract({ left: x0, top: y0, width: x1 - x0, height: y1 - y0 })
+          .resize(outW, outH, { fit: 'fill' }),
+      );
+    } else {
+      const image = await loadImage(request.input, request.limits, signal);
+      throwIfCancelled(signal);
+      raw = await toRaw(
+        image
+          .open()
+          .extract({ left: rect.x, top: rect.y, width: rect.width, height: rect.height })
+          .resize(outW, outH, { fit: 'fill' })
+          .toColourspace('srgb')
+          .ensureAlpha(),
+      );
+    }
     const flatten = options.outputFormat === 'jpeg' || (options.outputFormat === 'input' && request.input.format === 'jpeg');
     const shown = flatten ? await toRaw(sharpFromRaw(raw).flatten({ background: options.flattenBackground }).ensureAlpha()) : raw;
     const preview = await encodePreview(shown);
     return {
       ...preview,
-      sourceWidth: source.sourceWidth,
-      sourceHeight: source.sourceHeight,
+      sourceWidth: size.width,
+      sourceHeight: size.height,
       outputWidth: rect.width,
       outputHeight: rect.height,
     };

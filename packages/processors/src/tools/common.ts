@@ -25,9 +25,10 @@ import { defaultQuality, encodeImage, mapSharpError, openImage, outputDirFor, re
  * metadata, edit, annotate, redact) and their previews.
  *
  * Colour policy (documented in docs/workstreams/processors-edit.md):
- *  - Same-image tools (crop, edit, annotate, redact) keep the embedded ICC profile
- *    and the stored pixel values (no gamut clipping). CMYK inputs are converted
- *    to sRGB because PNG/WebP cannot store CMYK.
+ *  - Same-image tools (crop, edit, annotate, redact) keep an embedded RGB ICC
+ *    profile and the stored pixel values (no gamut clipping); colours they draw
+ *    are converted from sRGB into that profile (profile.ts). CMYK/grey profiles
+ *    are converted to sRGB because PNG/WebP cannot store CMYK.
  *  - Add Background converts the content to sRGB (the backgrounds are sRGB).
  *  - EXIF/XMP/IPTC are never copied by these tools (orientation is applied to
  *    the pixels first, so dropping EXIF never rotates the result).
@@ -82,24 +83,50 @@ export function stage(onProgress: ((p: JobProgress) => void) | undefined, s: 're
   onProgress?.({ kind: 'indeterminate', stage: s });
 }
 
-/** A decoded-on-demand, auto-oriented image. `open()` returns a fresh pipeline each time. */
+/**
+ * A decoded-on-demand, auto-oriented, 8-bit image. `open()` returns a fresh
+ * pipeline each time, built from one shared buffer (never `Sharp.clone()`,
+ * which deep-copies its input buffer on every call).
+ */
 export interface LoadedImage {
   readonly input: ProcessorInput & { readonly format: ImageFormat };
+  /** The file's bytes (lossless metadata removal works on these). */
   readonly buffer: Buffer;
+  /** Metadata of the original file (orientation, ICC bytes, depth as stored…). */
   readonly meta: Metadata;
   /** Oriented size (what the user sees). */
   readonly width: number;
   readonly height: number;
   readonly hasAlpha: boolean;
+  readonly grey: boolean;
+  /** The file has an embedded ICC profile. */
+  readonly hasProfile: boolean;
   /**
    * Embedded ICC profile kept by same-image tools: only for RGB images (P3, Adobe RGB…).
    * CMYK and greyscale profiles are converted to sRGB instead, because the tools
    * composite RGB(A) drawings/patches and PNG/WebP cannot store CMYK.
    */
   readonly keepIcc: boolean;
+  /** Pipelines from open() are 8-bit (16-bit/float inputs were normalized once at load). */
   open(): Sharp;
 }
 
+function isGreySpace(meta: Metadata): boolean {
+  return meta.space === 'b-w' || meta.space === 'grey16';
+}
+
+/**
+ * Loading rules:
+ *  - JPEG/PNG/WebP/GIF/TIFF/AVIF (8-bit): `open()` = `sharp(buffer).autoOrient()` with the same
+ *    input options as common/io `openImage` (pixel limit, failOn 'error', first frame only).
+ *  - BMP: decoded once by the builtin codec (through `openImage`); `open()` reuses the RGBA.
+ *  - HEIC and every input that is not 8 bits per channel (16-bit PNG/TIFF, high-bit-depth AVIF,
+ *    float TIFF): decoded once into an 8-bit lossless PNG intermediate — oriented, the RGB ICC
+ *    profile kept as is (CMYK converted to sRGB, grey kept grey). Outputs are 8-bit anyway, and
+ *    sharp mishandles 16-bit input in several paths: RGB16 with a profile is processed in Display P3
+ *    and written back without conversion, recomb silently casts to 8-bit before linear, and some
+ *    geometry ops drop the kept profile. Normalizing once keeps every tool on the 8-bit path.
+ */
 export async function loadImage(input: ProcessorInput, limits: ProcessingLimits, signal?: AbortSignal): Promise<LoadedImage> {
   const image = requireImageInput(input);
   const buffer = await readInputBuffer(image, limits, signal);
@@ -111,16 +138,32 @@ export async function loadImage(input: ProcessorInput, limits: ProcessingLimits,
     const height = meta.autoOrient?.height ?? meta.height;
     if (!width || !height) throw new OrbitError('IMAGE_CORRUPT', 'Image has no size');
     if (width * height > limits.maxInputPixels) throw new OrbitError('IMAGE_TOO_LARGE', 'Image exceeds the pixel limit');
-    return {
-      input: image,
-      buffer,
-      meta,
-      width,
-      height,
-      hasAlpha: meta.hasAlpha === true,
-      keepIcc: meta.hasProfile === true && (meta.space === 'srgb' || meta.space === 'rgb16'),
-      open: () => base.clone(),
-    };
+    const hasProfile = meta.hasProfile === true || meta.icc !== undefined;
+    const keepIcc = hasProfile && (meta.space === 'srgb' || meta.space === 'rgb16');
+    const grey = isGreySpace(meta);
+    const eightBit = meta.depth === 'uchar' || meta.depth === 'char';
+    const inputOptions = { limitInputPixels: limits.maxInputPixels, failOn: 'error', animated: false } as const;
+
+    let open: () => Sharp;
+    if (image.format === 'bmp') {
+      const raw = await toRaw(base);
+      open = () => sharp(raw.data, { raw: { width: raw.width, height: raw.height, channels: raw.channels as 1 | 2 | 3 | 4 }, limitInputPixels: limits.maxInputPixels });
+    } else if (image.format === 'heic' || !eightBit) {
+      // Depth first, without geometry: sharp drops a kept profile when it rotates 16-bit data
+      // (EXIF auto-orientation included), so the intermediate stays unrotated and keeps EXIF —
+      // its Orientation tag is applied by open() on 8-bit data. EXIF/XMP also let Compress'
+      // keepMetadata copy them; the other tools never copy metadata. CMYK/grey profiles are
+      // applied, not kept. (HEIC arrives already decoded and oriented through openImage.)
+      const unrotated = image.format === 'heic' ? base : sharp(buffer, inputOptions);
+      let p = (keepIcc ? unrotated.keepIccProfile() : unrotated).keepExif().keepXmp();
+      p = p.toColourspace(grey ? 'b-w' : 'srgb');
+      const intermediate = await p.png({ compressionLevel: 0, adaptiveFiltering: false }).toBuffer();
+      open = () => sharp(intermediate, inputOptions).autoOrient();
+    } else {
+      open = () => sharp(buffer, inputOptions).autoOrient();
+    }
+    throwIfCancelled(signal);
+    return { input: image, buffer, meta, width, height, hasAlpha: meta.hasAlpha === true, grey, hasProfile, keepIcc, open };
   } catch (error) {
     throw toToolError(error, signal);
   }

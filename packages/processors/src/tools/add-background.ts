@@ -102,12 +102,15 @@ async function renderShadowOverlay(layout: CompositionLayout): Promise<OverlayOp
     { x: rect.x - x0, y: rect.y + shadow.offsetY - y0, width: rect.width, height: rect.height },
     layout.cornerRadius,
   );
-  let mask = sharp(Buffer.from(svg), { limitInputPixels: false }).extractChannel(0);
+  // Materialize the 1-channel shape first: in sharp's fixed operation order extractChannel runs
+  // after blur, so blurring the SVG pipeline directly would blur all four RGBA channels (~4× work).
+  let m = await toRaw(sharp(Buffer.from(svg), { limitInputPixels: false }).extractChannel(0));
   // sharp's Gaussian needs sigma ≥ 0.3; below that the blur is invisible anyway. libvips truncates
   // the kernel where it falls below minAmplitude × peak: the default 0.2 cuts it at ~1.8σ (visibly
   // harder edges, ~10 levels off); 0.01 keeps it within ~1 level of a true Gaussian out to ~3σ.
-  if (shadow.blurSigma >= 0.3) mask = mask.blur({ sigma: shadow.blurSigma, minAmplitude: 0.01 });
-  const m = await toRaw(mask);
+  if (shadow.blurSigma >= 0.3) {
+    m = await toRaw(sharpFromRaw(m).blur({ sigma: shadow.blurSigma, minAmplitude: 0.01 }).toColourspace('b-w'));
+  }
   const rgba = Buffer.alloc(boxW * boxH * 4);
   for (let i = 0, j = 3; i < m.data.length; i += m.channels, j += 4) rgba[j] = Math.round(m.data[i]! * shadow.opacity);
   return { input: rgba, raw: { width: boxW, height: boxH, channels: 4 }, left: x0, top: y0 };

@@ -137,6 +137,22 @@ async function decodeScaled(
   return result;
 }
 
+/** Oriented full size of a source (cached per file identity). */
+export async function getSourceSize(
+  input: ProcessorInput,
+  limits: ProcessingLimits,
+  signal?: AbortSignal,
+): Promise<{ width: number; height: number; hasAlpha: boolean }> {
+  const id = await identify(input);
+  throwIfCancelled(signal);
+  const cached = sizeCache.get(id.key);
+  if (cached) return cached;
+  const loaded = await loadImage(input, limits, signal);
+  const size = { width: loaded.width, height: loaded.height, hasAlpha: loaded.hasAlpha };
+  sizeCache.set(id.key, size);
+  return size;
+}
+
 /**
  * Oriented RGBA pixels of `input` whose longest edge is `edgeFor(fullW, fullH)`
  * (clamped to the natural size: never upscaled). Reuses a cached decode of the

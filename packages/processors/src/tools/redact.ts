@@ -18,6 +18,8 @@ import {
   writeToolOutput,
   type RawImage,
 } from './common';
+import { clusterBoxes } from './boxes';
+import { needsProfileConversion, srgbColoursToProfile, withProfileFile } from './profile';
 import { getScaledSource } from './source-cache';
 
 /**
@@ -96,18 +98,6 @@ export function mosaicPixels(src: RawImage, srcLeft: number, srcTop: number, box
   return out;
 }
 
-function solidPixels(box: PixelBox, color: string): Buffer {
-  const { r, g, b } = hexToRgb(color);
-  const out = Buffer.alloc(box.width * box.height * 4);
-  for (let o = 0; o < out.length; o += 4) {
-    out[o] = r;
-    out[o + 1] = g;
-    out[o + 2] = b;
-    out[o + 3] = 255;
-  }
-  return out;
-}
-
 export interface ScaledRegion {
   readonly box: PixelBox;
   readonly style: RedactRegion['style'];
@@ -137,35 +127,32 @@ export function scaleRegions(regions: readonly ScaledRegion[], scale: number, wi
   });
 }
 
-function unionBox(boxes: readonly PixelBox[]): PixelBox | null {
-  if (boxes.length === 0) return null;
-  const x0 = Math.min(...boxes.map((b) => b.x));
-  const y0 = Math.min(...boxes.map((b) => b.y));
-  const x1 = Math.max(...boxes.map((b) => b.x + b.width));
-  const y1 = Math.max(...boxes.map((b) => b.y + b.height));
-  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+/** RGBA pixels of `box`, decoded for the mosaic regions inside it. */
+export interface MosaicSource {
+  readonly raw: RawImage;
+  readonly box: PixelBox;
+}
+
+function contains(outer: PixelBox, inner: PixelBox): boolean {
+  return inner.x >= outer.x && inner.y >= outer.y && inner.x + inner.width <= outer.x + outer.width && inner.y + inner.height <= outer.y + outer.height;
 }
 
 /**
- * Composite operations for the regions. `mosaicSource` must hold RGBA pixels
- * of `mosaicBox` (the union of the mosaic regions) in the same colour space as
- * the pipeline they are composited onto.
+ * Composite operations for the regions. Each mosaic region must lie inside one
+ * of `mosaicSources` (pixels in the same colour space as the pipeline they are
+ * composited onto). Solid boxes are sharp `create` inputs (no pixel buffer) in
+ * `solidColour(region.color)` — the requested sRGB colour, or its equivalent in
+ * the image's kept profile.
  */
 export function redactOverlays(
   regions: readonly ScaledRegion[],
-  mosaicSource: { raw: RawImage; box: PixelBox } | null,
+  mosaicSources: readonly MosaicSource[],
   clearFirst: boolean,
+  solidColour: (hex: string) => { r: number; g: number; b: number } = hexToRgb,
 ): OverlayOptions[] {
   const overlays: OverlayOptions[] = [];
   for (const region of regions) {
     const { box } = region;
-    let pixels: Buffer;
-    if (region.style === 'mosaic') {
-      if (!mosaicSource) throw new Error('mosaic source missing');
-      pixels = mosaicPixels(mosaicSource.raw, mosaicSource.box.x, mosaicSource.box.y, box, region.blockSize);
-    } else {
-      pixels = solidPixels(box, region.color);
-    }
     if (clearFirst) {
       overlays.push({
         input: { create: { width: box.width, height: box.height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } } },
@@ -174,7 +161,15 @@ export function redactOverlays(
         blend: 'dest-out',
       });
     }
-    overlays.push({ input: pixels, raw: { width: box.width, height: box.height, channels: 4 }, left: box.x, top: box.y });
+    if (region.style === 'mosaic') {
+      const source = mosaicSources.find((s) => contains(s.box, box));
+      if (!source) throw new Error('mosaic source missing');
+      const pixels = mosaicPixels(source.raw, source.box.x, source.box.y, box, region.blockSize);
+      overlays.push({ input: pixels, raw: { width: box.width, height: box.height, channels: 4 }, left: box.x, top: box.y });
+    } else {
+      const { r, g, b } = solidColour(region.color);
+      overlays.push({ input: { create: { width: box.width, height: box.height, channels: 4, background: { r, g, b, alpha: 1 } } }, left: box.x, top: box.y });
+    }
   }
   return overlays;
 }
@@ -191,16 +186,34 @@ export async function runRedact(job: ProcessorJob, ctx: ProcessorRunContext): Pr
     throwIfCancelled(signal);
 
     stage(ctx.onProgress, 'rendering');
-    const mosaicBox = unionBox(regions.filter((r) => r.style === 'mosaic').map((r) => r.box));
-    let mosaicSource: { raw: RawImage; box: PixelBox } | null = null;
-    if (mosaicBox) {
-      // Same colour handling as the output pipeline (ICC kept → stored values; else sRGB).
-      let p = image.open().extract({ left: mosaicBox.x, top: mosaicBox.y, width: mosaicBox.width, height: mosaicBox.height });
+    // Mosaic pixels are decoded per cluster of nearby regions (not the union of all of them),
+    // with the same colour handling as the output pipeline (ICC kept → stored values; else sRGB).
+    const mosaicRegions = regions.filter((r) => r.style === 'mosaic');
+    const mosaicSources: MosaicSource[] = [];
+    for (const cluster of clusterBoxes(mosaicRegions.map((r) => r.box))) {
+      throwIfCancelled(signal);
+      const { x, y, width, height } = cluster.box;
+      let p = image.open().extract({ left: x, top: y, width, height });
       p = image.keepIcc ? p.keepIccProfile() : p.toColourspace('srgb');
-      mosaicSource = { raw: await toRaw(p.ensureAlpha()), box: mosaicBox };
+      mosaicSources.push({ raw: await toRaw(p.ensureAlpha()), box: cluster.box });
+    }
+    // Solid colours are sRGB; on images keeping a wide-gamut profile they are converted into it.
+    const colours = new Map<string, { r: number; g: number; b: number }>();
+    const solids = [...new Set(regions.filter((r) => r.style === 'solid').map((r) => r.color.toUpperCase()))];
+    if (solids.length > 0 && needsProfileConversion(image)) {
+      const converted = await withProfileFile(image.meta.icc!, (path) =>
+        srgbColoursToProfile(
+          solids.map((hex) => {
+            const { r, g, b } = hexToRgb(hex);
+            return [r, g, b] as const;
+          }),
+          path,
+        ),
+      );
+      solids.forEach((hex, i) => colours.set(hex, { r: converted[i]![0], g: converted[i]![1], b: converted[i]![2] }));
     }
     throwIfCancelled(signal);
-    const overlays = redactOverlays(regions, mosaicSource, image.hasAlpha);
+    const overlays = redactOverlays(regions, mosaicSources, image.hasAlpha, (hex) => colours.get(hex.toUpperCase()) ?? hexToRgb(hex));
 
     stage(ctx.onProgress, 'encoding');
     const make = () => {
@@ -233,7 +246,7 @@ export async function previewRedact(request: PreviewRequest, signal: AbortSignal
     const scale = source.width / source.sourceWidth;
     // Clipped/validated against the full-size image (same errors as the final run), then scaled.
     const regions = scaleRegions(prepareRegions(options.regions, source.sourceWidth, source.sourceHeight), scale, source.width, source.height);
-    const overlays = redactOverlays(regions, { raw: source, box: { x: 0, y: 0, width: source.width, height: source.height } }, source.sourceHasAlpha);
+    const overlays = redactOverlays(regions, [{ raw: source, box: { x: 0, y: 0, width: source.width, height: source.height } }], source.sourceHasAlpha);
     const raw = await toRaw(sharpFromRaw(source).composite(overlays));
     const preview = await encodePreview(raw);
     return {
