@@ -43,6 +43,7 @@
   "picker.someUnusable.other": "{count}개 파일은 처리할 수 없어 제외됩니다.",
   "picker.rejected": "작업을 시작하지 못했습니다.",
   "picker.noTools": "이 파일 형식에는 도구가 없습니다. 변환을 사용해 보세요.",
+  "picker.docxFromImages": "DOCX로 변환 (이미지 삽입, OCR 없음)",
   "dropzone.title": "Drop Zone",
   "dropzone.prompt": "파일을 여기에 놓으세요",
   "dropzone.promptSub": "이미지 또는 PDF",

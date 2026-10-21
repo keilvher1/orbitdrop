@@ -92,6 +92,25 @@ describe('Picker window', () => {
     expect(screen.getAllByRole('menuitem')[0]?.getAttribute('aria-label')).toBe('COMPRESS');
   });
 
+  it('describes DOCX as picture-only for images and text-focused for PDFs', async () => {
+    const user = userEvent.setup();
+    const image = renderWithEnv(<PickerView selectionId="sel1" initialMode="convert" />);
+    const imageMenu = await loadedWheel('변환 메뉴');
+    imageMenu.focus();
+    await user.keyboard('{End}'); // DOCX is last in the JPG convert menu
+    expect(await screen.findByText('DOCX로 변환 (이미지 삽입, OCR 없음)')).toBeTruthy();
+    image.unmount();
+
+    const orbit = createFakeOrbit();
+    orbit.getSelection.mockResolvedValue(sampleSelection({ files: [{ fileId: 'p', name: 'Page 001.pdf', ext: '.pdf', format: 'pdf', kind: 'pdf', bytes: 1000 }], menuKey: 'pdf' }));
+    orbit.getMenu.mockImplementation(async (_id, mode) => sampleMenu(mode, 'pdf'));
+    renderWithEnv(<PickerView selectionId="sel1" initialMode="convert" />, { orbit });
+    const pdfMenu = await loadedWheel('변환 메뉴');
+    pdfMenu.focus();
+    await user.keyboard('{Home}'); // DOCX is first in the PDF menu
+    expect(await screen.findByText('DOCX로 변환 (텍스트 중심)')).toBeTruthy();
+  });
+
   it('disables the tools mode for PDFs (no image tools)', async () => {
     const orbit = createFakeOrbit();
     orbit.getSelection.mockResolvedValue(sampleSelection({ files: [{ fileId: 'p', name: 'Page 001.pdf', ext: '.pdf', format: 'pdf', kind: 'pdf', bytes: 1000 }], menuKey: 'pdf' }));

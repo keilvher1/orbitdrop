@@ -45,49 +45,58 @@ Done:
 
 Next: parallel workstreams (see docs/architecture.md ownership table).
 
-## Stage 1 — parallel workstreams (2026-10-21, in progress)
+## Stage 1 — parallel workstreams (2026-10-21)
 
 Eight background workstreams, each with its own status file in
-`docs/workstreams/<name>.md`. The lead commits one workstream at a time after
-re-running its checks.
+`docs/workstreams/<name>.md`. The lead re-ran each workstream's checks before
+committing it. All agents were interrupted twice (API connection drop, then
+the account usage limit) and resumed from their transcripts. Every workstream
+also had an independent code review; all findings were fixed and re-tested.
 
-| Workstream | State | Commit |
+| Workstream | Result | Commits |
 |---|---|---|
-| core | landed: golden vectors, coords, selection, hardened queue/output/validate (221 tests) | 0e016b6 |
-| processors-convert | running | |
-| processors-edit | landed: crop, add background, compress, metadata, edit, annotate, redact (83 tool tests + 20 core + editors integration) | f148070 |
-| macos-helper | running | |
-| windows-helper | running (mingw compile + host tests only) | |
-| desktop-main | running | |
-| desktop-renderer | landed: wheel, all editors, jobs, settings, Drop Zone, ko/en (182 tests; 25/26 real-app checks, the failure is convert.pdf) | 84d25c2 |
-| packaging-docs | running | |
+| core | golden vectors, coords, selection, hardened queue/output/validate | 0e016b6 |
+| processors-convert | PDF↔image, image formats, BMP codec, images→PDF, PDF→TXT/DOCX, probe; Electron-pool JPEG bug fixed | 797ba39 |
+| processors-edit | crop, add background, compress, metadata, edit, annotate, redact; review: 16-bit/wide-gamut/memory fixes | f148070, b6245d7 |
+| macos-helper | Swift/AppKit observer, wheel panel, Copy-only drop target, imageio CLI; 116 Swift tests | ca13dd1 |
+| windows-helper | C++/Win32/OLE; mingw compile + host tests (golden passes); see its status file | (pending) |
+| desktop-main | main, preload, workers, helper manager, smoke; review: pool size, cleanup, path redaction, env overrides | 2b5b268 |
+| desktop-renderer | wheel, editors, jobs, settings, Drop Zone, ko/en; review fixes; macOS modifier rule | 84d25c2, 5b18167 |
+| packaging-docs | electron-builder mac/win, native-check, CI, docs, licences | 1563f4f |
 
-All workstream agents were interrupted twice on 2026-10-21 (API connection
-drop, then the account usage limit) and were resumed from their transcripts.
+## Stage 2 — integration (2026-10-21)
 
-Lead-owned checks so far:
-- `tests/integration/video-flow.test.ts` reproduces the reference recording
-  through the real processor API: `Page 001.pdf` → `Page 001.jpg` (2550×3300 at
-  300 DPI) → `Page 001 Cropped.jpg` (2550×2550) → `Page 001 Cropped With
-  Background.png`; inputs unchanged, exactly four files. Passing.
-- Whole repo: `node_modules/.bin/vitest run` → 712 passed, 1 skipped (opt-in FAT32 test).
-- `node scripts/gen-golden.mjs --check` → golden file up to date.
+Lead changes after the workstreams landed:
+- `FILE_EMPTY` error code; `DOCX_IMAGE_ONLY` warning; warning params documented.
+- `clearPreviewCaches` worker message (sent when the last editor closes).
+- Light accent/active sector #F2552C → #D4441C (white text 3.44:1 → 4.52:1);
+  warning colours moved into the shared tokens; macOS defaults/fixtures follow.
+- PNG compression level 9 → 6 in `encodeImage`.
+- Packaged builds ignore `ORBITDROP_HELPER_PATH` (security review); docs updated.
 
-Contract follow-ups queued for the integration pass (they touch shared types
-other workstreams compile against, so they wait until everyone has landed):
-- `errors.ts`: non-retryable `FILE_EMPTY` (core currently reports empty files
-  as PDF_CORRUPT / IMAGE_CORRUPT / UNSUPPORTED_FORMAT); needs ko/en strings.
-- Done now (doc comments only): sessionId uniqueness across helper restarts,
-  `Idle` ends a session, effective minimum diameter `min(minDiameter, diameter)`.
-- Tokens: white on light `accent`/`sectorActive` #F2552C is 3.44:1 but is used
-  for 13–15 px bold labels. Change to #D4441C (4.52:1; the reference's active
-  sector is this deep red-orange too), hover/pressed darker, and update the
-  native defaults (`DefaultConfig.swift`, `defaults.cpp`) and the macOS
-  ProtocolTests assertion in the same commit. Add `warning`/`warningBg` tokens.
-- Document `JobWarning.params` names (UI reads `pages`, `width`, `height`).
-- Optional, from processors-edit: `CompositionLayout.paddingReducedByMaxEdge` /
-  `effectivePadding`, a lossless-vs-re-encoded flag for metadata removal,
-  `PreviewResult.outputFormat`; re-export `clearPreviewCaches` /
-  `detectKoreanFont` from `@orbitdrop/processors` if main uses them.
-- Renderer API gaps (P1/P2 polish): PDF-order thumbnails, batch Compress
-  estimates beyond the first file, "clear finished jobs", generic retry.
+Verification on the dev Mac (macOS 26.6 arm64), all passing:
+
+| Check | Result |
+|---|---|
+| `node_modules/.bin/vitest run` | 768 passed, 1 skipped (opt-in FAT32) |
+| typecheck (contracts, core, processors, integration, desktop node/web/e2e) | clean |
+| Playwright E2E against the built app | 16/16 |
+| `electron-verify.mjs` (every window and editor in the real app) | 26/26, no console errors/CSP violations |
+| `swift test --package-path native/macos` | all suites pass |
+| `electron . --smoke-test` with the real helper | ok, helper ready |
+| `node scripts/package.mjs mac --arch all` | see below |
+
+Not verifiable here (needs the user or other hardware):
+- A real Finder drag with the wheel (checklist: `docs/workstreams/macos-helper.md` §8,
+  `docs/verification.md`). Nothing is marked GUI-verified yet.
+- Windows build/run/install (no Windows machine; CI configured, not run).
+- Signing/notarization (no credentials); Intel Mac (x64 ran under Rosetta only).
+
+Decisions left to the user: OrbitDrop's own licence, the final product id
+(`app.orbitdrop.desktop` is a placeholder), and how LGPL sources are offered
+before any public release.
+
+Open polish (not blocking): PDF-order thumbnails, batch Compress estimates beyond
+the first file, "clear finished jobs", a generic retry for retryable errors,
+`PreviewResult.outputFormat`, live wheel-size preview in Settings, unsaved-change
+prompt for Annotate/Redact, a dark high-contrast token set.

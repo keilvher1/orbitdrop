@@ -115,7 +115,10 @@ export function SelectionWheel({ selection, initialMode, diameter, onSubmitted, 
   const activeSector = active === null ? undefined : sectors[active];
   let hint = t('wheel.instructions');
   if (activeSector !== undefined) {
-    hint = activeSector.enabled ? t.text(ACTIONS[activeSector.actionId].title) : (activeSector.reason ?? t('wheel.unavailable'));
+    // DOCX from images embeds pictures (no OCR); the action title describes the PDF text path.
+    const docxFromImages = activeSector.actionId === 'convert.docx' && key !== 'pdf';
+    const title = docxFromImages ? t('picker.docxFromImages') : t.text(ACTIONS[activeSector.actionId].title);
+    hint = activeSector.enabled ? title : (activeSector.reason ?? t('wheel.unavailable'));
   } else if (menu !== null && sectors.length === 0) {
     hint = mode === 'tools' ? t('picker.noTools') : t('wheel.empty');
   }

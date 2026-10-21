@@ -43,6 +43,7 @@
   "picker.someUnusable.other": "{count} files can't be processed and will be skipped.",
   "picker.rejected": "Couldn't start the action.",
   "picker.noTools": "There are no tools for this file type. Try Convert.",
+  "picker.docxFromImages": "Convert to DOCX (image embedded, no OCR)",
   "dropzone.title": "Drop Zone",
   "dropzone.prompt": "Drop files here",
   "dropzone.promptSub": "Images or PDFs",
