@@ -133,8 +133,12 @@ pre-installed; report missing ones. Don't `git commit`; the lead commits.
 
 * Helper binaries are staged at `apps/desktop/resources/helper/<platform>-<arch>/`
   (`OrbitDropHelper` on macOS, `OrbitDropHelper.exe` on Windows) by
-  `scripts/build-native-{mac,win}.mjs`. Main looks there in dev, at
-  `process.resourcesPath/helper/` when packaged, or at `ORBITDROP_HELPER_PATH`.
+  `scripts/build-native-{mac,win}.mjs`. Main looks there in dev and at
+  `process.resourcesPath/helper/` when packaged. `ORBITDROP_HELPER_PATH` is a
+  dev-only override: packaged builds ignore it, and workers never inherit an
+  `ORBITDROP_IMAGEIO_HELPER` that main did not set itself. Otherwise any
+  same-user process could `launchctl setenv` a binary that macOS would then run
+  with OrbitDrop's Accessibility/Input Monitoring grants.
 * macOS helper optional codec mode (P2 HEIC):
   `OrbitDropHelper imageio --probe` → JSON `{"decode":["heic",…],"encode":["heic",…]}`;
   `OrbitDropHelper imageio --decode <in> --out <out.png>`;
