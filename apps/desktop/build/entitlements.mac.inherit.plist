@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Nested code (Developer ID signing): Electron helper apps (renderer, GPU, utility process
+  that runs the processor workers), Electron Framework and the native modules in
+  app.asar.unpacked. Renderer/utility helpers run V8 and need allow-jit; the rest ignore it.
+  All nested code is signed with the same Team ID, so library validation stays on.
+  Not used for the native drag helper (Resources/helper/), which build/sign.cjs signs with no
+  entitlements (build/entitlements.helper.plist).
+-->
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+  </dict>
+</plist>

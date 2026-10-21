@@ -1,0 +1,168 @@
+# OrbitDrop CI: tests, native helpers, bundles, unsigned packages + smoke tests on the real OS.
+# macOS packages are built on macOS and Windows packages on Windows (no cross builds).
+# This workflow uses no secrets: every package it produces is UNSIGNED and labelled so in its
+# file name. Nothing is published. Release builds: .github/workflows/release.yml (manual).
+# Detailed Windows helper checks live in native-windows.yml (windows-helper workstream).
+#
+# Passing CI means: unit/integration tests, native unit tests, packaging and the packaged app's
+# --smoke-test passed. It does NOT mean a real Finder/Explorer drag was verified — that is the
+# manual procedure in docs/verification.md.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # One cache folder for the Electron runtime (electron postinstall via @electron/get, and
+  # electron-builder) and one for electron-builder's tools (NSIS, dmgbuild, …).
+  electron_config_cache: ${{ github.workspace }}/.cache/electron
+  ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+  ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
+  # Keep electron-builder from looking for signing identities on the runner.
+  CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+jobs:
+  macos:
+    name: macOS (arm64 + x64 packages)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm version comes from "packageManager" in package.json.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Cache Electron runtime and builder tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/electron
+            .cache/electron-builder
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: electron-${{ runner.os }}-
+
+      # pnpm 11 only runs the lifecycle scripts allowed in pnpm-workspace.yaml (allowBuilds):
+      # electron's postinstall downloads the runtime, esbuild verifies its binary.
+      # supportedArchitectures installs both darwin-arm64 and darwin-x64 sharp/canvas binaries.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check generated assets (icons, licences, wheel golden vectors)
+        run: |
+          node scripts/gen-icons.mjs --verify
+          node scripts/licenses.mjs --check
+          node scripts/gen-golden.mjs --check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit and integration tests
+        run: pnpm test
+
+      - name: Native helper — Swift unit tests
+        run: swift test --package-path native/macos
+
+      # Release build per arch (min macOS 14.0), strip, ad-hoc signature with the hardened
+      # runtime, codesign/lipo/vtool checks and the helper's stdio smoke test (x64 via Rosetta 2),
+      # staged to apps/desktop/resources/helper/darwin-{arm64,x64}/ (scripts/build-native-mac.mjs).
+      - name: Native helper — build, verify and stage (arm64, x64)
+        run: node scripts/build-native.mjs mac --arch all
+
+      - name: Build bundles (electron-vite)
+        run: pnpm build
+
+      # Ad-hoc signed, not notarized; artifacts are named *-unsigned.*. The smoke test runs the
+      # app straight from each read-only mounted DMG (x64 through Rosetta 2 when available).
+      - name: Package (unsigned) and smoke-test
+        run: node scripts/package.mjs mac --arch all --skip-build --skip-native --unsigned
+
+      - name: Upload packages
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrbitDrop-macos-unsigned
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/build-report-*.json
+
+  windows:
+    name: Windows (x64 package)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Cache Electron runtime and builder tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/electron
+            .cache/electron-builder
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: electron-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check generated assets (icons, licences, wheel golden vectors)
+        run: |
+          node scripts/gen-icons.mjs --verify
+          node scripts/licenses.mjs --check
+          node scripts/gen-golden.mjs --check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit and integration tests
+        run: pnpm test
+
+      # CMake + MSVC (Visual Studio is preinstalled on windows-latest). The script builds and
+      # stages resources/helper/win32-x64/OrbitDropHelper.exe; the helper's own unit tests and
+      # MinGW checks run in native-windows.yml (windows-helper workstream).
+      - name: Native helper — build and stage (x64)
+        run: node scripts/build-native.mjs win --arch x64
+
+      - name: Build bundles (electron-vite)
+        run: pnpm build
+
+      # Unsigned NSIS installer (*-unsigned-setup.exe). --install-test installs it silently for
+      # the current user into a temp folder, checks the HKCU uninstall entry (no HKLM, no admin),
+      # smoke-tests the installed OrbitDrop.exe and uninstalls it again.
+      - name: Package (unsigned), smoke-test, install/uninstall test
+        run: node scripts/package.mjs win --arch x64 --skip-build --skip-native --unsigned --install-test
+
+      - name: Upload packages
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrbitDrop-windows-unsigned
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            apps/desktop/release/*-setup.exe
+            apps/desktop/release/build-report-*.json

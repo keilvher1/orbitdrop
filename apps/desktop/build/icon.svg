@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    OrbitDrop app icon (original artwork, CC0-style project asset).
+    Concept: a file dropped into a four-sector "orbit" ring; the active sector is orange.
+    Palette from packages/contracts/design-tokens.json (cream / apricot / accent #F2552C).
+    Layout follows the macOS 1024 grid: 824x824 rounded square at (100,100).
+    scripts/gen-icons.mjs renders every PNG/ICNS/ICO from this file; elements marked
+    data-platform="mac" are dropped and the view box is tightened for Windows.
+  -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="100" x2="0" y2="924" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFF8F1"/>
+      <stop offset="1" stop-color="#FCDCC0"/>
+    </linearGradient>
+    <linearGradient id="sector" x1="0" y1="180" x2="0" y2="844" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FAD2AE"/>
+      <stop offset="1" stop-color="#F2AA78"/>
+    </linearGradient>
+    <linearGradient id="active" x1="552" y1="190" x2="836" y2="480" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF7C4C"/>
+      <stop offset="1" stop-color="#E5461D"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+    <filter id="docShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="10"/>
+      <feOffset dy="8" result="blur"/>
+      <feFlood flood-color="#7A2E00" flood-opacity="0.22"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- macOS-only drop shadow under the rounded square -->
+  <rect data-platform="mac" x="112" y="124" width="800" height="800" rx="180" fill="#7A2E00" opacity="0.24" filter="url(#softShadow)"/>
+
+  <!-- background -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.7" stroke-width="3"/>
+
+  <!-- thin orbit line with a small satellite -->
+  <circle cx="512" cy="512" r="362" fill="none" stroke="#F2552C" stroke-opacity="0.28" stroke-width="7"/>
+  <circle cx="256.03" cy="767.97" r="22" fill="#F2552C"/>
+
+  <!-- four ring sectors (corners rounded by a same-colour 44px stroke) -->
+  <g stroke-linejoin="round" stroke-width="44">
+    <path fill="url(#sector)" stroke="url(#sector)" d="M817.39 552A308 308 0 0 1 552 817.39L552 735.45A227 227 0 0 0 735.45 552Z"/>
+    <path fill="url(#sector)" stroke="url(#sector)" d="M472 817.39A308 308 0 0 1 206.61 552L288.55 552A227 227 0 0 0 472 735.45Z"/>
+    <path fill="url(#sector)" stroke="url(#sector)" d="M206.61 472A308 308 0 0 1 472 206.61L472 288.55A227 227 0 0 0 288.55 472Z"/>
+    <path fill="url(#active)" stroke="url(#active)" d="M552 206.61A308 308 0 0 1 817.39 472L735.45 472A227 227 0 0 0 552 288.55Z"/>
+  </g>
+
+  <!-- the file being dropped -->
+  <g filter="url(#docShadow)">
+    <path fill="#FFFFFF" d="M428 377H552L622 447V621A26 26 0 0 1 596 647H428A26 26 0 0 1 402 621V403A26 26 0 0 1 428 377Z"/>
+  </g>
+  <path fill="#F7CDA9" d="M552 377V421A26 26 0 0 0 578 447H622Z"/>
+  <g fill="none" stroke="#F2552C" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M512 446V566"/>
+    <path d="M462 520L512 570L562 520"/>
+  </g>
+</svg>

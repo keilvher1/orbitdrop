@@ -1,0 +1,126 @@
+# OrbitDrop release build — manual only. Builds signed packages when signing credentials are
+# configured as repository secrets, otherwise UNSIGNED packages that say so in their file names.
+# It never publishes anything (no GitHub release, no upload outside this run's artifacts):
+# distributing a build is a separate, human decision (docs/packaging.md). scripts/package.mjs
+# writes the signing/notarization/smoke results to the job summary.
+#
+# Secrets (all optional):
+#   macOS signing:       MAC_CSC_LINK (base64 .p12 "Developer ID Application" or https URL),
+#                        MAC_CSC_KEY_PASSWORD
+#   macOS notarization:  APPLE_API_KEY_P8 (contents of AuthKey_XXXX.p8), APPLE_API_KEY_ID,
+#                        APPLE_API_ISSUER   — or — APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
+#   Windows signing:     WIN_CSC_LINK (base64 .pfx or https URL), WIN_CSC_KEY_PASSWORD
+name: Release build (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      require_signing:
+        description: Fail instead of producing unsigned packages when credentials are missing
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  electron_config_cache: ${{ github.workspace }}/.cache/electron
+  ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+  ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
+
+jobs:
+  macos:
+    name: macOS release (arm64 + x64)
+    runs-on: macos-latest
+    timeout-minutes: 90
+    env:
+      CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify
+        run: |
+          node scripts/gen-icons.mjs --verify
+          node scripts/licenses.mjs --check
+          node scripts/gen-golden.mjs --check
+          pnpm typecheck
+          pnpm test
+          swift test --package-path native/macos
+      - name: Native helper (arm64, x64)
+        run: node scripts/build-native.mjs mac --arch all
+      - name: Build bundles
+        run: pnpm build
+      # notarytool needs the App Store Connect API key as a file.
+      - name: Prepare notarization key
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        if: env.APPLE_API_KEY_P8 != ''
+        run: |
+          key="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s' "$APPLE_API_KEY_P8" > "$key"
+          echo "APPLE_API_KEY=$key" >> "$GITHUB_ENV"
+      - name: Package (signed if credentials exist) and smoke-test
+        run: node scripts/package.mjs mac --arch all --skip-build --skip-native ${{ inputs.require_signing && '--require-signing' || '' }}
+      - name: Upload packages (workflow artifacts only)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrbitDrop-macos-${{ github.run_number }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/build-report-*.json
+
+  windows:
+    name: Windows release (x64)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+      WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify
+        run: |
+          node scripts/gen-icons.mjs --verify
+          node scripts/licenses.mjs --check
+          node scripts/gen-golden.mjs --check
+          pnpm typecheck
+          pnpm test
+      - name: Native helper (x64)
+        run: node scripts/build-native.mjs win --arch x64
+      - name: Build bundles
+        run: pnpm build
+      - name: Package (signed if credentials exist), smoke-test, install/uninstall test
+        run: node scripts/package.mjs win --arch x64 --skip-build --skip-native --install-test ${{ inputs.require_signing && '--require-signing' || '' }}
+      - name: Upload packages (workflow artifacts only)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrbitDrop-windows-${{ github.run_number }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            apps/desktop/release/*-setup.exe
+            apps/desktop/release/build-report-*.json

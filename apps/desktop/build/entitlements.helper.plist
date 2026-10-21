@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  OrbitDropHelper (native drag helper, Contents/Resources/helper/OrbitDropHelper): NO entitlements.
+  It runs no JIT and links only Apple system frameworks and the OS Swift runtime, so it needs
+  neither allow-jit nor disable-library-validation. build/sign.cjs signs it with this empty
+  dictionary (osx-sign always passes an entitlements file), the hardened runtime and — with a
+  Developer ID — a secure timestamp, instead of Electron's inherited entitlements.
+-->
+<plist version="1.0">
+  <dict/>
+</plist>

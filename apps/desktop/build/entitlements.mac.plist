@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  OrbitDrop main app (Developer ID signing, hardened runtime).
+  com.apple.security.cs.allow-jit: V8 (main process) generates code at run time and needs
+  MAP_JIT pages under the hardened runtime. Nothing else is requested: no sandbox (the app
+  reads/writes files the user dragged, next to the original), no camera/microphone/network
+  server entitlements. Accessibility / Input Monitoring are TCC permissions, not entitlements.
+  See docs/packaging.md and docs/permissions.md.
+-->
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+  </dict>
+</plist>

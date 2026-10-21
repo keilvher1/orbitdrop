@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Local/CI builds WITHOUT a Developer ID (ad-hoc signature, "-"), used by scripts/package.mjs
+  for the app and the nested Electron code (the native drag helper still gets no entitlements,
+  see build/sign.cjs). Same as entitlements.mac.plist plus:
+  com.apple.security.cs.disable-library-validation: ad-hoc code has no Team ID, and the
+  hardened runtime's library validation would otherwise refuse to load Electron Framework and
+  the native modules (sharp/libvips, @napi-rs/canvas). Never used for Developer ID builds.
+-->
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+  </dict>
+</plist>

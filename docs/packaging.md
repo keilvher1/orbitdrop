@@ -1,0 +1,191 @@
+# 패키징 · 서명 · 배포 (Packaging, signing, distribution)
+
+OrbitDrop은 **electron-builder 26.15.3** 하나로 패키징한다(선택 이유: [decisions.md ADR-02](decisions.md#adr-02-패키저-electron-builder)).
+설정: [`apps/desktop/electron-builder.yml`](../apps/desktop/electron-builder.yml) ·
+구동 스크립트: [`scripts/package.mjs`](../scripts/package.mjs) ·
+검사 훅: [`scripts/after-pack.cjs`](../scripts/after-pack.cjs) ·
+CI: [`.github/workflows/ci.yml`](../.github/workflows/ci.yml), [`release.yml`](../.github/workflows/release.yml).
+
+> 원칙: macOS 패키지는 macOS에서, Windows 패키지는 Windows에서만 만든다. 서명 자격 증명이 없으면
+> **미서명(unsigned)** 산출물을 만들고 파일 이름에 그 사실을 적는다. 서명·공증을 꾸며내지 않고,
+> Gatekeeper/SmartScreen을 끄라고 안내하지 않으며, 아무것도 자동으로 공개 배포하지 않는다.
+
+## 1. 명령
+
+```sh
+pnpm package:mac                      # = node scripts/package.mjs mac  (호스트 아키텍처)
+node scripts/package.mjs mac --arch all   # arm64 + x64 별도 산출물
+node scripts/package.mjs win --arch x64   # Windows에서 실행
+```
+
+| 옵션 | 의미 |
+|---|---|
+| `--arch arm64\|x64\|all` | macOS 아키텍처(기본: 호스트). Windows는 `x64`만 |
+| `--dir` | 설치 파일 없이 앱 폴더만 생성(빠른 확인용) |
+| `--unsigned` | 자격 증명이 있어도 미서명으로 빌드 |
+| `--require-signing` | 자격 증명이 없으면 실패 |
+| `--skip-native` / `--skip-build` | 이미 스테이징된 helper / 이미 빌드된 `apps/desktop/out` 재사용 |
+| `--skip-smoke` | 패키지 실행 검사 생략 |
+| `--install-test` | (Windows) NSIS 설치 → HKCU 제거 항목 확인 → 설치본 smoke test → 제거 |
+| `--allow-incomplete` | helper나 `--smoke-test` 구현이 아직 없을 때 파이프라인만 시험(산출물에 `-incomplete` 표시) |
+
+`package.mjs`의 단계: 사전 점검(호스트 OS, 대상 아키텍처의 sharp/libvips/canvas 바이너리 설치 여부,
+Rosetta) → `scripts/licenses.mjs`로 `THIRD_PARTY_LICENSES.md` 재생성 → 아이콘 검증 →
+`scripts/build-native.mjs`로 helper 빌드·스테이징 → `electron-vite build` → 아키텍처별
+electron-builder(after-pack 검사 포함) → 검사(macOS: Info.plist, `lipo`, `codesign --verify`,
+`spctl`, DMG 읽기 전용 마운트) → **패키지된 앱의 `--smoke-test`**(macOS는 읽기 전용으로 마운트한 DMG 안의 앱을
+그대로 실행, Apple Silicon에서 x64는 `arch -x86_64`) → **네이티브 모듈 검사**(아래) →
+`apps/desktop/release/build-report-<os>-<arch>.json`(GitHub Actions에서는 작업 요약 표도 작성).
+다른 작업이 패키징 도중 `apps/desktop/out`을 다시 빌드하면 감지해 실패시킨다.
+
+네이티브 모듈 검사: 패키지된 실행 파일은 임의 스크립트를 실행할 수 없으므로(fuses), 같은 버전의 기본 Electron 런타임이
+[`apps/desktop/build/native-check`](../apps/desktop/build/native-check)를 utilityProcess로 실행해 패키지 Resources 안의
+sharp/libvips/@napi-rs/canvas 파일을 앱과 같은 경로 해석으로 불러온다. librsvg(배경 추가의 SVG 그라데이션·둥근 모서리 마스크),
+canvas의 `app.asar.unpacked` 로드와 시스템 한글 글꼴(macOS Apple SD Gothic Neo, Windows Malgun Gothic), 실제로 매핑된
+네이티브 파일 경로를 확인한다. macOS x64는 electron-builder가 내려받은 darwin-x64 런타임을 Rosetta 2로 쓴다.
+
+## 2. 산출물
+
+| 대상 | 파일 (`apps/desktop/release/`) | 비고 |
+|---|---|---|
+| macOS arm64 | `OrbitDrop-<ver>-mac-arm64[-unsigned].dmg`, `.zip` | 최소 macOS 14.0 |
+| macOS x64 | `OrbitDrop-<ver>-mac-x64[-unsigned].dmg`, `.zip` | 최소 macOS 14.0, Intel 실기 검증은 별도 기록 |
+| Windows x64 | `OrbitDrop-<ver>-win-x64[-unsigned]-setup.exe` | NSIS, 사용자별 설치 |
+
+universal 바이너리는 만들지 않는다(네이티브 모듈과 helper를 아키텍처별로 검증하기 위해).
+
+## 3. 앱 안에 들어가는 것 (리소스 경로)
+
+| 항목 | macOS (`OrbitDrop.app/Contents/Resources/`) | Windows (설치 폴더) |
+|---|---|---|
+| 번들 JS (main/preload/renderer/processor-host) | `app.asar/out/**` | `resources\app.asar\out\**` |
+| 런타임 JS 의존성 (pdfjs-dist, pdf-lib, docx, zod, …) | `app.asar/node_modules/**` | 동일 |
+| sharp + libvips, @napi-rs/canvas 네이티브 바이너리 | `app.asar.unpacked/node_modules/@img/sharp-darwin-<arch>`, `@img/sharp-libvips-darwin-<arch>`, `@napi-rs/canvas-darwin-<arch>` | `resources\app.asar.unpacked\node_modules\@img\sharp-win32-x64`(libvips DLL 포함), `@napi-rs\canvas-win32-x64-msvc` |
+| PDF.js 리소스(cmaps, standard_fonts, wasm, iccs, legacy build) | `app.asar/node_modules/pdfjs-dist/**` | 동일 |
+| 네이티브 드래그 helper | `helper/OrbitDropHelper` | `resources\helper\OrbitDropHelper.exe` |
+| 트레이/메뉴 막대 아이콘 | `tray/trayTemplate.png`, `tray/trayTemplate@2x.png` | `resources\tray\tray.ico`, `tray.png` |
+| 라이선스 | `THIRD_PARTY_LICENSES.md`, `LICENSE.electron.txt`, `LICENSES.chromium.html` | `resources\THIRD_PARTY_LICENSES.md`, `LICENSE.electron.txt`, `LICENSES.chromium.html` |
+
+* **ASAR**: 켜져 있다. 네이티브 코드는 asar 내부를 읽을 수 없으므로 네이티브 패키지만
+  `asarUnpack`. Electron 44의 `utilityProcess`에서도 `fs`/`fs/promises`/`import()`/`require`가
+  asar 내부 파일을 읽는 것을 실측했다(2026-10-21). `fetch(file://)`는 Node에서 지원되지 않으므로
+  리소스는 `fs`로 읽는다. 네이티브 코드(sharp, canvas의 `registerFromPath` 등)에 **경로**를 넘기는
+  파일은 asar 밖에 있어야 한다 — 가능하면 Buffer로 넘긴다.
+* **아키텍처**: pnpm `supportedArchitectures` 때문에 Apple Silicon 체크아웃에는 darwin-arm64와
+  darwin-x64 바이너리가 함께 설치된다. `files`의 `${platform}-${arch}` 제외 규칙이 대상 외 패키지를
+  빼고, after-pack 훅이 남은 모든 Mach-O/PE를 검사해 다른 아키텍처면 제거(알려진 플랫폼 패키지)하거나
+  빌드를 실패시킨다.
+* **npmRebuild: false**: sharp와 @napi-rs/canvas는 N-API 프리빌트라 Electron에서 재컴파일하지 않는다.
+  설치본은 Homebrew·시스템 Node·외부 변환기를 쓰지 않는다(sharp는 자체 libvips 사용).
+* **Electron fuses**: `runAsNode`, `NODE_OPTIONS`, `--inspect` 계열을 끄고 asar 무결성 검증과
+  `onlyLoadAppFromAsar`를 켠다. 사용자가 OrbitDrop에 준 권한(예: 손쉬운 사용)을 다른 프로세스가
+  `ELECTRON_RUN_AS_NODE`로 재사용하지 못하게 하기 위함.
+* **언어 리소스**: Chromium UI 문자열은 `ko`, `en-US`만 남긴다(`electronLanguages`).
+
+### after-pack 훅이 실패시키는 경우
+
+* `app.asar`에 필수 항목(`out/main/index.js`, `out/main/processor-host.js`, `out/preload/index.js`,
+  `out/renderer/index.html`, sharp·pdfjs-dist(legacy build, 폰트, wasm)·pdf-lib·canvas·docx)이 없거나
+  `src/`, `test/`, 소스맵, 빌드 도구가 들어간 경우
+* 대상 OS/아키텍처의 sharp `.node`, libvips, canvas `.node`가 없거나 아키텍처가 다른 경우
+* helper가 없거나, 실행 권한이 없거나(macOS), 다른 아키텍처인 경우
+* Windows 바이너리가 Visual C++ 재배포 패키지나 MinGW 런타임 DLL(`vcruntime140.dll`,
+  `msvcp140*.dll`, `libstdc++-6.dll` 등)을 옆에 두지 않고 import하는 경우, 또는 디버그 CRT를 쓰는 경우
+* `THIRD_PARTY_LICENSES.md`, `LICENSE.electron.txt`, `LICENSES.chromium.html`이 빠진 경우
+
+**C++ 런타임 정책(Windows)**: 설치 프로그램은 VC++ 재배포 패키지를 설치하지 않는다. helper는 CRT를
+정적 링크(`/MT`)하거나 필요한 DLL을 helper 옆에 app-local로 둔다. UCRT(`api-ms-win-crt-*`)는
+Windows 10/11에 포함되어 있어 허용한다. 훅이 PE import 표를 읽어 이 정책을 강제한다.
+
+## 4. macOS: 서명 · hardened runtime · 공증
+
+| 모드 | 조건 | 서명 | 공증 | 산출물 이름 |
+|---|---|---|---|---|
+| 미서명(로컬/CI 기본) | `CSC_LINK`/`CSC_NAME` 없음 또는 `--unsigned` | ad-hoc(`-`) + hardened runtime | 안 함 | `…-unsigned.dmg` |
+| Developer ID 서명 | `CSC_LINK`(+`CSC_KEY_PASSWORD`) 또는 키체인의 `CSC_NAME` | Developer ID Application | `APPLE_*`가 있으면 notarytool | `….dmg` |
+
+* ad-hoc 서명은 신원 증명이 아니다. Apple Silicon에서 실행에 필요한 최소 서명일 뿐이며,
+  인터넷에서 내려받은(격리 속성이 붙은) 미서명 앱은 Gatekeeper가 차단한다(`spctl`: rejected).
+  미서명 빌드는 **로컬 테스트 전용**이며 배포하지 않는다. Gatekeeper를 끄거나 격리 속성을 지우라고
+  사용자에게 안내하지 않는다.
+* `package.mjs`는 미서명 모드에서 `CSC_IDENTITY_AUTO_DISCOVERY=false`로 키체인 인증서 자동 선택을
+  막고, `mac.notarize=false`, `build/entitlements.mac.adhoc.plist`를 적용한다. PR CI에서도 ad-hoc
+  서명이 건너뛰어지지 않게 `CSC_FOR_PULL_REQUEST=true`를 설정한다(자격 증명이 전혀 관여하지 않으므로 안전).
+* **네이티브 드래그 helper**(`Contents/Resources/helper/OrbitDropHelper`, 번들 ID `com.orbitdrop.helper`):
+  [`build/sign.cjs`](../apps/desktop/build/sign.cjs)(`mac.sign`)가 electron-builder 기본 서명과 같은 osx-sign 호출에서 helper만
+  **entitlements 없이**(빈 사전 [`build/entitlements.helper.plist`](../apps/desktop/build/entitlements.helper.plist)) hardened runtime으로
+  서명한다. Electron용 상속 entitlements는 적용하지 않는다. Developer ID 서명에서는 osx-sign이 모든 파일에 보안 타임스탬프
+  (`--timestamp`)를 붙이므로 helper는 Developer ID + hardened runtime + 보안 타임스탬프가 된다. helper는 JIT를 쓰지 않고 시스템
+  프레임워크와 OS의 Swift 런타임만 링크하므로 ad-hoc 빌드에서도 entitlements가 필요 없다. `package.mjs`가 서명 후 helper의
+  entitlements가 비어 있고 hardened runtime인지 확인한다. 공증은 앱 전체(helper 포함)를 대상으로 한다.
+* **Entitlements** (필요한 것만):
+  * `com.apple.security.cs.allow-jit` — V8(main, renderer, utilityProcess)의 JIT. 앱과 Electron 하위 코드.
+  * `com.apple.security.cs.disable-library-validation` — **ad-hoc 빌드의 앱과 Electron 하위 코드에만**. Team ID가 없는
+    ad-hoc 코드끼리는 hardened runtime의 라이브러리 검증을 통과하지 못하기 때문. Developer ID 빌드에서는 모든 중첩 코드
+    (Electron Framework, `.node`, `libvips-cpp.dylib`)가 같은 Team ID로 서명되므로 쓰지 않는다.
+  * App Sandbox는 쓰지 않는다(드래그한 파일 옆에 결과를 쓰는 동작과 맞지 않음, Mac App Store 비대상).
+  * 손쉬운 사용/입력 모니터링은 entitlement가 아니라 TCC 권한이다 → [permissions.md](permissions.md).
+* `LSUIElement=true`(메뉴 막대 앱, Dock 아이콘 없음), `LSMinimumSystemVersion=14.0`.
+
+### 나중에 서명·공증하기
+
+1. Apple Developer Program에서 "Developer ID Application" 인증서를 만들어 `.p12`로 내보낸다.
+2. 로컬: `CSC_LINK=/path/cert.p12 CSC_KEY_PASSWORD=… node scripts/package.mjs mac --arch all --require-signing`
+   (또는 키체인에 설치하고 `CSC_NAME="Developer ID Application: 이름 (TEAMID)"`).
+3. 공증(앱 전체, 권장: App Store Connect API 키): `APPLE_API_KEY=/path/AuthKey_XXXX.p8 APPLE_API_KEY_ID=XXXX APPLE_API_ISSUER=<issuer-uuid>`
+   — 또는 `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`. electron-builder가 서명된 앱(helper 포함)을
+   notarytool로 제출하고 앱에 staple한다. DMG 자체는 서명·공증하지 않는다(내려받은 DMG 안의 앱은 stapled 티켓으로 검사됨;
+   필요하면 DMG도 `xcrun notarytool submit`/`stapler staple`로 추가 공증).
+4. CI: 같은 값을 저장소 시크릿(`MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD`, `APPLE_API_KEY_P8`, `APPLE_API_KEY_ID`,
+   `APPLE_API_ISSUER` …)으로 넣고 **Release build (manual)** 워크플로를 수동 실행한다.
+5. 확인: `codesign --verify --deep --strict --verbose=2 OrbitDrop.app`,
+   `spctl --assess --type execute -vv OrbitDrop.app`(accepted, source=Notarized Developer ID),
+   `xcrun stapler validate OrbitDrop.dmg`.
+
+## 5. Windows: NSIS 설치 프로그램 · Authenticode · SmartScreen
+
+* **사용자별 설치**: `oneClick: false`, `perMachine: false`, `allowElevation: false` +
+  [`build/installer.nsh`](../apps/desktop/build/installer.nsh)의 `customInstallMode`로 "현재 사용자" 모드를 강제.
+  `RequestExecutionLevel user` → UAC 프롬프트 없음. 기본 위치 `%LOCALAPPDATA%\Programs\OrbitDrop`,
+  디렉터리 페이지에서 변경 가능(관리자 권한이 필요한 폴더를 고르면 설치가 실패할 수 있다 — 권한 상승은 하지 않는다).
+* 시작 메뉴·바탕 화면 바로가기, 제거 프로그램(`Uninstall OrbitDrop.exe`, HKCU 제거 항목).
+  제거 시 사용자 설정(`%APPDATA%\OrbitDrop`)은 남긴다(`deleteAppDataOnUninstall: false`).
+* 설치 언어: 한국어(기본) / 영어.
+* 무인 설치/제거(테스트용): `OrbitDrop-…-setup.exe /S /D=C:\경로`, `"…\Uninstall OrbitDrop.exe" /S`.
+  CI는 `--install-test`로 이를 자동 검사한다.
+* **서명**: `WIN_CSC_LINK`(또는 `CSC_LINK`) + `WIN_CSC_KEY_PASSWORD`가 있으면 electron-builder가
+  signtool로 exe·설치 프로그램에 Authenticode 서명한다. Azure Trusted Signing을 쓰려면
+  `win.azureSignOptions`(endpoint, certificateProfileName, codeSigningAccountName)를 설정하고
+  `AZURE_TENANT_ID`/`AZURE_CLIENT_ID`/`AZURE_CLIENT_SECRET`을 제공한다(아직 설정하지 않음).
+* **SmartScreen**: 미서명이거나 평판이 쌓이지 않은 인증서로 서명된 설치 프로그램은 "Windows의 PC 보호"
+  경고가 뜰 수 있다. 미서명 빌드는 테스트용이며, SmartScreen을 끄라고 안내하지 않는다.
+
+## 6. 미서명 빌드 표시
+
+미서명 빌드는 (1) 파일 이름에 `-unsigned`, (2) DMG 볼륨 이름에 `(unsigned)`, (3) `build-report-*.json`의
+`signing.mode`로 표시된다. `-incomplete`는 helper 또는 smoke test 구현이 빠진 파이프라인 시험 빌드다.
+배포 전 체크리스트:
+
+- [ ] `--require-signing`으로 빌드했고 `build-report`의 `signing.mode`가 Developer ID / Authenticode
+- [ ] macOS: `spctl` accepted(Notarized), `stapler validate` 통과
+- [ ] smoke test와 [verification.md](verification.md)의 수동 GUI 검증 결과 기록
+- [ ] `THIRD_PARTY_LICENSES.md`가 최신(`node scripts/licenses.mjs --check`)
+- [ ] LGPL 구성요소(libvips 등)의 대응 소스 제공 방법 결정(업스트림 링크 외에 릴리스와 함께 소스 보관/서면 제공 등)
+- [ ] OrbitDrop 자체 라이선스 결정(README), appId(`app.orbitdrop.desktop`)·제품명 확정
+
+## 7. 제3자 라이선스 목록
+
+`node scripts/licenses.mjs`가 [`THIRD_PARTY_LICENSES.md`](../THIRD_PARTY_LICENSES.md)를 만든다(`--check`: 최신인지 확인, CI에서 실행).
+범위: `apps/desktop`의 운영 의존성 트리(앱의 `node_modules`), 번들에 들어가는 런타임 라이브러리(React, lucide-react 등
+`devDependencies` 중 빌드 도구가 아닌 것과 워크스페이스 패키지의 의존성), 대상별 네이티브 패키지(sharp/libvips/canvas의
+darwin-arm64·darwin-x64·win32-x64), 그리고 Electron/Chromium, libvips와 그 라이브러리(LGPL 준수 메모 포함), pdf.js의 폰트·
+CMap·wasm, @napi-rs/canvas에 정적 링크된 Skia와 크레이트 목록. LGPL-3.0/GPL-3.0 원문은 `docs/licenses/`(gnu.org 원본과 동일).
+
+* 출력은 macOS와 Windows에서 같다. 각 체크아웃에는 자기 OS의 네이티브 패키지만 설치되므로, 대상별 패키지의 라이선스는
+  스크립트의 고정 표(설치된 패키지와 대조)로, libvips 구성요소 표와 canvas SBOM은 darwin 패키지에서 갱신해 커밋하는
+  `docs/licenses/native-components.json`으로 만든다.
+* 새 런타임 의존성을 추가하면 다시 생성해 커밋한다. `package.mjs`는 패키징할 때마다 재생성하고, 앱에 `Resources/THIRD_PARTY_LICENSES.md`로 넣는다.
+
+## 8. 로컬 검증 기록
+
+실측 결과(명령과 출력)는 [verification.md §자동 검증 증거](verification.md#자동-검증-증거)에 있다.

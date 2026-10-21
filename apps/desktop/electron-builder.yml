@@ -1,0 +1,176 @@
+# OrbitDrop — electron-builder 26 configuration.
+# Every choice is explained in docs/packaging.md. Use `node scripts/package.mjs mac|win`
+# (or `pnpm package:mac` / `pnpm package:win`) rather than calling electron-builder directly:
+# the script builds the native helper and bundles first, decides between real signing and an
+# explicitly labelled unsigned/ad-hoc build, and runs the packaged app's --smoke-test.
+
+appId: app.orbitdrop.desktop # placeholder product id ("OrbitDrop" is a working name)
+productName: OrbitDrop
+copyright: Copyright © 2026 OrbitDrop contributors
+
+directories:
+  buildResources: build
+  output: release
+
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
+# Nothing is ever published from a build. Releases are uploaded by a human, if at all.
+publish: null
+
+# All native dependencies (sharp/@img, @napi-rs/canvas) ship N-API prebuilt binaries that are
+# ABI-stable across Node and Electron, so nothing is recompiled.
+npmRebuild: false
+nodeGypRebuild: false
+buildDependenciesFromSource: false
+
+asar: true
+# Native code cannot read from inside app.asar, so the native packages live in app.asar.unpacked.
+# (Electron redirects require() of .node files there; libvips is found through sharp's rpath.)
+# Pure-JS packages and data files (pdf.js fonts/cmaps/wasm) stay packed: Electron's fs, also in
+# utilityProcess workers, reads them from the archive (measured, see docs/packaging.md).
+asarUnpack:
+  - "**/node_modules/sharp/**"
+  - "**/node_modules/@img/**"
+  - "**/node_modules/@napi-rs/canvas-*/**"
+
+files:
+  - out/**
+  - package.json
+  - "!**/*.map"
+  # documentation/sources/typings inside dependencies (LICENSE files are kept)
+  - "!**/node_modules/**/{README,readme,Readme,CHANGELOG,changelog,HISTORY,History}{,.md,.markdown,.txt}"
+  - "!**/node_modules/**/*.{d.mts,d.cts}"
+  - "!**/node_modules/sharp/{src,install}/**"
+  - "!**/node_modules/@img/sharp-libvips-*/lib/glib-2.0/include/**"
+  # pdf.js: @orbitdrop/processors loads only legacy/build/pdf.mjs + pdf.worker.mjs (plus cmaps,
+  # standard_fonts, wasm, iccs). The modern build, minified copies, viewer, typings and the
+  # scripting sandbox (QuickJS; OrbitDrop never runs JavaScript embedded in PDFs) are dropped.
+  - "!**/node_modules/pdfjs-dist/{build,web,types,image_decoders}/**"
+  - "!**/node_modules/pdfjs-dist/legacy/{web,image_decoders}/**"
+  - "!**/node_modules/pdfjs-dist/legacy/build/{*.min.mjs,pdf.sandbox*}"
+  - "!**/node_modules/pdfjs-dist/wasm/quickjs-eval.*"
+  - "!**/node_modules/pdf-lib/{dist,src,ts3.4}/**"
+  - "!**/node_modules/docx/dist/*.{iife.js,umd.cjs}"
+  - "!**/node_modules/zod/src/**"
+  - "!**/node_modules/@types/**"
+  - "!**/node_modules/undici-types/**"
+  # Keep only the prebuilt native packages of the target: ${platform} is the build host's
+  # process.platform, which is the target OS because packages are always built natively
+  # (scripts/package.mjs refuses cross builds). Platform-level "files" lists are avoided on
+  # purpose: an exclusion-only platform list replaces this include list in electron-builder 26.
+  - "!**/node_modules/@img/sharp-!(${platform}-${arch}|libvips-${platform}-${arch}){,/**}"
+  - "!**/node_modules/@napi-rs/canvas-!(${platform}-${arch}|${platform}-${arch}-msvc){,/**}"
+
+extraResources:
+  - from: ../../THIRD_PARTY_LICENSES.md
+    to: THIRD_PARTY_LICENSES.md
+  # Tray / menu-bar icons: main looks in <resources>/tray first (apps/desktop/src/main/app.ts).
+  - from: resources/tray
+    to: tray
+
+# Keep Chromium's own UI strings for the app's two languages only (Korean default, English).
+electronLanguages:
+  - ko
+  - en-US
+
+# Harden the shipped Electron binary. RunAsNode/NODE_OPTIONS/--inspect are disabled so other
+# processes cannot reuse OrbitDrop's binary (and any permission the user granted it) as a
+# generic Node runtime; the app only loads its own integrity-checked app.asar.
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false
+  # macOS: re-apply an ad-hoc signature after flipping fuses so builds that skip signing
+  # (e.g. pull-request CI) still launch on Apple Silicon. Real signing replaces it.
+  resetAdHocDarwinSignature: true
+
+# Verifies the native helper and the native binaries of the target os/arch, prunes foreign
+# architectures and fails the build with a clear message when something is missing.
+afterPack: ./build/after-pack.cjs # shim → scripts/after-pack.cjs
+
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  category: public.app-category.utilities
+  minimumSystemVersion: "14.0"
+  darkModeSupport: true
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  # Developer ID signing uses these (JIT only). Unsigned local builds are ad-hoc signed by
+  # scripts/package.mjs with build/entitlements.mac.adhoc.plist instead.
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+  # Same as the default signing, except the native drag helper (Resources/helper/) is signed with
+  # the hardened runtime and NO entitlements (build/entitlements.helper.plist is empty) instead of
+  # the inherited Electron entitlements; with a Developer ID it also gets a secure timestamp.
+  sign: ./build/sign.cjs
+  extendInfo:
+    # Menu-bar app: no Dock icon, no main window at launch.
+    LSUIElement: true
+  extraResources:
+    # Staged by scripts/build-native-mac.mjs. ${arch} is arm64 or x64. Only the helper itself is
+    # shipped (no dSYM or other build by-products).
+    - from: resources/helper/darwin-${arch}
+      to: helper
+      filter: ["OrbitDropHelper", "OrbitDropHelper.app/**"]
+    # electron-builder's macOS output omits Electron's licence files (they sit next to
+    # Electron.app in the upstream zip); ship them inside the bundle. On Windows they are
+    # already copied next to OrbitDrop.exe.
+    - from: ../../node_modules/electron/dist/LICENSE
+      to: LICENSE.electron.txt
+    - from: ../../node_modules/electron/dist/LICENSES.chromium.html
+      to: LICENSES.chromium.html
+
+dmg:
+  title: ${productName} ${version}
+  writeUpdateInfo: false
+  contents:
+    - x: 140
+      y: 200
+    - x: 400
+      y: 200
+      type: link
+      path: /Applications
+  window:
+    width: 540
+    height: 380
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+  requestedExecutionLevel: asInvoker
+  extraResources:
+    # Staged by scripts/build-native-win.mjs: the helper plus any app-local runtime DLLs.
+    - from: resources/helper/win32-${arch}
+      to: helper
+      filter: ["OrbitDropHelper.exe", "*.dll"]
+
+nsis:
+  # Assisted, per-user installer: no administrator rights, installation folder can be changed,
+  # uninstaller registered under HKCU. build/installer.nsh forces the per-user mode.
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  # elevate.exe is only needed for per-machine installs or electron-updater; OrbitDrop uses neither.
+  packElevateHelper: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: OrbitDrop
+  runAfterFinish: true
+  deleteAppDataOnUninstall: false
+  differentialPackage: false
+  installerLanguages:
+    - ko_KR
+    - en_US
+  language: "1042"
+  artifactName: ${productName}-${version}-win-${arch}-setup.${ext}
