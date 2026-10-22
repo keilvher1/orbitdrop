@@ -419,7 +419,7 @@ the steps yourself and judge the visual parts.
    does not apply to drags on this macOS version.
 10. **Disabled sector**: drag a JPG with Shift (HEIC is disabled in the harness configuration), hover HEIC →
     dashed grey highlight, capsule and caption show the reason; release there → no DROP, `cancelled: disabledSector`.
-11. **Unsupported drags, specific texts**: press Shift while dragging (expected capsule text, ko/en):
+11. **Unsupported drags, specific texts**: press Shift while dragging (expected capsule text — repeated in the caption below the ring, since a wide drag image can cover the capsule — ko/en):
     selected text from TextEdit/Safari → "파일이 아님"/"Not a file"; a folder (or an `.app`/`.rtfd` package) →
     "폴더는 처리할 수 없음"/"Folders aren’t supported"; a Photos item, Mail attachment or Safari image (file promise) →
     "먼저 파일로 저장하세요"/"Save it as a file first"; a `.txt` file → "지원하지 않는 파일"/"Unsupported file". No

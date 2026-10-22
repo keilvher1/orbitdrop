@@ -180,10 +180,14 @@ public struct WheelViewModel: Sendable, Equatable {
   }
 
   /// The secondary hint drawn outside the ring (below or above the disc): the current choice
-  /// — the armed sector's label, or why it cannot be used — so it stays readable when the drag
-  /// image covers the sector and the capsule. Nil when nothing is selected or there is no room.
+  /// — the armed sector's label, or why it cannot be used — or why the dragged items cannot be
+  /// used at all, so it stays readable when the drag image covers the sector and the capsule
+  /// (a wide text drag sits right on the capsule — seen in the macOS 14 VM run). Nil when
+  /// nothing is selected or there is no room.
   public var caption: CapsuleContent? {
-    guard presentation.layout.captionRect != nil, let highlight, highlight.style != .hover, !capsule.text.isEmpty else { return nil }
+    guard presentation.layout.captionRect != nil, !capsule.text.isEmpty else { return nil }
+    if content == .unsupported, capsule.style == .reject { return capsule }
+    guard let highlight, highlight.style != .hover else { return nil }
     return capsule
   }
 

@@ -847,8 +847,11 @@ final class SessionControllerTests: XCTestCase {
     h.beginDrag()
     h.send(.modifiersChanged([.shift]))
     XCTAssertNil(h.view?.announcement, "neutral wheel: nothing known yet")
+    XCTAssertNil(h.view?.caption, "neutral wheel: no caption")
     h.send(.draggingEntered(items: [.nonFile], point: center, sourceAllowsCopy: true))
     XCTAssertEqual(h.view?.announcement, "Not a file")
+    // The reason is repeated below the ring: a wide text drag image covers the capsule.
+    XCTAssertEqual(h.view?.caption, CapsuleContent(text: "Not a file", style: .reject))
     var t = Harness()
     t.beginDrag()
     t.send(.modifiersChanged([.alt, .shift]))
