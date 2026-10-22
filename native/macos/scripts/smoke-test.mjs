@@ -54,7 +54,10 @@ function validate(line) {
 }
 
 function launch(extraArgs = []) {
-  const child = spawn(binary, extraArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
+  // Swift 6 runtime isolation checks are fatal here (the runtime only warns by default), so an
+  // actor-isolation slip on the stop/EOF/signal paths fails the exit checks below.
+  const env = { ...process.env, SWIFT_UNEXPECTED_EXECUTOR_LOG_LEVEL: '2' };
+  const child = spawn(binary, extraArgs, { stdio: ['pipe', 'pipe', 'pipe'], env });
   const state = { child, messages: [], invalid: [], stderr: '', exit: null, waiters: [] };
   let buffer = '';
   child.stdout.setEncoding('utf8');
@@ -180,6 +183,7 @@ const t0 = performance.now();
   h.child.kill('SIGTERM');
   const exit = await h.waitExit(4000);
   check('exits 0 on SIGTERM', ready && exit && exit.code === 0, exit ? `code ${exit.code}, signal ${exit.signal}` : 'did not exit');
+  check('no actor-isolation report on stderr', !/data race detected/.test(h.stderr), h.stderr.trim().slice(0, 160));
   if (!exit) h.child.kill('SIGKILL');
 }
 

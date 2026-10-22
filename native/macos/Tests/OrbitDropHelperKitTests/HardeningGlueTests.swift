@@ -111,13 +111,19 @@ extension DropTargetGlueTests {
 
   func testExitWatchdogArmsOnceAndOnlyFiresAfterItsDeadline() {
     let fired = CallRecorder()
-    let watchdog = ExitWatchdog(deadline: 0.15, exitNow: { fired.record() })
+    let deadline: TimeInterval = 1
+    let watchdog = ExitWatchdog(deadline: deadline, exitNow: { fired.record() })
     XCTAssertFalse(watchdog.isArmed)
+    let armed = Date()
     DispatchQueue.concurrentPerform(iterations: 8) { _ in watchdog.arm() }
     XCTAssertTrue(watchdog.isArmed)
-    Thread.sleep(forTimeInterval: 0.05)
-    XCTAssertEqual(fired.count, 0, "not before the deadline")
-    Thread.sleep(forTimeInterval: 0.3)
+    Thread.sleep(forTimeInterval: 0.1)
+    let count = fired.count
+    if Date().timeIntervalSince(armed) < deadline * 0.9 {  // a stalled machine proves nothing here
+      XCTAssertEqual(count, 0, "not before the deadline")
+    }
+    for _ in 0..<60 where fired.count == 0 { Thread.sleep(forTimeInterval: 0.05) }
+    Thread.sleep(forTimeInterval: 0.2)
     XCTAssertEqual(fired.count, 1, "exactly once")
     XCTAssertFalse(fired.anyOnMain)
     XCTAssertNil(HelperApp(options: { var o = HelperApp.Options(); o.exitProcess = false; return o }()).watchdog, "tests that do not exit get no watchdog")

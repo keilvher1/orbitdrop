@@ -22,13 +22,25 @@ final class HelperProcessTests: XCTestCase {
     private let lock = NSLock()
     private var buffer = Data()
     private(set) var lines: [String] = []
+    private var errorText = ""
 
     init(arguments: [String] = []) throws {
       process.executableURL = HelperProcessTests.helperURL
       process.arguments = arguments
+      // Swift 6 runtime isolation checks are fatal in these tests (the runtime only warns by
+      // default): a closure that runs off its actor — like a @MainActor signal handler on a global
+      // queue — aborts the helper and fails the exit-status assertions instead of passing quietly.
+      process.environment = ProcessInfo.processInfo.environment.merging(["SWIFT_UNEXPECTED_EXECUTOR_LOG_LEVEL": "2"]) { _, new in new }
       process.standardInput = stdin
       process.standardOutput = stdout
       process.standardError = stderr
+      stderr.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        let chunk = handle.availableData
+        guard let self, !chunk.isEmpty else { return }
+        self.lock.lock()
+        self.errorText += String(decoding: chunk, as: UTF8.self)
+        self.lock.unlock()
+      }
       stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
         let chunk = handle.availableData
         guard let self, !chunk.isEmpty else { return }
@@ -53,6 +65,13 @@ final class HelperProcessTests: XCTestCase {
       lock.lock()
       defer { lock.unlock() }
       return lines
+    }
+
+    /// Everything the helper wrote to stderr so far.
+    var stderrText: String {
+      lock.lock()
+      defer { lock.unlock() }
+      return errorText
     }
 
     func send(_ object: [String: Any]) {
@@ -168,18 +187,22 @@ final class HelperProcessTests: XCTestCase {
     XCTAssertEqual(helper.process.terminationReason, .exit, "not killed by SIGPIPE")
   }
 
-  /// SIGTERM (main's kill on quit/restart) is handled off the AppKit thread and exits 0.
-  func testSigtermExitsCleanly() throws {
-    let helper = try Helper()
-    XCTAssertNotNil(helper.waitFor { $0["type"] as? String == "ready" })
-    helper.send(configure(enabled: true))
-    helper.send(["v": 1, "type": "ping", "nonce": 9])
-    XCTAssertNotNil(helper.waitFor { $0["type"] as? String == "pong" })
-    let sent = Date()
-    helper.process.terminate()
-    XCTAssertEqual(helper.waitExit(), 0)
-    XCTAssertEqual(helper.process.terminationReason, .exit)
-    XCTAssertLessThan(Date().timeIntervalSince(sent), 2)
+  /// SIGTERM (main's kill on quit/restart/hang), SIGINT and SIGHUP are handled off the AppKit
+  /// thread and exit 0 — with no isolation violation (fatal here, see `Helper.init`).
+  func testSignalsExitCleanly() throws {
+    for sig in [SIGTERM, SIGINT, SIGHUP] {
+      let helper = try Helper()
+      XCTAssertNotNil(helper.waitFor { $0["type"] as? String == "ready" })
+      helper.send(configure(enabled: true))
+      helper.send(["v": 1, "type": "ping", "nonce": 9])
+      XCTAssertNotNil(helper.waitFor { $0["type"] as? String == "pong" })
+      let sent = Date()
+      XCTAssertEqual(kill(helper.process.processIdentifier, sig), 0)
+      XCTAssertEqual(helper.waitExit(), 0, "signal \(sig)")
+      XCTAssertEqual(helper.process.terminationReason, .exit, "signal \(sig): not killed or aborted")
+      XCTAssertLessThan(Date().timeIntervalSince(sent), 2)
+      XCTAssertFalse(helper.stderrText.contains("data race"), "signal \(sig): \(helper.stderrText)")
+    }
   }
 
   func testEnabledObservationNeedsNoPrompt() throws {

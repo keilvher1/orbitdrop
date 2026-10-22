@@ -7,9 +7,10 @@
 // It also checks what main relies on, so a failure is obvious without reading the protocol:
 //   - every stdout line is validated with the real zod schema (when started with --import tsx);
 //   - every session: AwaitingPayload first, WheelActive before a drop, exactly one terminal
-//     message (drop or cancelled), nothing after it, no wheel left open (warned after 20 s).
-// Problems are printed at once with "!!", and a summary ending in RESULT: PASS / FAIL is printed
-// when you press Ctrl+C (or the helper exits).
+//     message (drop or cancelled), nothing after it, none left open at the end.
+// Problems are printed at once with "!!"; a wheel open longer than 20 s is a "??" warning (a long
+// drag is fine). A summary ending in RESULT: PASS / FAIL is printed when you press Ctrl+C (twice
+// to force) or the helper exits.
 //
 //   node --import tsx native/macos/scripts/poc-harness.mjs [--guided] [--helper <path>] [--locale ko|en]
 //        [--theme light|dark|highContrast] [--reduce-motion] [--tools alt+shift] [--convert shift]
@@ -41,18 +42,26 @@ if (!existsSync(helperPath)) {
   process.exit(2);
 }
 
-// Configure message: the real one from contracts/core when tsx is available, else the fixture.
+// Configure message: the generated fixture (main's own builder) with the chosen theme's tokens.
+// With tsx the contracts are loaded and the message is checked with zod; a stale fixture is an
+// error (regenerate it), not a silent fallback. Without tsx, lines are checked structurally.
 const fixture = () => JSON.parse(readFileSync(join(here, '..', 'Tests', 'OrbitDropHelperCoreTests', 'Fixtures', `configure-${locale}.json`), 'utf8'));
-let configure;
+let configure = fixture();
 let parseHelperLine = null;
+let contracts = null;
 try {
-  const contracts = await import(pathToFileURL(join(root, 'packages/contracts/src/index.ts')).href);
-  configure = fixture();
-  configure.tokens = contracts.wheelTokens(theme, reduceMotion);
-  contracts.HelperConfigureSchema.parse(configure);
-  parseHelperLine = contracts.parseHelperLine;
+  contracts = await import(pathToFileURL(join(root, 'packages/contracts/src/index.ts')).href);
 } catch {
-  configure = fixture();
+  // plain node: no TypeScript loader
+}
+if (contracts) {
+  configure.tokens = contracts.wheelTokens(theme, reduceMotion);
+  const checked = contracts.HelperConfigureSchema.safeParse(configure);
+  if (!checked.success) {
+    console.error(`configure-${locale}.json does not match the current contracts — run: node --import tsx native/macos/scripts/gen-fixtures.mjs\n${checked.error.message}`);
+    process.exit(2);
+  }
+  parseHelperLine = contracts.parseHelperLine;
 }
 configure.enabled = true;
 configure.reduceMotion = reduceMotion;
@@ -68,6 +77,8 @@ const say = (text) => console.log(`${t()}  ${text}`);
 const sessions = new Map();
 const order = [];
 const anomalies = [];
+/** Worth a look but not a failure by themselves (e.g. a drag held longer than 20 s). */
+const warnings = [];
 let lines = 0;
 let invalidLines = 0;
 let ready = null;
@@ -172,18 +183,25 @@ function validate(line) {
   }
 }
 
-// A wheel that stays open long after anything happened is the "stuck wheel" defect.
+// A wheel that stays open long after anything happened may be the "stuck wheel" defect — or just a
+// long drag (edges, Mission Control). A warning only: a session that never ends fails at the end.
 setInterval(() => {
   for (const s of order) {
     if (s.awaiting && !ended(s) && !s.warned && Date.now() - s.startedAt > STUCK_MS) {
       s.warned = true;
-      flag(`[${s.id}] still open after ${STUCK_MS / 1000} s — is a wheel stuck on screen? (fine only if you are still dragging)`);
+      const text = `[${s.id}] still open after ${STUCK_MS / 1000} s — if you are not dragging any more, a wheel is stuck on screen`;
+      warnings.push(text);
+      say(`?? ${text}`);
     }
   }
 }, 1000).unref();
 
 // ------------------------------------------------------------------ helper process
 const helper = spawn(helperPath, [], { stdio: ['pipe', 'pipe', 'pipe'] });
+helper.on('error', (error) => {
+  console.error(`cannot start the helper: ${error.message}`);
+  process.exit(2);
+});
 helper.stdin.on('error', () => {}); // EPIPE after the helper died: the exit handler reports it
 function send(message) {
   if (!helper.stdin.destroyed) helper.stdin.write(`${JSON.stringify(message)}\n`);
@@ -218,10 +236,16 @@ helper.on('exit', (code, signal) => {
 });
 
 function stop() {
-  if (stopping) return;
+  if (stopping) {
+    // Second Ctrl+C: do not wait for a helper that does not exit.
+    flag('stopped with a second Ctrl+C: the helper did not exit after the stop message');
+    helper.kill('SIGKILL');
+    finish();
+    return;
+  }
   stopping = true;
   console.log('');
-  say('stopping helper…');
+  say('stopping helper… (Ctrl+C again to force)');
   send({ v: 1, type: 'shut' + 'down' });
   setTimeout(() => helper.kill('SIGTERM'), 2000).unref();
 }
@@ -244,6 +268,10 @@ function finish() {
   console.log(`sessions ${order.length} · drops ${drops.length} (${tally(drops.map((s) => s.drop.actionId))}) · cancelled ${cancels.length} (${tally(cancels.map((s) => s.cancel))})`);
   console.log(`protocol lines ${lines}, invalid ${invalidLines} (${parseHelperLine ? 'zod' : 'structural'})`);
   if (guided) printGuideTable();
+  if (warnings.length) {
+    console.log(`warnings ${warnings.length} (not failures by themselves):`);
+    for (const w of warnings) console.log(`  - ${w}`);
+  }
   if (anomalies.length) {
     console.log(`anomalies ${anomalies.length}:`);
     for (const a of anomalies) console.log(`  - ${a}`);

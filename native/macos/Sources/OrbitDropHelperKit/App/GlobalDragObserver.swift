@@ -149,11 +149,13 @@ final class GlobalDragObserver {
         dragBaseline = source.dragPasteboardChangeCount
         startPolling()
       }
-      checkDragPasteboard()
-      // The pointer before the modifiers: a combo completed by this event opens the wheel here.
+      // Same order as `poll()`: the pointer first (the travel the pasteboard check needs, and the
+      // controller learns the button is down even if it missed the mouse-down), then the pasteboard,
+      // then the modifiers — a combo completed by this event opens the wheel here.
       let point = source.pointer
       lastPointer = point
       emit(.mouseDragged(point))
+      checkDragPasteboard()
       emitModifiers()
     case .up:
       if buttonDown {

@@ -80,9 +80,11 @@ public enum NDJSON {
     if bytes.count > HelperProtocol.maxLineBytes { return .invalid(.lineTooLong(bytes: bytes.count)) }
     if bytes.allSatisfy({ $0 == 0x20 || $0 == 0x09 || $0 == 0x0D || $0 == 0x0A }) { return .blank }
     guard String(bytes: bytes, encoding: .utf8) != nil else { return .invalid(.invalidUTF8) }
-    // zod's verdict starts with JSON.parse, which refuses a byte-order mark and trailing
-    // commas ({"a":1,} / [1,]); Foundation accepts both, so they are refused here.
+    // zod's verdict starts with JSON.parse, which refuses a byte-order mark, trailing commas
+    // ({"a":1,} / [1,]) and raw control characters anywhere (only tab/LF/CR are whitespace);
+    // Foundation accepts the first two and, seeing NUL bytes, may even read the line as UTF-16.
     if bytes.starts(with: [0xEF, 0xBB, 0xBF]) { return .invalid(.invalidJSON) }
+    if bytes.contains(where: { $0 < 0x20 && $0 != 0x09 && $0 != 0x0A && $0 != 0x0D }) { return .invalid(.invalidJSON) }
     let scan = JSONKeyScanner.scan(bytes)
     if scan.trailingComma { return .invalid(.invalidJSON) }
     // JSON.parse (main) keeps the last of duplicated keys, Foundation keeps the first.

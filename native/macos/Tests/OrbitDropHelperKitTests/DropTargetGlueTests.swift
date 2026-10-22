@@ -76,6 +76,8 @@ final class DropTargetGlueTests: XCTestCase {
   nonisolated(unsafe) static var permissionsReplyBuiltOnMain: Bool?
 
   func makeApp(observeWith source: DragInputSource? = nil, customize: (inout HelperApp.Options) -> Void = { _ in }) -> HelperApp {
+    // The previous app's queued lines reach its pipe before that pipe is closed.
+    if let previous = app { previous.flushOutput(timeout: 1) }
     output = OutputPipe()
     var options = HelperApp.Options()
     options.outputFD = output.writeFD
@@ -102,6 +104,9 @@ final class DropTargetGlueTests: XCTestCase {
   }
 
   override func setUp() async throws {
+    // As in production (HelperMain.run): an app of an earlier test writing to its closed pipe must
+    // get EPIPE, not kill the whole test process with SIGPIPE.
+    signal(SIGPIPE, SIG_IGN)
     app = makeApp()
     pasteboard = NSPasteboard(name: NSPasteboard.Name("com.orbitdrop.helper.glue.\(UUID().uuidString)"))
     pasteboard.clearContents()
@@ -374,6 +379,15 @@ final class DropTargetGlueTests: XCTestCase {
 
   func testPingAndPermissions() throws {
     DropTargetGlueTests.permissionsReplyBuiltOnMain = nil
+    app = makeApp {
+      // The reply says "not granted" while the start-up refresh said "granted": the cache must follow the reply.
+      $0.permissionsProvider = {
+        DropTargetGlueTests.permissionsReplyBuiltOnMain = Thread.isMainThread
+        return [PermissionItem(name: .accessibility, required: false, granted: false), PermissionItem(name: .inputMonitoring, required: false, granted: false)]
+      }
+    }
+    for _ in 0..<50 where !app.cachedInputMonitoringGranted { spin(0.02) }
+    XCTAssertTrue(app.cachedInputMonitoringGranted, "start-up refresh landed")
     app.handle(.ping(nonce: 99))
     app.handle(.queryPermissions)
     var all = messages()
@@ -387,7 +401,8 @@ final class DropTargetGlueTests: XCTestCase {
     XCTAssertEqual(items.compactMap { $0["required"] as? Bool }, [false, false])
     // Hardening: the TCC reads behind the reply never run on the AppKit thread (drag callbacks).
     XCTAssertEqual(DropTargetGlueTests.permissionsReplyBuiltOnMain, false)
-    XCTAssertTrue(app.cachedInputMonitoringGranted, "the reply refreshes the cached Escape permission")
+    XCTAssertFalse(app.cachedInputMonitoringGranted, "the reply refreshes the cached Escape permission")
+    XCTAssertFalse(app.observerForTests.escapePollingAllowed)
   }
 
   // MARK: The real observer, end to end

@@ -18,7 +18,7 @@ items that still need real input.
 | Secondary caption, VoiceOver announcements, runtime Reduce Motion | ✅ | ✅ snapshot/live pixel tests, announcer and OS-override tests | ❌ |
 | Wheel rendering (tokens, HC, dark, Retina, animation) | ✅ | ✅ offscreen pixel tests + WCAG contrast per theme | ❌ |
 | `--render-snapshot`, `imageio` CLI | ✅ | ✅ process tests (HEIC round trip, orientation, processors contract) | n/a |
-| Build/stage/sign script | ✅ | ✅ arm64 + x64, hardened runtime, minos 14.0, smoke 18/18 each | — |
+| Build/stage/sign script | ✅ | ✅ arm64 + x64, hardened runtime, minos 14.0, atomic staging; smoke 19/19 arm64 (2026-10-22), 18/18 x64 (2026-10-21, Rosetta 2) | — |
 
 ## 1. Layout
 
@@ -67,7 +67,8 @@ tests: `ORBITDROP_HELPER_PATH=…`; verbose helper logs: `ORBITDROP_HELPER_DEBUG
 
 Last results (this machine: macOS 26.6 arm64, Xcode 27.1, Swift 6.4), after the hardening pass (2026-10-22):
 `swift test` → **exit code 0, 167 tests, 0 failures, 0 skipped** (Core 89, Kit 69, Process 9). Build script
-`--arch arm64` → exit 0; arm64 838 304 B, `flags=0x10002(adhoc,runtime)`, `minos 14.0`, smoke **18/18** (zod).
+`--arch arm64` → exit 0; arm64 838 304 B, `flags=0x10002(adhoc,runtime)`, `minos 14.0`, smoke **19/19** (zod; the
+helper runs with Swift's isolation checks made fatal, as in the process tests).
 (Before: 138 tests; x64 881 968 B, smoke 18/18 under Rosetta 2 — not re-staged in the hardening pass.) Release
 `ready` latency ≈ 50 ms.
 
@@ -371,8 +372,9 @@ sub-folder. Record OS version, display setup and pass/fail per step.
 
 How to read the harness (hardening pass): every helper line is validated with the real zod schema, and every
 session against the rules main relies on (AwaitingPayload first, WheelActive before a drop, exactly one `drop` or
-`cancelled`, nothing after it). Any violation is printed at once with `!!`, and so is a wheel still open after
-20 s. `--guided` walks through the steps below: it shows what to do and what to expect, waits for Enter, gives an
+`cancelled`, nothing after it). Any violation is printed at once with `!!`; a wheel open longer than 20 s is a
+`??` warning (fine during a long drag, a stuck wheel otherwise). `--guided` walks through the steps below: it
+shows what to do and what to expect, waits for Enter, gives an
 automatic verdict from the helper's messages (`✔` / `✘ reason`), asks a y/n question for what only your eyes can
 judge, and prints a table of all steps. Ctrl+C ends either mode with a summary whose last line is
 **`RESULT: PASS`** or **`RESULT: FAIL`** (exit code 0 / 1). Without `--guided` the harness only watches; follow

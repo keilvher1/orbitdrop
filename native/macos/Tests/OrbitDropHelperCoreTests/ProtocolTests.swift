@@ -116,6 +116,12 @@ final class ProtocolTests: XCTestCase {
     XCTAssertEqual(NDJSON.parseMainLine(#"{"v":1,"type":"ping","nonce":1 }"#), .message(.ping(nonce: 1)), "whitespace alone is fine")
     XCTAssertEqual(NDJSON.parseMainLine([0xEF, 0xBB, 0xBF] + Array(#"{"v":1,"type":"shutdown"}"#.utf8)), .invalid(.invalidJSON))
     XCTAssertEqual(NDJSON.parseMainLine(#"{"v":1,"type":"cancelSession","sessionId":"a,}b,]"}"#), .invalid(.invalidValue("sessionId")), "commas inside strings are not syntax")
+    // Raw control bytes: JSON.parse refuses them; Foundation would read a NUL-interleaved line as UTF-16.
+    let utf16 = Array(#"{"v":1,"type":"ping","nonce":1}"#.data(using: .utf16LittleEndian)!)
+    XCTAssertNotNil(String(bytes: utf16, encoding: .utf8), "valid UTF-8, so the UTF-8 check alone lets it through")
+    XCTAssertEqual(NDJSON.parseMainLine(utf16), .invalid(.invalidJSON))
+    XCTAssertEqual(NDJSON.parseMainLine([0x7B, 0x00] + Array(#""v":1,"type":"shutdown"}"#.utf8)), .invalid(.invalidJSON))
+    XCTAssertEqual(NDJSON.parseMainLine("{\"v\":1,\"type\":\"shutdown\"}\t\r"), .message(.shutdown), "tab and CR stay whitespace")
 
     let esc = { (hex: String) in "\\" + "u" + hex }
     let fixture = try String(contentsOf: TestPaths.fixture("configure-en.json"), encoding: .utf8)

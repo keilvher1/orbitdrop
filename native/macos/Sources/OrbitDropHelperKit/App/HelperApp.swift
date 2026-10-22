@@ -619,8 +619,11 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
     for sig in [SIGTERM, SIGINT, SIGHUP] {
       signal(sig, SIG_IGN)
       // Not on the main queue: a wedged AppKit thread must not keep a SIGTERM from ending us.
+      // `@Sendable` keeps the handler nonisolated: written inside this @MainActor method and passed
+      // to a non-Sendable parameter, it would otherwise inherit the main actor and fail Swift 6's
+      // isolation check on the global queue (a warning here, an abort where that check is fatal).
       let source = DispatchSource.makeSignalSource(signal: sig, queue: .global(qos: .userInitiated))
-      source.setEventHandler { [weak self] in self?.parentGone(reason: "signal \(sig)") }
+      source.setEventHandler { @Sendable [weak self] in self?.parentGone(reason: "signal \(sig)") }
       source.resume()
       signalSources.append(source)
     }

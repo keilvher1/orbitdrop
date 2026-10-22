@@ -515,6 +515,10 @@ for (const locale of ['ko', 'en']) {
   add('trailing comma in nested object', swap(baseLine, '"armDistance":6}', '"armDistance":6,}'));
   add('empty array with whitespace', swap(baseLine, '"tools":[]', '"tools":[ ]'));
   add('byte order mark', ch(0xfeff) + '{"v":1,"type":"shutdown"}');
+  add('raw NUL between tokens', '{' + ch(0) + '"v":1,"type":"shutdown"}');
+  add('UTF-16LE encoded line', [...'{"v":1,"type":"shutdown"}'].map((c) => c + ch(0)).join(''));
+  add('raw control character inside a string', '{"v":1,"type":"cancelSession","sessionId":"a' + ch(1) + 'b"}');
+  add('raw CR inside a string', swap(baseLine, '"dropHint":"', '"dropHint":"' + ch(13)));
   add('escaped member name', '{"' + backslash + 'u0076":1,"type":"ping","nonce":1}');
   add('raw tab inside a string', swap(baseLine, '"dropHint":"', '"dropHint":"' + ch(9)));
   mutate('configure: NUL escape inside a string', (m) => (m.strings.dropHint = ch(0) + 'x'));
