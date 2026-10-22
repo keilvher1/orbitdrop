@@ -1,5 +1,5 @@
 import { type OrbitErrorInfo, type SubmitActionResult } from '@orbitdrop/contracts';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useEnv } from '../../app/env';
 import { isImeKey, useEscapeKey } from '../../app/useEscapeKey';
 import { useWindowFit } from '../../app/useWindowFit';
@@ -8,6 +8,7 @@ import { Notice, Spinner } from '../../components/Notice';
 import { TitleBar } from '../../components/TitleBar';
 import './editor.css';
 import { asErrorInfo } from '../../app/errors';
+import { StageBudgetContext, stageBudget } from './editorKit';
 
 export interface EditorCommit {
   readonly busy: boolean;
@@ -96,6 +97,46 @@ export interface EditorFrameProps {
 }
 
 /**
+ * How tall the image stage may be so the panel fits the screen's work area
+ * (see editorKit stageBudget): the panel and its `.stage` are measured after
+ * every layout change. null when there is no stage or nothing is laid out yet.
+ */
+function useStageBudget(rootRef: RefObject<HTMLDivElement | null>): number | null {
+  const [budget, setBudget] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      const stage = root.querySelector<HTMLElement>('.stage');
+      const panel = root.getBoundingClientRect().height;
+      const workArea = window.screen?.availHeight > 0 ? window.screen.availHeight : 0;
+      if (!stage || panel === 0 || workArea === 0) {
+        setBudget(null);
+        return;
+      }
+      const next = stageBudget(workArea, panel, stage.getBoundingClientRect().height);
+      // Sub-pixel layout differences must not cause a re-render loop.
+      setBudget((previous) => (previous !== null && Math.abs(previous - next) < 2 ? previous : next));
+    };
+    const schedule = () => {
+      if (frame === 0) frame = requestAnimationFrame(measure);
+    };
+    measure();
+    window.addEventListener('resize', schedule);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule);
+    observer?.observe(root);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', schedule);
+      if (frame !== 0) cancelAnimationFrame(frame);
+    };
+  }, [rootRef]);
+  return budget;
+}
+
+/**
  * Common editor panel (440–560 DIP): title bar with ×, body, footer with Reset
  * on the left and the orange primary action on the right. Esc cancels,
  * ⌘/Ctrl+Enter runs the primary action. The window is sized to the panel.
@@ -128,6 +169,7 @@ export function EditorFrame({
   const { orbit, t } = useEnv();
   const rootRef = useRef<HTMLDivElement>(null);
   useWindowFit(rootRef);
+  const budget = useStageBudget(rootRef);
 
   const [confirming, setConfirming] = useState(false);
   const needsConfirm = confirmClose !== null;
@@ -223,7 +265,9 @@ export function EditorFrame({
   return (
     <div className="view editor-view" ref={rootRef} style={width === undefined ? undefined : { width }} inert={showConfirm || undefined}>
       <TitleBar title={title} onClose={requestClose} closeDisabled={commit.busy} closeLabel={t('common.cancelAndClose')} />
-      <div className="editor-body">{children}</div>
+      <div className="editor-body">
+        <StageBudgetContext.Provider value={budget}>{children}</StageBudgetContext.Provider>
+      </div>
       {commit.error ? (
         <div className="editor-error">
           <Notice tone="danger" onDismiss={commit.clearError} dismissLabel={t('common.dismiss')}>

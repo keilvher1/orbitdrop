@@ -13,11 +13,16 @@
   padding: 8px 16px 0;
 }
 
+/* Stays at the bottom of the window when the panel is taller than the work area and scrolls. */
 .editor-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 14px 16px 16px;
+  background: var(--c-window-bg);
 }
 
 .editor-footer-spacer {

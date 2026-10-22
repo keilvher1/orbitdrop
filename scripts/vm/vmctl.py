@@ -8,6 +8,7 @@ Commands (several may be chained with ' ; '):
   key <name> / keydown <name> / keyup <name>
   type <text>
   drag <x> <y> [step] [delay]    move to x,y in steps with the button state unchanged
+  scroll <n>                     wheel: n > 0 down, n < 0 up
   wait <seconds>
 """
 import sys
@@ -74,6 +75,12 @@ def main():
                         pos = [pos[0] + round(dx * step / dist), pos[1] + round(dy * step / dist)]
                     client.mouseMove(*pos)
                     time.sleep(delay)
+            elif cmd == 'scroll':
+                # scroll <n>: positive scrolls down (button 5), negative up (button 4)
+                n = int(args[0])
+                for _ in range(abs(n)):
+                    client.mousePress(5 if n > 0 else 4)
+                    time.sleep(0.03)
             elif cmd == 'wait':
                 time.sleep(float(args[0]))
             else:

@@ -1,6 +1,6 @@
 import { ACTIONS, FORMAT_INFO, type EditorContext, type FileFormat, type OrbitErrorInfo, type PreviewResponse, type ToolOutputFormat } from '@orbitdrop/contracts';
 import { toolResultName } from '@orbitdrop/core';
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { useEnv } from '../../app/env';
 import { Notice, Spinner } from '../../components/Notice';
 import type { Size } from './crop/cropMath';
@@ -22,16 +22,38 @@ export function useScreenHeight(): number {
   return height;
 }
 
+/** Smallest image stage, so a short screen still shows a usable preview (the panel scrolls below it). */
+export const MIN_STAGE_HEIGHT = 180;
+/** Gap main keeps between a window and the edge of the work area (main/windows/placement.ts WINDOW_MARGIN). */
+const WINDOW_MARGIN = 8;
+
+/**
+ * Largest height the `.stage` element may take so the whole panel fits the work area:
+ * the work area minus everything else in the panel (`rest`, measured by EditorFrame). It does
+ * not depend on the stage's own height, so applying it cannot oscillate.
+ */
+export function stageBudget(workAreaHeight: number, panelHeight: number, stageHeight: number): number {
+  const rest = panelHeight - stageHeight;
+  return Math.floor(workAreaHeight - 2 * WINDOW_MARGIN - rest);
+}
+
+/** Measured stage budget from EditorFrame (null until measured, or when the editor has no stage). */
+export const StageBudgetContext = createContext<number | null>(null);
+
 /**
  * Box available for the image stage: full panel width, and a height that
  * leaves `reserved` px for the title bar, controls and footer so the editor
- * fits on small screens.
+ * fits on small screens. Once EditorFrame has measured the panel, the measured
+ * budget wins over the `reserved` estimate (controls that grow, such as a
+ * chosen background image, would otherwise push the buttons off screen).
  */
 export function usePreviewBox(reserved: number, maxHeight = 420, width = EDITOR_WIDTH): Size {
   const screenHeight = useScreenHeight();
+  const budget = useContext(StageBudgetContext);
   const innerWidth = width - 2 * EDITOR_PADDING - 2 * STAGE_PADDING;
-  const height = Math.max(180, Math.min(maxHeight, screenHeight - reserved - 60));
-  return { width: innerWidth, height };
+  let height = Math.min(maxHeight, screenHeight - reserved - 60);
+  if (budget !== null) height = Math.min(height, budget - 2 * STAGE_PADDING);
+  return { width: innerWidth, height: Math.max(MIN_STAGE_HEIGHT, height) };
 }
 
 /** Longest edge to request for a preview shown at `display` CSS px. */
