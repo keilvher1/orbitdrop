@@ -8,6 +8,7 @@
 // reference's UTF-16 string operations.
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -70,14 +71,15 @@ struct DragPayload {
 
 enum class Unsupported {
     None,
-    NoFiles,          // not a file drag (text, URL, …)
-    VirtualFiles,     // virtual files only
-    TooManyFiles,     // > HELPER_MAX_FILES
-    BadPath,          // unrepresentable / empty / too long path
-    Directory,        // a folder is part of the selection
-    UnknownType,      // menuKeyForPaths → null
-    PayloadTooLarge,  // the drop message would exceed HELPER_MAX_LINE_BYTES
-    NoMenu,           // configure has no menu for the key
+    NoFiles,           // not a file drag (text, URL, …)
+    VirtualFiles,      // virtual files only
+    TooManyFiles,      // > HELPER_MAX_FILES
+    BadPath,           // unrepresentable / empty / too long path
+    Directory,         // a folder is part of the selection
+    UnknownType,       // menuKeyForPaths → null
+    PayloadTooLarge,   // the drop message would exceed HELPER_MAX_LINE_BYTES
+    NoMenu,            // configure has no menu for the key
+    CloudPlaceholder,  // a file's content is not on this machine yet (cloud-only placeholder)
 };
 
 const char* toString(Unsupported u);
@@ -95,5 +97,36 @@ Classification classify(const DragPayload& payload, const proto::Configure& cfg)
 /** contracts adjustMenuForFileCount: non-batch enabled sectors are disabled for multi-file drags. */
 std::vector<proto::WheelSector> adjustForFileCount(const std::vector<proto::WheelSector>& sectors, size_t fileCount,
                                                    const std::string& multiFileReason);
+
+// ------------------------------------------------------------------ file-system metadata (worker thread)
+
+/**
+ * What the dragged paths' attributes say. Read with GetFileAttributesW off the
+ * UI thread after DragEnter: metadata only, no file data is read, so a cloud
+ * placeholder is never downloaded ("hydrated") by the check.
+ */
+struct PathFacts {
+    /** At least one path is a folder. */
+    bool containsDirectory = false;
+    /** At least one file's content is not on this machine yet (OneDrive/Dropbox
+     *  Files On-Demand online-only file, or an offline HSM file). Reading it would
+     *  download it first; P0 accepts local files only. */
+    bool containsCloudPlaceholder = false;
+};
+
+/** winnt.h attribute values used below (the core has no Windows headers). */
+constexpr uint32_t kFileAttributeDirectory = 0x00000010;
+constexpr uint32_t kFileAttributeOffline = 0x00001000;
+constexpr uint32_t kFileAttributeRecallOnDataAccess = 0x00400000;
+constexpr uint32_t kInvalidFileAttributes = 0xFFFFFFFF;
+
+/**
+ * Folds one path's GetFileAttributesW result into `facts`. Unknown attributes
+ * (kInvalidFileAttributes: gone, no access) count as neither — main validates
+ * every dropped path anyway. FILE_ATTRIBUTE_RECALL_ON_OPEN (0x40000) is not
+ * used: it only appears in directory enumeration classes, and GetFileAttributesW
+ * would report the same bit for FILE_ATTRIBUTE_EA (a file with extended attributes).
+ */
+void addFileAttributes(PathFacts& facts, uint32_t attributes);
 
 }  // namespace od::selection

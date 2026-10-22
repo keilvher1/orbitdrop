@@ -103,14 +103,18 @@ public:
     virtual void log(proto::LogLevel level, const std::string& message) = 0;
     /**
      * Find out, off the UI thread, whether any of the dragged paths is a folder
-     * and report back with Controller::fileInfo(sessionId, …). File-system calls
+     * or a cloud-only placeholder (attributes only, never the file's data) and
+     * report back with Controller::fileInfo(sessionId, …). File-system calls
      * never run inside the OLE callbacks. Hosts without this ability ignore it.
      */
-    virtual void checkFolders(const std::string& sessionId, const std::vector<std::string>& paths) {
+    virtual void checkPaths(const std::string& sessionId, const std::vector<std::string>& paths) {
         (void)sessionId;
         (void)paths;
     }
 };
+
+/** Centre text for a drag that contains a cloud-only placeholder (ko/en). */
+const char* cloudPlaceholderText(proto::Locale locale);
 
 struct Tuning {
     int64_t activationStableMs = 40;   // combo held this long before the wheel shows / the mode switches
@@ -139,8 +143,9 @@ public:
     /** True while a DragEnter should read the drag data (first entry of a session). */
     bool wantsPayload() const;
 
-    /** Result of Host::checkFolders: a folder makes the drag unsupported (folder text). */
-    void fileInfo(const std::string& sessionId, bool containsDirectory);
+    /** Result of Host::checkPaths: a folder makes the drag unsupported (folder
+     *  text); so does a cloud-only placeholder in an otherwise supported drag. */
+    void fileInfo(const std::string& sessionId, const selection::PathFacts& facts);
 
     /** Monitors changed (WM_DISPLAYCHANGE / WM_DPICHANGED): an open wheel whose
      *  monitor disappeared or changed size or DPI is cancelled (`error`). */

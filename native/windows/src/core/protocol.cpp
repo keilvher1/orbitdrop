@@ -180,7 +180,7 @@ public:
             bool known = false;
             for (const char* k : required) known = known || m.key == k;
             for (const char* k : optional) known = known || m.key == k;
-            if (!known) return fail(path.empty() ? m.key : path + "." + m.key, "unknown field");
+            if (!known) return fail(join(path, safeKey(m.key)), "unknown field");
         }
         for (const char* k : required) {
             if (v->get(k) == nullptr) return fail(join(path, k), "required");
@@ -234,6 +234,17 @@ public:
 
     static std::string join(const std::string& path, const std::string& key) {
         return path.empty() ? key : path + "." + key;
+    }
+
+    /** An unknown key as it may appear in an error report: field-like names
+     *  only, anything else (a path, text, …) is message content and is not echoed. */
+    static std::string safeKey(const std::string& key) {
+        if (key.empty() || key.size() > 40) return "<key>";
+        for (const char ch : key) {
+            const bool ok = (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_';
+            if (!ok) return "<key>";
+        }
+        return key;
     }
 
 private:

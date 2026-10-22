@@ -127,6 +127,7 @@ const char* toString(Unsupported u) {
         case Unsupported::UnknownType: return "unknownType";
         case Unsupported::PayloadTooLarge: return "payloadTooLarge";
         case Unsupported::NoMenu: return "noMenu";
+        case Unsupported::CloudPlaceholder: return "cloudPlaceholder";
     }
     return "unknown";
 }
@@ -186,6 +187,15 @@ std::vector<proto::WheelSector> adjustForFileCount(const std::vector<proto::Whee
         s.reason = multiFileReason;
     }
     return out;
+}
+
+void addFileAttributes(PathFacts& facts, uint32_t attributes) {
+    if (attributes == kInvalidFileAttributes) return;
+    if ((attributes & kFileAttributeDirectory) != 0) {
+        facts.containsDirectory = true;
+    } else if ((attributes & (kFileAttributeRecallOnDataAccess | kFileAttributeOffline)) != 0) {
+        facts.containsCloudPlaceholder = true;
+    }
 }
 
 }  // namespace od::selection

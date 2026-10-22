@@ -12,11 +12,17 @@ on:
       - '.github/workflows/native-windows.yml'
       - 'tests/fixtures/wheel-golden.json'
       - 'packages/contracts/src/helper-protocol.ts'
+      - 'packages/contracts/src/schemas.ts'
+      - 'packages/contracts/src/actions.ts'
+      - 'packages/contracts/src/menus.ts'
+      - 'packages/contracts/src/formats.ts'
       - 'packages/contracts/design-tokens.json'
       - 'packages/contracts/src/geometry.ts'
       - 'packages/core/src/geometry.ts'
       - 'packages/core/src/coords.ts'
       - 'packages/core/src/selection.ts'
+      - 'packages/core/src/capabilities.ts'
+      - 'native/macos/Tests/OrbitDropHelperCoreTests/Fixtures/protocol-cases.json'
   pull_request:
     paths:
       - 'native/windows/**'
@@ -24,11 +30,17 @@ on:
       - '.github/workflows/native-windows.yml'
       - 'tests/fixtures/wheel-golden.json'
       - 'packages/contracts/src/helper-protocol.ts'
+      - 'packages/contracts/src/schemas.ts'
+      - 'packages/contracts/src/actions.ts'
+      - 'packages/contracts/src/menus.ts'
+      - 'packages/contracts/src/formats.ts'
       - 'packages/contracts/design-tokens.json'
       - 'packages/contracts/src/geometry.ts'
       - 'packages/core/src/geometry.ts'
       - 'packages/core/src/coords.ts'
       - 'packages/core/src/selection.ts'
+      - 'packages/core/src/capabilities.ts'
+      - 'native/macos/Tests/OrbitDropHelperCoreTests/Fixtures/protocol-cases.json'
   workflow_dispatch:
 
 permissions:
@@ -155,4 +167,5 @@ jobs:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
       - name: Core tests + protocol parity (helper→main samples, fuzzed main→helper verdicts)
-        run: node scripts/build-native-win.mjs --core-tests --parity
+        # ASan/UBSan already runs in the linux-portable job.
+        run: node scripts/build-native-win.mjs --core-tests --parity --no-asan

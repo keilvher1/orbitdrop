@@ -168,9 +168,10 @@ console.log(`stdio smoke test: ${exe}`);
 // ------------------------------------------------------------------ snapshots (Direct2D/DirectWrite/WIC, no window)
 if (snapshotDir) {
   mkdirSync(snapshotDir, { recursive: true });
+  // [name, args, expected capsule text (optional)]
   const cases = [
-    ['pdf-convert-neutral', ['--menu', 'pdf', '--state', 'neutral']],
-    ['pdf-convert-jpg', ['--menu', 'pdf', '--highlight', '1']],
+    ['pdf-convert-neutral', ['--menu', 'pdf', '--state', 'neutral'], 'Drop here'],
+    ['pdf-convert-jpg', ['--menu', 'pdf', '--highlight', '1'], 'JPG'],
     ['jpeg-tools-crop-ko', ['--menu', 'image/jpeg', '--mode', 'tools', '--highlight', '5', '--locale', 'ko']],
     ['jpeg-tools-two-files', ['--menu', 'image/jpeg', '--mode', 'tools', '--files', '2', '--highlight', '0']],
     ['jpeg-convert-dark-150', ['--menu', 'image/jpeg', '--theme', 'dark', '--scale', '1.5', '--highlight', '3']],
@@ -178,10 +179,12 @@ if (snapshotDir) {
     ['pdf-disabled-docx', ['--menu', 'pdf', '--disable', '0', '--highlight', '0']],
     ['unsupported', ['--menu', 'pdf', '--state', 'unsupported']],
     ['unsupported-folder-ko', ['--menu', 'pdf', '--state', 'folder', '--locale', 'ko']],
+    ['unsupported-cloud-ko', ['--menu', 'pdf', '--state', 'cloud', '--locale', 'ko'], '먼저 내려받으세요'],
+    ['unsupported-cloud', ['--menu', 'pdf', '--state', 'cloud'], 'Download it first'],
     ['unsupported-virtual', ['--menu', 'pdf', '--state', 'virtual']],
     ['unsupported-nonfile', ['--menu', 'pdf', '--state', 'nonfile']],
   ];
-  for (const [name, args] of cases) {
+  for (const [name, args, capsule] of cases) {
     const out = join(snapshotDir, `windows-helper-${name}.png`);
     const r = spawnSync(exe, ['--render-snapshot', out, ...args], { encoding: 'utf8', windowsHide: true });
     let info = null;
@@ -192,6 +195,7 @@ if (snapshotDir) {
     const png = okFile ? readFileSync(out) : null;
     const isPng = png !== null && png.readUInt32BE(0) === 0x89504e47;
     check(r.status === 0 && info?.ok === true && isPng, `snapshot ${name}: ${info ? `${info.width}x${info.height}, capsule "${info.capsule}", fonts ${info.textFont} / ${info.iconFont}` : r.stdout + r.stderr}`);
+    if (capsule !== undefined) check(info?.capsule === capsule, `snapshot ${name}: capsule is "${capsule}"`);
   }
 }
 

@@ -102,16 +102,16 @@ bool App::initialize() {
         startupLogs_.emplace_back(proto::LogLevel::Warn, "process is not Per-Monitor DPI Aware v2; mixed-DPI placement may be off");
     }
 
-    const bool elevated = isProcessElevated();
-    globalDragAvailable_ = oleInitialized_ && dropRegistered_ && rendererOk_ && wheelOk && !elevated;
+    const bool uipiBlocked = shellDragsBlockedByIntegrity();
+    globalDragAvailable_ = oleInitialized_ && dropRegistered_ && rendererOk_ && wheelOk && !uipiBlocked;
     if (!oleInitialized_) {
         globalDragReason_ = "OleInitialize failed " + hresultHex(oleHr);
     } else if (!wheelOk || !dropRegistered_) {
         globalDragReason_ = "drop target window could not be created/registered";
     } else if (!rendererOk_) {
         globalDragReason_ = "Direct2D/DirectWrite unavailable: " + error;
-    } else if (elevated) {
-        globalDragReason_ = "helper runs elevated: Windows (UIPI) blocks drags from non-elevated Explorer";
+    } else if (uipiBlocked) {
+        globalDragReason_ = "helper runs elevated (higher integrity level than Explorer): Windows (UIPI) blocks drags from Explorer";
     }
     return true;
 }
@@ -220,12 +220,12 @@ void App::drainStdio() {
 
 void App::drainFolderChecks() {
     if (folders_ == nullptr) return;
-    for (const FolderChecker::Result& r : folders_->drain()) core_.controller().fileInfo(r.sessionId, r.containsDirectory);
+    for (const FolderChecker::Result& r : folders_->drain()) core_.controller().fileInfo(r.sessionId, r.facts);
 }
 
 void App::onDisplayChanged() { core_.controller().displaysChanged(enumerateMonitors()); }
 
-void App::checkFolders(const std::string& sessionId, const std::vector<std::string>& paths) {
+void App::checkPaths(const std::string& sessionId, const std::vector<std::string>& paths) {
     if (folders_ != nullptr && !paths.empty()) folders_->request(sessionId, paths);
 }
 
@@ -329,6 +329,11 @@ bool App::foregroundIsTracking() {
 }
 
 void App::poll() {
+    // Never sample input in the middle of an IDropTarget method: if a COM wait
+    // loop inside IDataObject::GetData dispatched this timer, a release seen here
+    // would end the session (dragEnded) right before OLE delivers its Drop for
+    // that very release. The next tick, 15 ms later, sees the settled state.
+    if (oleDepth_ > 0) return;
     session::Observation o;
     o.timeMs = nowMs();
     // GetAsyncKeyState reports physical buttons: with swapped buttons the

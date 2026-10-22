@@ -71,7 +71,14 @@ std::string wideToUtf8(std::wstring_view s, bool* ok = nullptr);
 std::string hresultHex(HRESULT hr);
 /** "10.0.22631" from RtlGetVersion (not subject to manifest-based version lies). */
 std::string osVersionString();
-bool isProcessElevated();
+/**
+ * True when drags from Explorer cannot reach this process: it runs at a higher
+ * integrity level than the shell (GetShellWindow's process), so UIPI blocks the
+ * OLE drag messages. Without a shell to compare with: the elevated half of a
+ * UAC split token (TokenElevationTypeFull). Not blocked with UAC off or for the
+ * built-in Administrator, where Explorer runs at the same level.
+ */
+bool shellDragsBlockedByIntegrity();
 /** Effective DPI of a monitor (96 when unknown). */
 UINT dpiForMonitor(HMONITOR monitor);
 /** All monitors in physical pixels (requires Per-Monitor DPI awareness). */

@@ -1,7 +1,7 @@
 // --render-snapshot: renders one wheel state to a PNG without any drag.
 //
 //   OrbitDropHelper.exe --render-snapshot out.png [--menu pdf|image/jpeg|images|mixed|…]
-//       [--mode convert|tools] [--highlight N] [--state neutral|active|unsupported|folder|virtual|nonfile]
+//       [--mode convert|tools] [--highlight N] [--state neutral|active|unsupported|folder|cloud|virtual|nonfile]
 //       [--files N] [--scale 1.5 | --dpi 144] [--theme light|dark|high-contrast]
 //       [--locale ko|en] [--disable N[,M…]] [--config configure.json]
 //
@@ -248,7 +248,12 @@ int runSnapshot(const std::vector<std::wstring>& args) {
         }
         payload.totalCount = payload.paths.size();
         ctl.dragEnter(payload, center, true, o.timeMs);
-        if (state == "folder") ctl.fileInfo(ctl.sessionId(), true);
+        if (state == "folder" || state == "cloud") {
+            selection::PathFacts facts;  // what the worker thread would report
+            facts.containsDirectory = state == "folder";
+            facts.containsCloudPlaceholder = state == "cloud";
+            ctl.fileInfo(ctl.sessionId(), facts);
+        }
         const size_t count = host.model.sectors.size();
         if (highlight >= 0 && static_cast<size_t>(highlight) < count) {
             const layout::Layout L = layout::computeLayout(static_cast<int>(count), host.frame.diameter, cfg->geometry);

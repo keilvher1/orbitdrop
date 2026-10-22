@@ -10,6 +10,7 @@ namespace {
 std::wstring extendedPath(const std::wstring& path) {
     if (path.size() < MAX_PATH || path.rfind(L"\\\\?\\", 0) == 0) return path;
     if (path.size() >= 3 && path[1] == L':' && (path[2] == L'\\' || path[2] == L'/')) return L"\\\\?\\" + path;
+    if (path.rfind(L"\\\\.\\", 0) == 0) return L"\\\\?\\" + path.substr(4);  // device path: not a UNC share
     if (path.rfind(L"\\\\", 0) == 0) return L"\\\\?\\UNC\\" + path.substr(2);
     return path;
 }
@@ -71,7 +72,7 @@ DWORD FolderChecker::loop() {
         generation = generation_;
         ReleaseSRWLockExclusive(&lock_);
 
-        bool directory = false;
+        selection::PathFacts facts;
         bool superseded = false;
         for (const std::wstring& path : paths) {
             AcquireSRWLockShared(&lock_);
@@ -80,15 +81,12 @@ DWORD FolderChecker::loop() {
             if (superseded) break;
             // Metadata only (no content read, no hydration of cloud placeholders);
             // SEM_FAILCRITICALERRORS (process-wide) prevents "insert disk" prompts.
-            const DWORD attrs = GetFileAttributesW(extendedPath(path).c_str());
-            if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0) {
-                directory = true;
-                break;
-            }
+            selection::addFileAttributes(facts, GetFileAttributesW(extendedPath(path).c_str()));
+            if (facts.containsDirectory) break;  // a folder decides the outcome
         }
         if (superseded) continue;
         AcquireSRWLockExclusive(&lock_);
-        if (results_.size() < 64) results_.push_back(Result{std::move(id), directory});
+        if (results_.size() < 64) results_.push_back(Result{std::move(id), facts});
         ReleaseSRWLockExclusive(&lock_);
         wake();
     }

@@ -1,5 +1,6 @@
 #include "core/json.h"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <system_error>
@@ -71,6 +72,32 @@ void Value::set(std::string key, Value v) { object_.push_back(Member{std::move(k
 // ------------------------------------------------------------------ parser
 
 namespace {
+
+/**
+ * True when two members share a key. Checked once per finished object: a
+ * pairwise scan for small objects, a sort for large ones, so a 1 MiB line of
+ * distinct keys costs O(n log n) — the former check on every key was O(n²) and
+ * kept the reader thread busy for seconds on such a line.
+ */
+bool hasDuplicateKey(const std::vector<Member>& members) {
+    const size_t n = members.size();
+    if (n <= 8) {
+        for (size_t i = 1; i < n; ++i) {
+            for (size_t j = 0; j < i; ++j) {
+                if (members[i].key == members[j].key) return true;
+            }
+        }
+        return false;
+    }
+    std::vector<const std::string*> keys;
+    keys.reserve(n);
+    for (const Member& m : members) keys.push_back(&m.key);
+    std::sort(keys.begin(), keys.end(), [](const std::string* a, const std::string* b) { return *a < *b; });
+    for (size_t i = 1; i < n; ++i) {
+        if (*keys[i] == *keys[i - 1]) return true;
+    }
+    return false;
+}
 
 class Parser {
 public:
@@ -156,9 +183,6 @@ private:
             if (pos_ >= s_.size() || s_[pos_] != '"') return fail("expected object key");
             std::string key;
             if (!parseString(key)) return false;
-            for (const Member& m : out.asObject()) {
-                if (m.key == key) return fail("duplicate object key");
-            }
             skipWs();
             if (pos_ >= s_.size() || s_[pos_] != ':') return fail("expected ':'");
             ++pos_;
@@ -174,6 +198,8 @@ private:
             }
             if (s_[pos_] == '}') {
                 ++pos_;
+                // JSON.parse would keep the last value; the protocol rejects the line.
+                if (hasDuplicateKey(out.asObject())) return fail("duplicate object key");
                 return true;
             }
             return fail("expected ',' or '}'");
@@ -227,6 +253,18 @@ private:
         return true;
     }
 
+    /** True when the next six bytes are a "\uDC00".."\uDFFF" escape (not consumed). */
+    bool peekLowSurrogateEscape(uint32_t& lo) const {
+        if (pos_ + 6 > s_.size() || s_[pos_] != '\\' || s_[pos_ + 1] != 'u') return false;
+        lo = 0;
+        for (size_t k = 2; k < 6; ++k) {
+            const int d = hexDigit(s_[pos_ + k]);
+            if (d < 0) return false;  // parsed (and refused) as its own escape next
+            lo = (lo << 4) | static_cast<uint32_t>(d);
+        }
+        return lo >= 0xDC00 && lo <= 0xDFFF;
+    }
+
     bool parseString(std::string& out) {
         ++pos_;  // opening quote
         out.clear();
@@ -255,17 +293,17 @@ private:
                         uint32_t cp;
                         if (!parseHex4(cp)) return false;
                         if (cp >= 0xD800 && cp <= 0xDBFF) {
-                            if (pos_ + 2 > s_.size() || s_[pos_] != '\\' || s_[pos_ + 1] != 'u') {
-                                return fail("lone high surrogate");
+                            uint32_t lo = 0;
+                            if (peekLowSurrogateEscape(lo)) {
+                                pos_ += 6;
+                                cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
                             }
-                            pos_ += 2;
-                            uint32_t lo;
-                            if (!parseHex4(lo)) return false;
-                            if (lo < 0xDC00 || lo > 0xDFFF) return fail("invalid surrogate pair");
-                            cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
-                        } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
-                            return fail("lone low surrogate");
                         }
+                        // A lone surrogate (JSON.stringify writes one for a split pair)
+                        // is a valid JavaScript string, so zod accepts the line. UTF-8
+                        // cannot hold it: read it as U+FFFD, which zod's code point
+                        // limits count the same way (one each) — the macOS helper too.
+                        if (cp >= 0xD800 && cp <= 0xDFFF) cp = 0xFFFD;
                         utf::appendUtf8(out, cp);
                         break;
                     }

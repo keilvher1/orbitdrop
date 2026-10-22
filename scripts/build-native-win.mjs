@@ -7,10 +7,12 @@
 //        wheel snapshots (PNG), and stages OrbitDropHelper.exe + BUILD_INFO.txt into
 //        apps/desktop/resources/helper/win32-x64/.
 //
-//   node scripts/build-native-win.mjs --core-tests [--parity]
+//   node scripts/build-native-win.mjs --core-tests [--parity] [--no-asan]
 //        Any OS: builds and runs the portable core tests with the host compiler
-//        (preset `host-tests`). --parity also cross-checks the C++ protocol code
-//        against the zod schemas (needs node_modules/tsx).
+//        (preset `host-tests`), then again with AddressSanitizer + UBSan on
+//        macOS/Linux (preset `host-tests-asan`; --no-asan skips it). --parity also
+//        cross-checks the C++ protocol code against the zod schemas (needs
+//        node_modules/tsx).
 //
 //   node scripts/build-native-win.mjs --cross [--no-stage]
 //        macOS/Linux: compile check with MinGW-w64 (preset `mingw-x64`, warnings are
@@ -54,6 +56,7 @@ const stage = !flag('--no-stage');
 const wantCross = flag('--cross');
 const wantCoreTests = flag('--core-tests');
 const wantParity = flag('--parity');
+const wantAsan = !flag('--no-asan');
 
 function run(cmd, args, opts = {}) {
   console.log(`\n> ${cmd} ${args.join(' ')}`);
@@ -135,24 +138,32 @@ function runParity(toolExe) {
 }
 
 // ------------------------------------------------------------------ portable core tests (any OS)
-function coreTests() {
-  run('cmake', ['--preset', 'host-tests']);
-  run('cmake', ['--build', '--preset', 'host-tests', '--parallel']);
-  const dir = join(src, 'build', 'host-tests');
+function buildAndRunCoreTests(preset, config) {
+  run('cmake', ['--preset', preset]);
+  run('cmake', ['--build', '--preset', preset, '--parallel']);
+  const dir = join(src, 'build', preset);
   const exe = firstExisting([
     join(dir, 'orbitdrop-core-tests'),
     join(dir, 'orbitdrop-core-tests.exe'),
-    join(dir, 'Release', 'orbitdrop-core-tests.exe'),
+    join(dir, config, 'orbitdrop-core-tests.exe'),
   ]);
-  if (!exe) throw new Error('orbitdrop-core-tests was not built');
+  if (!exe) throw new Error(`orbitdrop-core-tests was not built (preset ${preset})`);
   run(exe, ['--require-golden']);
+  return dir;
+}
+
+function coreTests() {
+  const dir = buildAndRunCoreTests('host-tests', 'Release');
+  // ASan + UBSan (findings abort the run: -fno-sanitize-recover); the preset is GCC/Clang only.
+  if (!isWindows && wantAsan) buildAndRunCoreTests('host-tests-asan', 'Debug');
   if (wantParity) {
     const tool = firstExisting([
       join(dir, 'orbitdrop-protocol-tool'),
       join(dir, 'orbitdrop-protocol-tool.exe'),
       join(dir, 'Release', 'orbitdrop-protocol-tool.exe'),
     ]);
-    if (tool) runParity(tool);
+    if (!tool) throw new Error('--parity: orbitdrop-protocol-tool was not built');
+    runParity(tool);
   }
 }
 

@@ -89,6 +89,14 @@ TEST_CASE("helper core: invalid messages are reported without echoing contents")
     CHECK_EQ(p.msg(3).get("code")->asString(), std::string("unknownType"));
     core.handleLineTooLong();
     CHECK_EQ(p.msg(4).get("code")->asString(), std::string("lineTooLong"));
+    // An unknown key is message content too: only field-like names appear in the report.
+    core.handleLine(R"({"v":1,"type":"ping","nonce":1,"C:\\Users\\me\\secret.pdf":0})");
+    REQUIRE(p.sent.size() == 6);
+    CHECK_EQ(p.msg(5).get("code")->asString(), std::string("invalidMessage"));
+    CHECK(p.msg(5).get("message")->asString().find("secret") == std::string::npos);
+    CHECK(p.msg(5).get("message")->asString().find("<key>: unknown field") != std::string::npos);
+    core.handleLine(R"({"v":1,"type":"ping","nonce":1,"extra_field":0})");
+    CHECK(p.msg(6).get("message")->asString().find("extra_field: unknown field") != std::string::npos);
     for (int i = 0; i < 100; ++i) core.handleLine("nope");  // reports are capped
     CHECK(p.sent.size() <= 50);
     CHECK_EQ(p.exitCode, -1);  // protocol errors are never fatal

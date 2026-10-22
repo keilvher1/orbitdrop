@@ -1,7 +1,7 @@
 // OLE IDropTarget registered on the wheel window (RegisterDragDrop).
 //
 // DragEnter reads CF_HDROP (DragQueryFileW) into owned UTF-8 strings and
-// detects virtual files (CFSTR_FILEDESCRIPTORW without CF_HDROP); DragOver
+// detects virtual files (CFSTR_FILEDESCRIPTORW/A without CF_HDROP); DragOver
 // hit-tests and sets *pdwEffect; Drop copies the paths again before returning
 // (the IDataObject is never kept). The effect is DROPEFFECT_COPY only when the
 // source allows it, else DROPEFFECT_NONE — never MOVE or LINK.

@@ -51,14 +51,54 @@ std::string osVersionString() {
     return "unknown";
 }
 
-bool isProcessElevated() {
+namespace {
+
+/** Mandatory integrity level (SECURITY_MANDATORY_*_RID) of a process; 0 when unknown. */
+DWORD integrityLevelOf(HANDLE process) {
+    HANDLE token = nullptr;
+    if (!OpenProcessToken(process, TOKEN_QUERY, &token)) return 0;
+    DWORD level = 0;
+    DWORD size = 0;
+    GetTokenInformation(token, TokenIntegrityLevel, nullptr, 0, &size);  // fails with the size needed
+    if (size >= sizeof(TOKEN_MANDATORY_LABEL)) {
+        std::vector<BYTE> buffer(size);
+        if (GetTokenInformation(token, TokenIntegrityLevel, buffer.data(), size, &size)) {
+            const PSID sid = reinterpret_cast<const TOKEN_MANDATORY_LABEL*>(buffer.data())->Label.Sid;
+            if (sid != nullptr && IsValidSid(sid) && *GetSidSubAuthorityCount(sid) > 0) {
+                level = *GetSidSubAuthority(sid, static_cast<DWORD>(*GetSidSubAuthorityCount(sid) - 1));
+            }
+        }
+    }
+    CloseHandle(token);
+    return level;
+}
+
+}  // namespace
+
+bool shellDragsBlockedByIntegrity() {
+    // UIPI drops window messages, and with them OLE drag-and-drop, from a lower
+    // integrity level to a higher one. TokenIsElevated alone is not the test: it
+    // is also true for every administrator process when UAC is off, or for the
+    // built-in Administrator, where Explorer runs at the same level and drags work.
+    const DWORD self = integrityLevelOf(GetCurrentProcess());
+    DWORD shell = 0;
+    DWORD shellPid = 0;
+    const HWND desktop = GetShellWindow();
+    if (desktop != nullptr && GetWindowThreadProcessId(desktop, &shellPid) != 0 && shellPid != 0) {
+        if (HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, shellPid)) {
+            shell = integrityLevelOf(process);
+            CloseHandle(process);
+        }
+    }
+    if (self != 0 && shell != 0) return self > shell;
+    // No shell to compare with: blocked when this is the elevated half of a UAC split token.
     HANDLE token = nullptr;
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
-    TOKEN_ELEVATION elevation{};
+    TOKEN_ELEVATION_TYPE type = TokenElevationTypeDefault;
     DWORD size = 0;
-    const bool ok = GetTokenInformation(token, TokenElevation, &elevation, sizeof elevation, &size) != 0;
+    const bool ok = GetTokenInformation(token, TokenElevationType, &type, sizeof type, &size) != 0;
     CloseHandle(token);
-    return ok && elevation.TokenIsElevated != 0;
+    return ok && type == TokenElevationTypeFull;
 }
 
 UINT dpiForMonitor(HMONITOR monitor) {

@@ -79,7 +79,10 @@ DWORD StdioChannel::readerLoop() {
         if (InterlockedCompareExchange(&readerStop_, 0, 0) != 0) return 0;
         DWORD got = 0;
         const BOOL ok = ReadFile(input_, buf.data(), static_cast<DWORD>(buf.size()), &got, nullptr);
-        if (!ok) break;  // ERROR_BROKEN_PIPE (parent gone), ERROR_OPERATION_ABORTED (stop), …
+        // A message-mode pipe reports a message longer than the buffer as
+        // ERROR_MORE_DATA with the first part read: data, not the end of input.
+        // (Node's stdio pipes are byte mode; this keeps other parents working.)
+        if (!ok && GetLastError() != ERROR_MORE_DATA) break;  // ERROR_BROKEN_PIPE (parent gone), ERROR_OPERATION_ABORTED (stop), …
         if (got == 0) {
             // Files and consoles signal EOF with 0 bytes; a byte-mode pipe only
             // does so for zero-length writes, which main never makes.

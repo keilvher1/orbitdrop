@@ -3,6 +3,7 @@
 #include <shellapi.h>
 #include <shlobj.h>
 
+#include <initializer_list>
 #include <string>
 
 #include "core/protocol.h"
@@ -16,6 +17,12 @@ const CLSID kClsidDragDropHelper = {0x4657278a, 0x411b, 0x11d2, {0x83, 0x9a, 0x0
 
 CLIPFORMAT fileDescriptorFormat() {
     static const CLIPFORMAT cf = static_cast<CLIPFORMAT>(RegisterClipboardFormatW(CFSTR_FILEDESCRIPTORW));
+    return cf;
+}
+
+/** "FileGroupDescriptor": the ANSI form, which some sources offer instead of (or besides) the Unicode one. */
+CLIPFORMAT fileDescriptorFormatAnsi() {
+    static const CLIPFORMAT cf = static_cast<CLIPFORMAT>(RegisterClipboardFormatW(CFSTR_FILEDESCRIPTORA));
     return cf;
 }
 
@@ -121,8 +128,15 @@ selection::DragPayload DropTarget::readPayload(IDataObject* data) {
         }
         ReleaseStgMedium(&stg);
     } else {
-        FORMATETC fd{fileDescriptorFormat(), nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
-        if (data->QueryGetData(&fd) == S_OK) p.virtualFilesOnly = true;
+        // Virtual items (mail attachments, zip or phone contents, browser images)
+        // come as a file group descriptor + file contents, without CF_HDROP.
+        for (const CLIPFORMAT cf : {fileDescriptorFormat(), fileDescriptorFormatAnsi()}) {
+            FORMATETC fd{cf, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
+            if (data->QueryGetData(&fd) == S_OK) {
+                p.virtualFilesOnly = true;
+                break;
+            }
+        }
     }
     return p;
 }

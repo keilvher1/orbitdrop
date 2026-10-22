@@ -354,12 +354,19 @@ proto::CancelReason Controller::zoneReason(const geo::WheelHit& hit, bool armed,
 
 bool Controller::wantsPayload() const { return phase_ == Phase::AwaitingPayload; }
 
-void Controller::fileInfo(const std::string& sessionId, bool containsDirectory) {
+void Controller::fileInfo(const std::string& sessionId, const selection::PathFacts& facts) {
     if (phase_ != Phase::WheelActive || session_.id.empty() || session_.id != sessionId || !session_.payloadKnown) return;
-    if (!containsDirectory || session_.cls.reason == selection::Unsupported::Directory) return;
+    // A folder wins over a cloud placeholder. A placeholder only changes a drag
+    // that is otherwise offered (an unknown type stays plain "unsupported"); a
+    // folder also gives an extensionless folder its own wording.
+    const selection::Unsupported reason = facts.containsDirectory          ? selection::Unsupported::Directory
+                                          : facts.containsCloudPlaceholder ? selection::Unsupported::CloudPlaceholder
+                                                                           : selection::Unsupported::None;
+    if (reason == selection::Unsupported::None || session_.cls.reason == reason) return;
+    if (reason == selection::Unsupported::CloudPlaceholder && !session_.cls.supported) return;
     const bool wasSupported = session_.cls.supported;
     session_.cls.supported = false;
-    session_.cls.reason = selection::Unsupported::Directory;
+    session_.cls.reason = reason;
     session_.cls.menuKey.reset();
     freezeSectors();  // no sectors for an unsupported payload
     if (wasSupported) sendState(proto::SessionState::WheelActive);  // menuKey is now null
@@ -400,11 +407,12 @@ Effect Controller::dragEnter(const selection::DragPayload& payload, coords::Poin
         if (!session_.cls.supported) {
             host_.log(proto::LogLevel::Debug, std::string("drag payload not offered: ") + selection::toString(session_.cls.reason));
         }
-        // Folders can only be told apart with a file-system call, which must not
-        // run inside DragEnter: ask the host to check off the UI thread. Only
-        // worth it when the folder would change the outcome or the wording.
+        // Folders and cloud-only placeholders can only be told apart with a
+        // file-system call, which must not run inside DragEnter: ask the host to
+        // check off the UI thread. Only worth it when the answer would change
+        // the outcome or the wording.
         if (session_.cls.reason == selection::Unsupported::None || session_.cls.reason == selection::Unsupported::UnknownType) {
-            host_.checkFolders(session_.id, payload.paths);
+            host_.checkPaths(session_.id, payload.paths);
         }
     } else if (phase_ != Phase::WheelActive) {
         return Effect::None;
@@ -561,6 +569,13 @@ void Controller::shutdown() {
 
 // ------------------------------------------------------------------ render model
 
+const char* cloudPlaceholderText(proto::Locale locale) {
+    // Built in until configure carries a string for it (requested as
+    // strings.unsupportedCloud); same advice as main's CLOUD_PLACEHOLDER error.
+    return locale == proto::Locale::Ko ? "\xEB\xA8\xBC\xEC\xA0\x80 \xEB\x82\xB4\xEB\xA0\xA4\xEB\xB0\x9B\xEC\x9C\xBC\xEC\x84\xB8\xEC\x9A\x94"  // 먼저 내려받으세요
+                                       : "Download it first";
+}
+
 std::string Controller::defaultCapsuleText() const {
     const proto::Configure& c = *session_.cfg;
     if (session_.cls.fileCount > 1) {
@@ -608,6 +623,7 @@ void Controller::refreshModel(bool push) {
                 default: break;
             }
             m.capsuleText = specific != nullptr && specific->has_value() && !(*specific)->empty() ? **specific : c.strings.unsupported;
+            if (session_.cls.reason == selection::Unsupported::CloudPlaceholder) m.capsuleText = cloudPlaceholderText(c.locale);
             m.capsuleStyle = CapsuleStyle::Reject;
         } else if (session_.hasHit && session_.hit.zone == geo::WheelHit::Zone::Sector) {
             const int i = session_.hit.index;

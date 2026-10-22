@@ -1,7 +1,9 @@
+#include <chrono>
 #include <cmath>
 #include <string>
 
 #include "core/json.h"
+#include "core/protocol.h"
 #include "test_framework.h"
 
 using od::json::ParseError;
@@ -70,11 +72,25 @@ TEST_CASE("json: string escapes and surrogate pairs") {
     CHECK_EQ(v.asArray()[0].asString(), std::string("\"\\/\b\f\n\r\t"));
     CHECK_EQ(v.asArray()[1].asString(), std::string("\xC3\xA9\xED\x95\x9C"));
     CHECK_EQ(v.asArray()[2].asString(), std::string("\xF0\x9F\x98\x80"));
-    CHECK(!parses(R"(["\uD83D"])"));         // lone high surrogate
-    CHECK(!parses(R"(["\uDE00"])"));         // lone low surrogate
-    CHECK(!parses(R"(["\uD83Dx"])"));
-    CHECK(!parses(R"(["\uD83D\u0041"])"));   // high surrogate + non-low
     CHECK(parses("[\"\xF0\x9F\x98\x80 raw\"]"));
+}
+
+TEST_CASE("json: escaped lone surrogates read as U+FFFD (JSON.parse accepts them)") {
+    const std::string fffd = "\xEF\xBF\xBD";
+    const auto str = [](const std::string& text) {
+        Value v;
+        ParseError e;
+        return od::json::parse(text, v, e) && v.isArray() && !v.asArray().empty() ? v.asArray()[0].asString() : std::string("<rejected>");
+    };
+    CHECK_EQ(str(R"(["\uD83D"])"), fffd);                                   // lone high surrogate
+    CHECK_EQ(str(R"(["\uDE00"])"), fffd);                                   // lone low surrogate
+    CHECK_EQ(str(R"(["\uD83Dx"])"), fffd + "x");
+    CHECK_EQ(str(R"(["\uD83D\u0041"])"), fffd + "A");                       // high surrogate + a BMP escape
+    CHECK_EQ(str(R"(["\uDE00\uD83D"])"), fffd + fffd);                      // reversed pair
+    CHECK_EQ(str(R"(["\uD83D\uD83D\uDE00"])"), fffd + "\xF0\x9F\x98\x80");  // lone, then a real pair
+    CHECK_EQ(str(R"(["\uDBFF\uDFFF"])"), std::string("\xF4\x8F\xBF\xBF"));  // U+10FFFF
+    CHECK(!parses(R"(["\uD83D\u12"])"));                  // the following escape is still checked
+    CHECK(!parses(std::string("[\"\xED\xA0\x80\"]")));    // a raw (UTF-8 encoded) surrogate stays invalid UTF-8
 }
 
 TEST_CASE("json: numbers follow JSON.parse rounding and limits") {
@@ -103,6 +119,73 @@ TEST_CASE("json: duplicate keys, depth and value limits") {
     opt.maxValues = 5;
     CHECK(parses("[1,2,3,4]", nullptr, opt));
     CHECK(!parses("[1,2,3,4,5]", nullptr, opt));
+}
+
+namespace {
+
+/** {"k0":0,"k1":0,…} with `n` distinct keys; `dupAt` >= 0 repeats key 0 at that position. */
+std::string objectWithKeys(size_t n, long dupAt = -1) {
+    std::string s = "{";
+    for (size_t i = 0; i < n; ++i) {
+        if (i > 0) s += ',';
+        const size_t k = static_cast<long>(i) == dupAt ? 0 : i;
+        s += "\"k" + std::to_string(k) + "\":0";
+    }
+    return s + "}";
+}
+
+}  // namespace
+
+TEST_CASE("json: duplicate keys are found in objects of any size") {
+    CHECK(!parses(R"({"a":1,"b":2,"a":3})"));
+    CHECK(!parses(R"({"a":1,"a":2})"));  // compared after unescaping
+    CHECK(parses(R"({"a":1,"A":2,"a ":3})"));
+    CHECK(parses(R"({"x":{"a":1},"y":{"a":2}})"));  // the same key in sibling objects is fine
+    CHECK(parses(objectWithKeys(9)));               // just above the pairwise-scan size
+    CHECK(!parses(objectWithKeys(9, 8)));
+    CHECK(parses(objectWithKeys(10000)));
+    CHECK(!parses(objectWithKeys(10000, 1)));     // duplicate right after the first key
+    CHECK(!parses(objectWithKeys(10000, 9999)));  // … and as the very last key
+    CHECK(!parses("{\"outer\":" + objectWithKeys(500, 250) + "}"));
+}
+
+TEST_CASE("json: lines with tens of thousands of keys are parsed without quadratic work") {
+    // Before the per-object sort, every key was compared with all earlier keys:
+    // ~2 s of reader-thread time for a 1 MiB line on a fast machine (O(n²)).
+    const auto pingWithKeys = [](size_t maxBytes, size_t maxKeys, size_t& keys) {
+        std::string line = R"({"v":1,"type":"ping","nonce":1,"pad":{)";
+        for (keys = 0; keys < maxKeys && line.size() < maxBytes - 16; ++keys) {
+            if (keys > 0) line += ',';
+            line += "\"" + std::to_string(keys) + "\":0";
+        }
+        return line + "}}";
+    };
+    const auto timed = [](const std::string& line, od::proto::ParseResult& r) {
+        const auto start = std::chrono::steady_clock::now();
+        r = od::proto::parseMainToHelper(line);
+        return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    };
+    size_t keys = 0;
+    od::proto::ParseResult r;
+
+    // 1 MiB: more values than ParseOptions::maxValues (50,000) → invalid JSON.
+    const std::string full = pingWithKeys(od::proto::kMaxLineBytes, SIZE_MAX, keys);
+    REQUIRE(full.size() <= od::proto::kMaxLineBytes);
+    double ms = timed(full, r);
+    CHECK(!r.ok());
+    CHECK(r.failure.kind == od::proto::ParseErrorKind::InvalidJson);
+    odtest::note("1 MiB line, " + std::to_string(keys) + " keys: " + std::to_string(static_cast<int>(ms)) + " ms");
+    CHECK(ms < 2000.0);  // coarse bound: milliseconds now, seconds with the old scan
+
+    // 40,000 keys: the object completes, its keys are sorted once, then the
+    // unknown field is rejected by the protocol validator.
+    const std::string many = pingWithKeys(od::proto::kMaxLineBytes, 40000, keys);
+    REQUIRE(keys == 40000);
+    ms = timed(many, r);
+    CHECK(!r.ok());
+    CHECK(r.failure.kind == od::proto::ParseErrorKind::InvalidMessage);
+    odtest::note("40,000 distinct keys: " + std::to_string(static_cast<int>(ms)) + " ms");
+    CHECK(ms < 2000.0);
 }
 
 TEST_CASE("json: writer output equals JSON.stringify") {

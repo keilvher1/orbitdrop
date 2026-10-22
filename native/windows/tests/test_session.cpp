@@ -52,7 +52,7 @@ struct FakeHost : session::Host {
     void setPollMode(session::PollMode m) override { poll = m; }
     std::string newSessionId() override { return "s" + std::to_string(++ids); }
     void log(proto::LogLevel, const std::string& m) override { logs.push_back(m); }
-    void checkFolders(const std::string& id, const std::vector<std::string>& paths) override { folderChecks.emplace_back(id, paths); }
+    void checkPaths(const std::string& id, const std::vector<std::string>& paths) override { folderChecks.emplace_back(id, paths); }
 
     json::Value message(size_t i) const {
         json::Value v;
@@ -93,6 +93,14 @@ selection::DragPayload files(std::vector<std::string> paths) {
 
 const selection::DragPayload kPdf = files({"C:\\Users\\me\\Docs\\Page 001.pdf"});
 const selection::DragPayload kJpg = files({"C:\\Users\\me\\Pictures\\photo.jpg"});
+
+/** What the path-check worker reports. */
+selection::PathFacts facts(bool directory, bool cloudPlaceholder = false) {
+    selection::PathFacts f;
+    f.containsDirectory = directory;
+    f.containsCloudPlaceholder = cloudPlaceholder;
+    return f;
+}
 
 struct Driver {
     FakeHost host;
@@ -731,12 +739,12 @@ TEST_CASE("session: folders are detected off the UI thread and change the outcom
     CHECK_EQ(d.host.folderChecks[0].first, d.ctl.sessionId());
     CHECK(d.host.folderChecks[0].second == kPdf.paths);
     CHECK(d.over(920, 500) == Effect::Copy);
-    d.ctl.fileInfo("someone-else", true);  // a late answer for another session is ignored
+    d.ctl.fileInfo("someone-else", facts(true));  // a late answer for another session is ignored
     CHECK(d.over(920, 500) == Effect::Copy);
-    d.ctl.fileInfo(d.ctl.sessionId(), false);
+    d.ctl.fileInfo(d.ctl.sessionId(), facts(false));
     CHECK(d.over(920, 500) == Effect::Copy);
     const size_t statesBefore = d.host.ofType("state").size();
-    d.ctl.fileInfo(d.ctl.sessionId(), true);  // "Page 001.pdf" is a folder after all
+    d.ctl.fileInfo(d.ctl.sessionId(), facts(true));  // "Page 001.pdf" is a folder after all
     const auto states = d.host.ofType("state");
     REQUIRE(states.size() == statesBefore + 1);
     CHECK(states.back().get("menuKey")->isNull());
@@ -752,7 +760,7 @@ TEST_CASE("session: folders are detected off the UI thread and change the outcom
     CHECK_EQ(e.host.model.capsuleText, std::string("Not supported"));
     REQUIRE(e.host.folderChecks.size() == 1);
     const size_t n = e.host.ofType("state").size();
-    e.ctl.fileInfo(e.ctl.sessionId(), true);
+    e.ctl.fileInfo(e.ctl.sessionId(), facts(true));
     CHECK_EQ(e.host.model.capsuleText, std::string("Folders aren't supported"));
     CHECK_EQ(e.host.ofType("state").size(), n);  // menuKey was already null: no new state
 
@@ -762,6 +770,63 @@ TEST_CASE("session: folders are detected off the UI thread and change the outcom
     virt.virtualFilesOnly = true;
     v.enter(virt, 800, 500);
     CHECK(v.host.folderChecks.empty());
+}
+
+TEST_CASE("session: cloud-only placeholders are refused, never read") {
+    Driver d;
+    d.startWheel(800, 500);
+    d.enter(kPdf, 920, 500);
+    REQUIRE(d.host.folderChecks.size() == 1);  // the worker reads attributes only, after DragEnter
+    CHECK(d.over(920, 500) == Effect::Copy);   // offered until the answer arrives
+    const size_t statesBefore = d.host.ofType("state").size();
+    d.ctl.fileInfo(d.ctl.sessionId(), facts(false, /*cloudPlaceholder=*/true));
+    const auto states = d.host.ofType("state");
+    REQUIRE(states.size() == statesBefore + 1);
+    CHECK(states.back().get("menuKey")->isNull());
+    CHECK(d.host.model.unsupported);
+    CHECK_EQ(d.host.model.capsuleText, std::string("Download it first"));
+    CHECK(d.host.model.capsuleStyle == CapsuleStyle::Reject);
+    CHECK(d.over(920, 500) == Effect::None);
+    CHECK(d.drop(kPdf, 920, 500) == Effect::None);
+    CHECK_EQ(str(d.host.ofType("cancelled")[0], "reason"), std::string("invalidPayload"));
+    CHECK(d.host.ofType("drop").empty());
+
+    Driver k;  // Korean wording
+    k.ctl.configure(defaults::referenceConfigure(proto::Locale::Ko));
+    k.startWheel(800, 500);
+    k.enter(kPdf, 920, 500);
+    k.ctl.fileInfo(k.ctl.sessionId(), facts(false, true));
+    CHECK_EQ(k.host.model.capsuleText, std::string("\xEB\xA8\xBC\xEC\xA0\x80 \xEB\x82\xB4\xEB\xA0\xA4\xEB\xB0\x9B\xEC\x9C\xBC\xEC\x84\xB8\xEC\x9A\x94"));
+
+    Driver f;  // a folder wins over a placeholder, in one answer or in two
+    f.startWheel(800, 500);
+    f.enter(files({"C:\\a.pdf", "C:\\b.pdf"}), 800, 500);
+    f.ctl.fileInfo(f.ctl.sessionId(), facts(true, true));
+    CHECK_EQ(f.host.model.capsuleText, std::string("Folders aren't supported"));
+    const size_t n = f.host.ofType("state").size();
+    f.ctl.fileInfo(f.ctl.sessionId(), facts(false, true));
+    CHECK_EQ(f.host.model.capsuleText, std::string("Folders aren't supported"));
+    CHECK_EQ(f.host.ofType("state").size(), n);
+
+    Driver u;  // an unsupported type stays plain "unsupported"
+    u.startWheel(800, 500);
+    u.enter(files({"C:\\notes.txt"}), 800, 500);
+    const size_t m = u.host.ofType("state").size();
+    u.ctl.fileInfo(u.ctl.sessionId(), facts(false, true));
+    CHECK_EQ(u.host.model.capsuleText, std::string("Not supported"));
+    CHECK_EQ(u.host.ofType("state").size(), m);
+
+    Driver late;  // an answer for a finished session changes nothing
+    late.startWheel(800, 500);
+    late.enter(kPdf, 920, 500);
+    const std::string old = late.ctl.sessionId();
+    late.drop(kPdf, 920, 500);
+    late.up();
+    late.startWheel(800, 500);
+    late.enter(kPdf, 920, 500);
+    late.ctl.fileInfo(old, facts(false, true));
+    CHECK(!late.host.model.unsupported);
+    CHECK(late.over(920, 500) == Effect::Copy);
 }
 
 TEST_CASE("session: specific unsupported texts with fallback") {

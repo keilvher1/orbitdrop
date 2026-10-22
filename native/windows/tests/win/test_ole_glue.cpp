@@ -28,13 +28,15 @@ bool fakeCursor(POINT* out) {
 }
 
 CLIPFORMAT fileDescriptorFormat() { return static_cast<CLIPFORMAT>(RegisterClipboardFormatW(CFSTR_FILEDESCRIPTORW)); }
+CLIPFORMAT fileDescriptorFormatAnsi() { return static_cast<CLIPFORMAT>(RegisterClipboardFormatW(CFSTR_FILEDESCRIPTORA)); }
 
-/** Minimal IDataObject offering CF_HDROP (wide DROPFILES), FileGroupDescriptorW and/or text. */
+/** Minimal IDataObject offering CF_HDROP (wide DROPFILES), FileGroupDescriptor(W) and/or text. */
 class FakeDataObject final : public IDataObject {
 public:
     std::vector<std::wstring> files;
     bool hdrop = false;
     bool fileDescriptor = false;
+    bool fileDescriptorAnsi = false;
     bool text = false;
     int getDataCalls = 0;
 
@@ -81,6 +83,7 @@ public:
         if (fe == nullptr) return E_INVALIDARG;
         if (fe->cfFormat == CF_HDROP && hdrop) return S_OK;
         if (fe->cfFormat == fileDescriptorFormat() && fileDescriptor) return S_OK;
+        if (fe->cfFormat == fileDescriptorFormatAnsi() && fileDescriptorAnsi) return S_OK;
         if (fe->cfFormat == CF_UNICODETEXT && text) return S_OK;
         return DV_E_FORMATETC;
     }
@@ -138,7 +141,7 @@ struct TestSink final : win::DropSink, session::Host {
     void setPollMode(session::PollMode) override {}
     std::string newSessionId() override { return "ole-" + std::to_string(++ids); }
     void log(proto::LogLevel, const std::string&) override {}
-    void checkFolders(const std::string&, const std::vector<std::string>&) override { ++folderChecks; }
+    void checkPaths(const std::string&, const std::vector<std::string>&) override { ++folderChecks; }
 
     // win::DropSink
     void enterOle() override { maxDepth = std::max(maxDepth, ++depth); }
@@ -353,6 +356,22 @@ TEST_CASE("ole: virtual-only and non-file data are unsupported with their own te
         target->Drop(&data, 0, POINTL{920, 500}, &effect);
         CHECK_EQ(effect, static_cast<DWORD>(DROPEFFECT_NONE));
         CHECK_EQ(sink.count("drop"), size_t{0});
+    }
+    {
+        // Only the ANSI "FileGroupDescriptor" (no W form, no CF_HDROP): still virtual, not "not a file".
+        FakeDataObject data;
+        data.fileDescriptorAnsi = true;
+        const selection::DragPayload p = win::DropTarget::readPayload(&data);
+        CHECK(!p.hasFileList);
+        CHECK(p.virtualFilesOnly);
+        TestSink sink;
+        sink.openWheel(800, 500);
+        TargetRef target(sink);
+        g_cursor = POINT{920, 500};
+        DWORD effect = DROPEFFECT_COPY;
+        target->DragEnter(&data, 0, POINTL{920, 500}, &effect);
+        CHECK_EQ(effect, static_cast<DWORD>(DROPEFFECT_NONE));
+        CHECK_EQ(sink.model.capsuleText, std::string("No file on disk"));
     }
     {
         TestSink sink;

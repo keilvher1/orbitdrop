@@ -1,7 +1,8 @@
 // Minimal strict JSON (RFC 8259) parser and writer for the helper protocol.
 //
 // Parser: UTF-8 input only (malformed UTF-8 is rejected), escapes including
-// surrogate pairs (lone surrogates are rejected: they have no UTF-8 form),
+// surrogate pairs (an escaped lone surrogate, valid in JavaScript, is read as
+// U+FFFD: UTF-8 has no form for it and zod counts either as one code point),
 // no comments / trailing commas / NaN / Infinity / leading zeros, depth and
 // value-count limits, duplicate object keys rejected. Numbers are IEEE-754
 // doubles parsed with the same rounding as JavaScript's JSON.parse

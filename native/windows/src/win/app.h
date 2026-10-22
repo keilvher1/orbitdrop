@@ -47,7 +47,7 @@ public:
     void setPollMode(session::PollMode mode) override;
     std::string newSessionId() override;
     void log(proto::LogLevel level, const std::string& message) override;
-    void checkFolders(const std::string& sessionId, const std::vector<std::string>& paths) override;
+    void checkPaths(const std::string& sessionId, const std::vector<std::string>& paths) override;
     // HelperCore::Platform
     void requestExit(int code) override;
 

@@ -1,17 +1,23 @@
-// Off-UI-thread folder detection for dragged paths.
+// Off-UI-thread metadata check of dragged paths: folders and cloud-only
+// placeholders.
 //
 // OLE callbacks must not touch the file system (a sleeping disk or a slow
 // network share would stall the source's drag), so DragEnter only copies the
-// paths and the controller asks this worker whether any of them is a folder.
+// paths and the controller asks this worker whether any of them is a folder or
+// a file whose content is not on this machine yet (OneDrive/Dropbox Files
+// On-Demand online-only file: FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS or
+// FILE_ATTRIBUTE_OFFLINE). GetFileAttributesW reads metadata only, so the check
+// itself never downloads ("hydrates") a placeholder.
 // One worker thread, latest request wins; the answer comes back through a
 // locked slot plus a payload-less wake message (kMsgWake), like StdioChannel.
-// GetFileAttributesW does not hydrate cloud placeholders.
 #pragma once
 
 #include "win/win_util.h"
 
 #include <string>
 #include <vector>
+
+#include "core/selection.h"
 
 namespace od::win {
 
@@ -21,7 +27,7 @@ public:
 
     struct Result {
         std::string sessionId;
-        bool containsDirectory = false;
+        selection::PathFacts facts;
     };
 
     FolderChecker() = default;

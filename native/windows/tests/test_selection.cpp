@@ -1,3 +1,5 @@
+#include <cstdint>
+#include <initializer_list>
 #include <string>
 #include <utility>
 #include <vector>
@@ -115,6 +117,38 @@ TEST_CASE("selection: classify payloads against the configuration") {
     c = selection::classify(files({"C:\\x.png"}), *noMenus);
     CHECK(c.reason == Unsupported::NoMenu);
     CHECK(c.menuKey == proto::MenuKey::ImagePng);
+}
+
+TEST_CASE("selection: file attributes → folder / cloud-only placeholder") {
+    const auto of = [](std::initializer_list<uint32_t> attrs) {
+        selection::PathFacts f;
+        for (const uint32_t a : attrs) selection::addFileAttributes(f, a);
+        return f;
+    };
+    auto f = of({selection::kInvalidFileAttributes});  // gone / no access: main decides
+    CHECK(!f.containsDirectory);
+    CHECK(!f.containsCloudPlaceholder);
+    f = of({0x20});  // FILE_ATTRIBUTE_ARCHIVE: an ordinary local file
+    CHECK(!f.containsDirectory);
+    CHECK(!f.containsCloudPlaceholder);
+    f = of({0x10});
+    CHECK(f.containsDirectory);
+    f = of({0x10 | 0x00400000});  // a cloud folder is a folder
+    CHECK(f.containsDirectory);
+    CHECK(!f.containsCloudPlaceholder);
+    // OneDrive online-only file: RECALL_ON_DATA_ACCESS | UNPINNED | OFFLINE | REPARSE_POINT | SPARSE | ARCHIVE.
+    f = of({0x00501620});
+    CHECK(f.containsCloudPlaceholder);
+    CHECK(!f.containsDirectory);
+    CHECK(of({0x00400020}).containsCloudPlaceholder);  // RECALL_ON_DATA_ACCESS alone
+    CHECK(of({0x00001020}).containsCloudPlaceholder);  // OFFLINE (HSM / remote storage)
+    CHECK(!of({0x00080420}).containsCloudPlaceholder);  // PINNED ("always keep on this device")
+    CHECK(!of({0x00100620}).containsCloudPlaceholder);  // UNPINNED but still local
+    CHECK(!of({0x00040020}).containsCloudPlaceholder);  // 0x40000 = FILE_ATTRIBUTE_EA here, not RECALL_ON_OPEN
+    CHECK(!of({0x00000420}).containsCloudPlaceholder);  // a symbolic link / other reparse point
+    f = of({0x20, 0x00501620, 0x10});  // several paths accumulate
+    CHECK(f.containsCloudPlaceholder);
+    CHECK(f.containsDirectory);
 }
 
 TEST_CASE("selection: multi-file drags disable non-batch sectors") {

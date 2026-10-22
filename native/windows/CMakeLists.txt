@@ -35,8 +35,15 @@ add_library(orbitdrop_flags INTERFACE)
 if(MSVC)
   # /fp:precise: no FMA contraction, so the JavaScript-compatible math in
   # src/core/jsmath.cpp rounds exactly like the reference (explicit std::fma only).
-  target_compile_options(orbitdrop_flags INTERFACE /W4 /permissive- /utf-8 /EHsc /fp:precise /Zc:__cplusplus /bigobj)
+  # /guard:cf on every compile unit, the static core library included: Control
+  # Flow Guard only checks indirect calls in objects compiled with it (the
+  # session controller calls its Host through virtual functions).
+  target_compile_options(orbitdrop_flags INTERFACE /W4 /permissive- /utf-8 /EHsc /fp:precise /Zc:__cplusplus /bigobj /guard:cf)
   target_compile_definitions(orbitdrop_flags INTERFACE _CRT_SECURE_NO_WARNINGS)
+  # Warnings policy: MSVC builds at /W4 but warnings are not fatal by default:
+  # this code has only been compiled by GCC/Clang so far (-Werror there), and
+  # the first MSVC CI run must still produce an artifact. Turn on
+  # ORBITDROP_WARNINGS_AS_ERRORS in the msvc presets once CI shows a clean log.
   if(ORBITDROP_WARNINGS_AS_ERRORS)
     target_compile_options(orbitdrop_flags INTERFACE /WX)
   endif()
@@ -46,8 +53,10 @@ else()
     target_compile_options(orbitdrop_flags INTERFACE -Werror)
   endif()
   if(ORBITDROP_SANITIZE AND NOT WIN32)
-    target_compile_options(orbitdrop_flags INTERFACE -fsanitize=address,undefined -fno-omit-frame-pointer)
-    target_link_options(orbitdrop_flags INTERFACE -fsanitize=address,undefined)
+    # UBSan findings abort the run (by default it prints and carries on, so a
+    # test run could pass with undefined behaviour in the log).
+    target_compile_options(orbitdrop_flags INTERFACE -fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer)
+    target_link_options(orbitdrop_flags INTERFACE -fsanitize=address,undefined -fno-sanitize-recover=undefined)
   endif()
 endif()
 
@@ -180,8 +189,8 @@ if(ORBITDROP_BUILD_HELPER)
     # res/OrbitDropHelper.msvc.manifest (PerMonitorV2 DPI awareness, long paths,
     # Win10/11 compatibility) with the default asInvoker trustInfo and embed it.
     target_sources(OrbitDropHelper PRIVATE res/OrbitDropHelper.msvc.manifest)
+    # ASLR, DEP and the CFG table (the compile side is in orbitdrop_flags).
     target_link_options(OrbitDropHelper PRIVATE /DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA /guard:cf)
-    target_compile_options(OrbitDropHelper PRIVATE /guard:cf)
   else()
     # MinGW: windres embeds the manifest as RT_MANIFEST #1; Unicode entry point.
     set_source_files_properties("${ORBITDROP_RC_FILE}" PROPERTIES COMPILE_DEFINITIONS ORBITDROP_RC_EMBED_MANIFEST)
