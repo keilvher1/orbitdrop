@@ -231,6 +231,21 @@ function reject(code: ErrorCode, message: string, detail?: string): SubmissionRe
 }
 
 /**
+ * convert.X for an image that is already in format X although its name says otherwise
+ * ("photo.jpg" that is really a PNG): it is re-encoded into a correctly named file when the
+ * engine can read and write X. `supports` refuses same-format conversions in general.
+ */
+export function canRewriteSameFormat(
+  snapshot: CapabilitySnapshot,
+  actionId: ActionId,
+  input: { readonly kind: InputKind; readonly format: FileFormat; readonly extensionMismatch?: boolean },
+): boolean {
+  if (input.extensionMismatch !== true || input.kind !== 'image' || actionId !== `convert.${input.format}`) return false;
+  const cap = snapshot.actions[actionId];
+  return cap?.enabled === true && cap.inputKinds.includes('image') && cap.imageInputs.includes(input.format as ImageFormat);
+}
+
+/**
  * Decide what submitAction does for a selection, so main stays thin:
  *  1. unknown action → INVALID_OPTIONS
  *  2. files = `fileIds` (deduplicated, in the given order) or every usable file
@@ -291,7 +306,14 @@ export function resolveSubmission(
     const format = file.format!;
     const kind = file.kind!;
     if (actionId === `convert.${format}`) {
-      skipped.push({ fileId: file.fileId, warning: 'SKIPPED_SAME_FORMAT' });
+      // Already in the target format. An image whose name says otherwise ("photo.jpg" that is
+      // really a PNG, offered PNG because helpers build menus from the extension) is re-encoded
+      // into a correctly named file; otherwise there is nothing to do.
+      if (canRewriteSameFormat(snapshot, actionId, { kind, format, extensionMismatch: file.extensionMismatch === true })) {
+        run.push(file.fileId);
+      } else {
+        skipped.push({ fileId: file.fileId, warning: 'SKIPPED_SAME_FORMAT' });
+      }
       continue;
     }
     if (!supports(snapshot, actionId, { kind, format })) {
@@ -299,7 +321,11 @@ export function resolveSubmission(
     }
     run.push(file.fileId);
   }
-  if (run.length === 0) return reject('UNSUPPORTED_FORMAT', 'Every file already has the target format');
+  // Every file already has the target format: a plan without jobs, only skipped files (the user
+  // sees "skipped, already this format" rather than an error).
+  if (run.length === 0) {
+    return { kind: 'plan', actionId, fileIds: [], skipped, needsEditor: false, merges: action.merges, jobs: [] };
+  }
   if (!action.batch && run.length > 1) return reject('TOO_MANY_FILES', `${action.id} works on one file at a time`);
 
   return {

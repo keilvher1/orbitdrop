@@ -5,6 +5,7 @@ import {
   buildCapabilitySnapshot,
   buildFileSelection,
   buildSelectedFile,
+  canRewriteSameFormat,
   extensionOfPath,
   fileNameOfPath,
   formatOfSingleFileKey,
@@ -153,9 +154,35 @@ describe('resolveSubmission', () => {
     expect(resolveSubmission(mixed, 'convert.png', snapshot)).toMatchObject({ kind: 'plan', fileIds: ['d1', 'j1'] });
   });
 
-  it('rejects a conversion when every file already has the target format', () => {
+  it('plans no jobs, only skipped files, when every file already has the target format', () => {
     const jpgs = buildFileSelection('s', 'globalDrag', [ok('a', 'a.jpg', 'jpeg'), ok('b', 'b.jpg', 'jpeg')]);
-    expect(resolveSubmission(jpgs, 'convert.jpeg', snapshot)).toMatchObject({ kind: 'rejected', error: { code: 'UNSUPPORTED_FORMAT' } });
+    expect(resolveSubmission(jpgs, 'convert.jpeg', snapshot)).toEqual({
+      kind: 'plan',
+      actionId: 'convert.jpeg',
+      fileIds: [],
+      skipped: [
+        { fileId: 'a', warning: 'SKIPPED_SAME_FORMAT' },
+        { fileId: 'b', warning: 'SKIPPED_SAME_FORMAT' },
+      ],
+      needsEditor: false,
+      merges: false,
+      jobs: [],
+    });
+  });
+
+  it('re-encodes an image whose name says another format into its real format (photo.jpg that is a PNG → PNG)', () => {
+    const misnamed = buildFileSelection('s', 'globalDrag', [ok('m', 'photo.jpg', 'png', true)]);
+    expect(resolveSubmission(misnamed, 'convert.png', snapshot)).toMatchObject({ kind: 'plan', fileIds: ['m'], skipped: [], jobs: [['m']] });
+    // Correctly named: nothing to do.
+    const named = buildFileSelection('s', 'globalDrag', [ok('p', 'photo.png', 'png')]);
+    expect(resolveSubmission(named, 'convert.png', snapshot)).toMatchObject({ kind: 'plan', fileIds: [], skipped: [{ fileId: 'p' }] });
+    // A PDF named .png is not rewritten as a PDF (only images are).
+    const pdfNamedPng = buildFileSelection('s', 'globalDrag', [ok('d', 'scan.png', 'pdf', true)]);
+    expect(resolveSubmission(pdfNamedPng, 'convert.pdf', snapshot)).toMatchObject({ kind: 'plan', fileIds: [], skipped: [{ fileId: 'd' }] });
+    // canRewriteSameFormat is the shared rule (main's retry path uses it too).
+    expect(canRewriteSameFormat(snapshot, 'convert.png', { kind: 'image', format: 'png', extensionMismatch: true })).toBe(true);
+    expect(canRewriteSameFormat(snapshot, 'convert.png', { kind: 'image', format: 'png', extensionMismatch: false })).toBe(false);
+    expect(canRewriteSameFormat(snapshot, 'convert.jpeg', { kind: 'image', format: 'png', extensionMismatch: true })).toBe(false);
   });
 
   it('merges images into one PDF job and asks for the page order when there are several', () => {

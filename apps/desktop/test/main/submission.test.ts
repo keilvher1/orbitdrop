@@ -93,6 +93,29 @@ describe('submitAction', () => {
     expect(ran.map((j) => j.inputs[0]!.displayName)).toEqual(['b.jpg']);
   });
 
+  it('records a single file already in the target format as skipped, without asking for a folder or running anything', async () => {
+    const { files, jobs, submission, ran, chooseOutputDir } = setup({ settings: { output: { ...DEFAULT_SETTINGS.output, location: 'ask' } } });
+    const selection = await files.registerPaths(['/in/a.png'], 'globalDrag');
+    const result = await submission.submit({ selectionId: selection.selectionId, actionId: 'convert.png' }, ctx);
+    if (result.kind !== 'jobs') throw new Error(`expected jobs, got ${JSON.stringify(result)}`);
+    const snapshots = await Promise.all(result.jobIds.map((id) => jobs.waitFor(id)));
+    expect(snapshots.map((s) => [s.inputName, s.state, s.warnings.map((w) => w.code), s.batchId])).toEqual([['a.png', 'completed', ['SKIPPED_SAME_FORMAT'], null]]);
+    expect(ran).toEqual([]);
+    expect(chooseOutputDir).not.toHaveBeenCalled();
+  });
+
+  it('re-encodes a file whose name says another format into its real format (a PNG named .jpg → PNG)', async () => {
+    const misnamed = async (path: string) => ({ ...validated(path, 'png'), extensionMismatch: true });
+    const { files, jobs, submission, ran } = setup({ validate: misnamed });
+    const selection = await files.registerPaths(['/in/png-named.jpg'], 'globalDrag');
+    const result = await submission.submit({ selectionId: selection.selectionId, actionId: 'convert.png' }, ctx);
+    if (result.kind !== 'jobs') throw new Error(`expected jobs, got ${JSON.stringify(result)}`);
+    await jobs.waitFor(result.jobIds[0]!);
+    expect(ran.map((j) => [j.actionId, j.inputs[0]!.displayName, j.inputs[0]!.format])).toEqual([['convert.png', 'png-named.jpg', 'png']]);
+    // The retry path accepts it too (same rule, core canRewriteSameFormat).
+    expect(jobs.get(result.jobIds[0]!)?.snapshot.state).toBe('completed');
+  });
+
   it('opens an editor for tools, with the files and origin of the selection', async () => {
     const { files, submission, opened } = setup();
     const selection = await files.registerPaths(['/in/b.jpg'], 'globalDrag');

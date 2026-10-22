@@ -26,6 +26,9 @@ import { OutputLedger, extensionMismatchWarning, reporter, throwIfCancelled, wri
  *    (default white) → ALPHA_FLATTENED.
  *  - Animated inputs (GIF/WebP/APNG) convert their first frame, multi-page
  *    TIFFs their first page → FIRST_FRAME_ONLY / FIRST_PAGE_ONLY.
+ *  - The target may equal the input's real format only when its name says
+ *    otherwise: the file is re-encoded under the right extension
+ *    (EXTENSION_MISMATCH tells the user what the file really was).
  */
 export async function convertImageToImage(
   job: ProcessorJob,
@@ -35,7 +38,9 @@ export async function convertImageToImage(
   ctx: ProcessorRunContext,
 ): Promise<ProcessorResult> {
   if (!isImageFormat(input.format)) throw new OrbitError('UNSUPPORTED_FORMAT', 'Input is not an image');
-  if (input.format === target) {
+  if (input.format === target && extensionMismatchWarning(input) === null) {
+    // Only an image whose name says another format ("photo.jpg" that is a PNG) is re-encoded
+    // into its own format, to get a correctly named file (core canRewriteSameFormat).
     throw new OrbitError('INVALID_OPTIONS', 'The file is already in the target format', { detail: `${input.format} → ${target}` });
   }
   const progress = reporter(ctx);

@@ -16,7 +16,7 @@ import {
   type SubmitActionRequest,
   type SubmitActionResult,
 } from '@orbitdrop/contracts';
-import { buildSelectedFile, resolveSubmission, supports } from '@orbitdrop/core';
+import { buildSelectedFile, canRewriteSameFormat, resolveSubmission, supports } from '@orbitdrop/core';
 import type { ValidatedInput } from '@orbitdrop/core/node';
 import type { EditorSession, EditorSessions } from '../editor/sessions';
 import { isUsable, toProcessorInput, type FileRegistry, type UsableFile } from '../files/registry';
@@ -29,9 +29,9 @@ import type { JobManager, JobOrigin, JobSpec } from './manager';
  * The shared pipeline after a FileSelection exists (global drag, Drop Zone,
  * open dialog, tests):
  *   core `resolveSubmission` (capability gate via `supports`, same-format
- *   files skipped with a warning, needsEditor, one job per file or one merged
- *   job) → editor window, or options validation → output folder ('source' or
- *   'ask') → JobManager.
+ *   files skipped with a warning — or re-encoded when only the name was wrong —
+ *   needsEditor, one job per file or one merged job) → editor window, or
+ *   options validation → output folder ('source' or 'ask') → JobManager.
  */
 
 export interface SubmitContext extends JobOrigin {
@@ -115,7 +115,14 @@ export class SubmissionService {
     };
     const runnable = pick(plan.fileIds);
     const sameFormat = pick(plan.skipped.map((s) => s.fileId));
-    if (!runnable || !sameFormat || runnable.length === 0) return rejected('INTERNAL', 'Selection changed');
+    if (!runnable || !sameFormat || runnable.length + sameFormat.length === 0) return rejected('INTERNAL', 'Selection changed');
+    if (runnable.length === 0) {
+      // Every file already has the target format: recorded as skipped ("already this format"),
+      // without asking for an output folder — nothing is written.
+      const batchId = sameFormat.length > 1 ? newId('b') : null;
+      const jobIds = sameFormat.map((file) => this.deps.jobs.addSkipped(this.specFor(actionId, [file], {}, null, context), batchId, { code: 'SKIPPED_SAME_FORMAT' }));
+      return { kind: 'jobs', jobIds };
+    }
 
     if (plan.needsEditor) {
       const session = this.deps.editors.create({
@@ -250,7 +257,7 @@ export class SubmissionService {
     try {
       const capabilities = await this.deps.capabilities();
       const inputs = await this.revalidateInputs(spec.inputs, capabilities, (input) => {
-        if (!supports(capabilities, spec.actionId, { kind: input.kind, format: input.format })) {
+        if (!supports(capabilities, spec.actionId, { kind: input.kind, format: input.format }) && !canRewriteSameFormat(capabilities, spec.actionId, input)) {
           throw new OrbitError('UNSUPPORTED_FORMAT', `${spec.actionId} does not accept ${input.format} input`);
         }
       });

@@ -204,8 +204,24 @@ describe('image → image conversions (P0-B, P1 TIFF/AVIF, P2 BMP)', () => {
     }
   });
 
-  it('rejects a same-format conversion (it should never be offered) with INVALID_OPTIONS', async () => {
+  it('rejects a same-format conversion of a correctly named file (it should never be offered) with INVALID_OPTIONS', async () => {
     await rejectsWith(runConvert(makeJob('convert.jpeg', [await fx.input('photo.jpg')]), makeCtx().ctx), 'INVALID_OPTIONS');
+  });
+
+  it('a PNG named .jpg dropped on PNG is re-encoded into a correctly named PNG (EXTENSION_MISMATCH), original untouched', async () => {
+    const input = await fx.input('png-named.jpg');
+    const before = await sha256(input.path);
+    const result = await runConvert(makeJob('convert.png', [input]), makeCtx().ctx);
+    expect(result.outputs[0]!.path).toBe(join(fx.dir, 'png-named.png'));
+    const [src, out] = await Promise.all([
+      sharp(input.path).raw().toBuffer({ resolveWithObject: true }),
+      sharp(result.outputs[0]!.path).raw().toBuffer({ resolveWithObject: true }),
+    ]);
+    expect((await sharp(result.outputs[0]!.path).metadata()).format).toBe('png');
+    expect([out.info.width, out.info.height, out.info.channels]).toEqual([src.info.width, src.info.height, src.info.channels]);
+    expect(out.data.equals(src.data)).toBe(true); // PNG → PNG is lossless
+    expect(await sha256(input.path)).toBe(before);
+    expect(result.warnings).toContainEqual({ code: 'EXTENSION_MISMATCH', params: { detected: 'PNG', extension: '.jpg' } });
   });
 
   it('rejects invalid options with INVALID_OPTIONS', async () => {
