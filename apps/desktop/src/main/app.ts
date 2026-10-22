@@ -32,14 +32,16 @@ import {
   type ProcessorJob,
   type ProcessorResult,
   type Settings,
+  type StartupNotice,
   type WindowContext,
   type WindowKind,
   colorTokens,
 } from '@orbitdrop/contracts';
+import { appMenuTemplate } from './app-menu';
 import { CapabilityService } from './capabilities/service';
 import { EditorSessions } from './editor/sessions';
-import { OutputRegistry } from './files/outputs';
-import { FileRegistry, toProcessorInput } from './files/registry';
+import { OutputRegistry, isOpenableOutput } from './files/outputs';
+import { FileRegistry, MAX_SELECTION_FILES, toProcessorInput } from './files/registry';
 import { buildConfigureMessage, resolveHighContrast, resolveReduceMotion, resolveTheme } from './helper/configure';
 import { locateHelper, type HelperLocation } from './helper/locate';
 import { HELPER_REASON_DISABLED_FOR_RUN, localizeHelperStatus } from './helper/status-text';
@@ -51,13 +53,15 @@ import { IpcRouter, type IpcMainLike } from './ipc/router';
 import { JobManager, type JobRecordView } from './jobs/manager';
 import { SubmissionService, type SubmitContext } from './jobs/submission';
 import type { LaunchOptions } from './launch-options';
+import type { LifecycleTarget, PowerTarget } from './lifecycle';
 import { closeLogSink, configureLogSink, createLogger, describeError, type Logger } from './log';
+import { applyLoginItem, loginItemToAdopt, type LoginItems } from './login-item';
 import { Notifier, needsAnotherFolder } from './notifications';
 import { createUtilityWorkerFactory, workerEnv } from './processing/electron-worker';
 import { ProcessorPool, type PoolRunContext } from './processing/pool';
 import { servePreviews } from './preview/protocol';
 import { PreviewStore } from './preview/store';
-import { hardenSession, installWebContentsHardening } from './security';
+import { hardenSession, installWebContentsHardening, isRendererExternalUrl } from './security';
 import { SettingsStore } from './settings/store';
 import { TrayController } from './tray/controller';
 import type { RecentItem, TrayState } from './tray/menu';
@@ -93,7 +97,7 @@ export interface JobRunScript {
   beforeRun(signal: AbortSignal): Promise<void>;
 }
 
-export class OrbitApp {
+export class OrbitApp implements LifecycleTarget, PowerTarget {
   readonly log: Logger = createLogger('app');
   readonly settings: SettingsStore;
   readonly history: HistoryStore;
@@ -112,6 +116,8 @@ export class OrbitApp {
   readonly notifier: Notifier;
   private router: IpcRouter<WindowRecord> | null = null;
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
+  /** Windows: re-reads the OS animation setting (no change event exists). */
+  private motionTimer: ReturnType<typeof setInterval> | null = null;
   private shutdownPromise: Promise<void> | null = null;
   private quitting = false;
   private helperLocation: HelperLocation | null = null;
@@ -125,6 +131,8 @@ export class OrbitApp {
   private readonly surfacedFailures = new Set<string>();
   /** macOS workspace notification id (accessibility display options), unsubscribed on quit. */
   private accessibilityNotification: number | null = null;
+  /** Problems handled at startup that the user is told about (notification + Settings). */
+  readonly startupNotices: StartupNotice[] = [];
   private markStarted: () => void = () => undefined;
   /** Resolves once startUi() finished (windows, IPC, tray, helper started). */
   readonly started = new Promise<void>((resolve) => {
@@ -145,7 +153,7 @@ export class OrbitApp {
       fork: createUtilityWorkerFactory({
         hostPath: paths.processorHost,
         get env() {
-          return workerEnv({ ORBITDROP_IMAGEIO_HELPER: imageioHelper(), ORBITDROP_PARENT_PID: String(process.pid) });
+          return workerEnv({ ORBITDROP_IMAGEIO_HELPER: imageioHelper(), ORBITDROP_PARENT_PID: String(process.pid) }, app.isPackaged);
         },
       }),
       jobWorkers: 1,
@@ -238,6 +246,9 @@ export class OrbitApp {
   async startCore(): Promise<void> {
     const settings = await this.settings.load();
     await this.history.load();
+    // An unusable settings/history file was kept aside and replaced by defaults: the user is told (startUi).
+    if (this.settings.loadIssue) this.startupNotices.push({ code: 'settingsReset', backup: this.settings.loadIssue.backup });
+    if (this.history.loadIssue) this.startupNotices.push({ code: 'historyReset', backup: this.history.loadIssue.backup });
     // Before the first worker is forked: workers get ORBITDROP_IMAGEIO_HELPER, so the engine
     // probe can see the helper's ImageIO codecs (HEIC on macOS).
     await this.locateHelperBinary();
@@ -254,10 +265,16 @@ export class OrbitApp {
     this.log.info('core started', { version: app.getVersion(), packaged: app.isPackaged, platform: process.platform, arch: process.arch });
   }
 
-  async startUi(): Promise<void> {
+  /**
+   * Windows and what they need: session hardening, the preview protocol, the
+   * WindowManager, web-contents guards and the IPC router. Part of startUi();
+   * the smoke test runs it alone with `hidden` (its window loads and renders
+   * but is never shown).
+   */
+  startWindows(options: { readonly hidden?: boolean } = {}): WindowManager {
+    if (this.windows) return this.windows;
     hardenSession(session.defaultSession, createLogger('security'));
     servePreviews(this.previews, session.defaultSession);
-    this.setupAppMenu();
 
     const windows = new WindowManager({
       preloadPath: this.paths.preload,
@@ -266,6 +283,7 @@ export class OrbitApp {
       background: () => this.windowBackground(),
       title: (context) => this.windowTitle(context),
       quiet: this.options.e2e,
+      hidden: options.hidden === true,
       devTools: !app.isPackaged,
       onClosed: (record) => this.onWindowClosed(record),
       onOpened: (record) => {
@@ -278,6 +296,12 @@ export class OrbitApp {
 
     this.router = new IpcRouter<WindowRecord>(ipcMain as unknown as IpcMainLike, { lookup: (sender) => windows.recordFor(sender as never), isTrustedUrl: (url) => windows.isTrustedUrl(url) }, createLogger('ipc'));
     registerOrbitIpc(this.router, this.ipcServices());
+    return windows;
+  }
+
+  async startUi(): Promise<void> {
+    const windows = this.startWindows();
+    this.setupAppMenu();
 
     this.settings.onChange((next, previous) => this.onSettingsChanged(next, previous));
     this.capabilities.onChange(() => this.helper?.reconfigure());
@@ -293,6 +317,12 @@ export class OrbitApp {
       } catch (error) {
         this.log.warn('could not watch the accessibility display options', { error: describeError(error) });
       }
+    } else if (process.platform === 'win32') {
+      // Windows reports no change of "Animation effects" (the OS reduce-motion setting): read it again when one
+      // of our windows gets focus and every 30 s — `reconfigure` sends only when the message really changed.
+      app.on('browser-window-focus', () => this.helper?.reconfigure());
+      this.motionTimer = setInterval(() => this.helper?.reconfigure(), 30_000);
+      this.motionTimer.unref?.();
     }
 
     if (!this.options.noTray) {
@@ -318,15 +348,53 @@ export class OrbitApp {
       this.tray.create();
     }
 
-    this.applyLoginItem(this.settings.get().launchAtLogin);
+    this.adoptLoginItem();
     if (this.helper) void this.helper.start();
+    this.announceStartupNotices();
     this.log.info('ui started', { tray: this.tray !== null, helper: this.helper !== null });
     this.markStarted();
   }
 
-  /** A second launch (e.g. opening the app again from Finder) shows the Drop Zone. */
-  onSecondInstance(): void {
+  /** A second launch without files, or (macOS) re-opening the running app from Finder: the Drop Zone (also when it comes during startup). */
+  async showDropZone(): Promise<void> {
+    await this.started;
+    if (this.quitting) return;
     this.windows?.open('dropzone');
+  }
+
+  /**
+   * Files handed over by the OS — a second launch's command line (Windows:
+   * dropped on OrbitDrop.exe or a shortcut), macOS open-file. They go through
+   * FileRegistry validation like every other input; the picker shows the
+   * selection (unusable files with their reason).
+   */
+  async openPaths(paths: readonly string[]): Promise<void> {
+    if (this.quitting || paths.length === 0) return;
+    await this.started;
+    const anchor = screen.getCursorScreenPoint();
+    try {
+      await this.capabilities.get(); // selections are built with the probed capabilities
+      const selection = await this.files.registerPaths(paths.slice(0, MAX_SELECTION_FILES), 'openDialog');
+      if (this.quitting) return;
+      this.windows?.openPicker(selection.selectionId, 'convert', anchor);
+    } catch (error) {
+      const code = error instanceof OrbitError ? error.code : 'INTERNAL';
+      this.log.warn('files handed over by the system could not be opened', { count: paths.length, code });
+      this.notifier.rejected(code);
+    }
+  }
+
+  /** Sleep, screen lock, user switch: no drag session may survive it (the helper hides its wheel). */
+  systemSuspended(reason: string): void {
+    this.log.info('system suspended or locked', { reason });
+    this.helper?.cancelSessions(reason);
+  }
+
+  /** Resume, unlock: check that the helper still works (and restart one that had given up). */
+  systemResumed(reason: string): void {
+    if (this.quitting) return;
+    this.log.info('system resumed or unlocked', { reason });
+    void this.helper?.recheck(reason).catch((error: unknown) => this.log.warn('helper re-check failed', { error: describeError(error) }));
   }
 
   // ------------------------------------------------------------------ shutdown
@@ -340,7 +408,9 @@ export class OrbitApp {
     this.shutdownPromise ??= (async () => {
       this.log.info('shutting down');
       this.quitting = true;
+      this.windows?.setQuitting(); // quitting is never held back by an editor's unsaved work
       if (this.sweepTimer) clearInterval(this.sweepTimer);
+      if (this.motionTimer) clearInterval(this.motionTimer);
       this.router?.dispose();
       this.tray?.destroy();
       if (this.accessibilityNotification !== null) systemPreferences.unsubscribeWorkspaceNotification(this.accessibilityNotification);
@@ -363,9 +433,8 @@ export class OrbitApp {
     };
     return {
       windowContext: (record) => record.context,
-      closeWindow: (record) => {
-        if (!record.window.isDestroyed()) record.window.close();
-      },
+      closeWindow: (record) => windows().closeWindow(record),
+      setCloseGuard: (record, guard) => windows().setCloseGuard(record, guard),
       resizeWindow: (record, width, height) => windows().resize(record, width, height),
       openWindow: (kind, record) => {
         windows().open(kind, windows().center(record));
@@ -421,7 +490,7 @@ export class OrbitApp {
       revealOutput: (outputId) => this.revealOutput(outputId),
       openOutput: (outputId) => this.openOutput(outputId),
       openExternal: async (url) => {
-        if (!isAllowedExternalUrl(url)) {
+        if (!isRendererExternalUrl(url)) {
           this.log.warn('external URL refused');
           return false;
         }
@@ -446,6 +515,7 @@ export class OrbitApp {
       node: process.versions.node,
       packaged: app.isPackaged,
       locale: this.settings.get().locale,
+      ...(this.startupNotices.length > 0 ? { notices: [...this.startupNotices] } : {}),
     };
   }
 
@@ -527,17 +597,27 @@ export class OrbitApp {
     if (record.kind === 'dropzone') this.tray?.refresh();
   }
 
+  /**
+   * Show an output in Finder / Explorer. Revealing never opens anything: when
+   * the file is gone its folder is revealed (selected in its parent) instead —
+   * `openPath` on a folder from a damaged history.json could start an app bundle.
+   */
   async revealOutput(outputId: string): Promise<void> {
     const output = this.outputs.get(outputId);
     if (!output) throw new OrbitError('FILE_NOT_FOUND', 'Unknown output');
     if (existsSync(output.path)) shell.showItemInFolder(output.path);
-    else if (existsSync(dirname(output.path))) await shell.openPath(dirname(output.path));
+    else if (existsSync(dirname(output.path))) shell.showItemInFolder(dirname(output.path));
     else throw new OrbitError('FILE_NOT_FOUND', 'The output no longer exists');
   }
 
+  /** Open an output with its default app — only a regular file in a format OrbitDrop writes (isOpenableOutput). */
   async openOutput(outputId: string): Promise<void> {
     const output = this.outputs.get(outputId);
     if (!output || !existsSync(output.path)) throw new OrbitError('FILE_NOT_FOUND', 'The output no longer exists');
+    if (!(await isOpenableOutput(output.path))) {
+      this.log.warn('refused to open an output that is not a file OrbitDrop writes', { outputId });
+      throw new OrbitError('UNSUPPORTED_FORMAT', 'Not a file OrbitDrop writes');
+    }
     const error = await shell.openPath(output.path);
     if (error) throw new OrbitError('INTERNAL', 'No application could open the file');
   }
@@ -628,10 +708,12 @@ export class OrbitApp {
         unsupported: this.t('helper.unsupported'),
         multiFileUnsupported: this.t('helper.multiFileUnsupported'),
         fileCount: this.t('helper.fileCount'),
-        // Folders, non-file data (text, URLs) and virtual items (file promises, mail attachments) get their own text.
+        // Folders, non-file data (text, URLs), virtual items (file promises, mail attachments) and online-only
+        // cloud files (iCloud Drive, OneDrive Files On-Demand) get their own text.
         unsupportedFolder: this.t('helper.unsupportedFolder'),
         unsupportedNonFile: this.t('helper.unsupportedNonFile'),
         unsupportedVirtual: this.t('helper.unsupportedVirtual'),
+        unsupportedCloud: this.t('helper.unsupportedCloud'),
       },
     });
   }
@@ -666,16 +748,48 @@ export class OrbitApp {
     }
     if (next.locale !== previous.locale || next.globalDrag.enabled !== previous.globalDrag.enabled) this.tray?.refresh();
     if (next.locale !== previous.locale) this.windows?.broadcast(IPC_CHANNELS.helperStatusChanged, this.publicHelperStatus());
-    if (next.launchAtLogin !== previous.launchAtLogin) this.applyLoginItem(next.launchAtLogin);
+    if (next.launchAtLogin !== previous.launchAtLogin) {
+      const items = this.loginItems();
+      if (items) applyLoginItem(items, next.launchAtLogin, this.log);
+    }
   }
 
-  private applyLoginItem(enabled: boolean): void {
-    // Registering the development Electron binary as a login item would be wrong; only packaged builds do it.
-    if (!app.isPackaged || this.options.e2e || this.options.smokeTest) return;
-    try {
-      if (app.getLoginItemSettings().openAtLogin !== enabled) app.setLoginItemSettings({ openAtLogin: enabled });
-    } catch (error) {
-      this.log.warn('could not update the login item', { error: describeError(error) });
+  /**
+   * The OS login items, when this build manages them (packaged only: never the development Electron binary).
+   * Windows: `openAtLogin` only says the Run entry exists; switched off in Task Manager › Startup apps it is
+   * still there, and only `executableWillLaunchAtLogin` tells (setLoginItemSettings re-enables it).
+   */
+  private loginItems(): LoginItems | null {
+    if (!app.isPackaged || this.options.e2e || this.options.smokeTest) return null;
+    return {
+      openAtLogin: () => {
+        const state = app.getLoginItemSettings();
+        return process.platform === 'win32' ? state.executableWillLaunchAtLogin : state.openAtLogin;
+      },
+      setOpenAtLogin: (enabled) => app.setLoginItemSettings({ openAtLogin: enabled }),
+    };
+  }
+
+  /** Startup: the login item may have been changed in the OS settings — follow it instead of undoing it. */
+  private adoptLoginItem(): void {
+    const items = this.loginItems();
+    if (!items) return;
+    const adopt = loginItemToAdopt(items, this.settings.get().launchAtLogin, this.log);
+    if (adopt === null) return;
+    this.log.info('launch at login was changed in the system settings; following it', { openAtLogin: adopt });
+    void this.settings.update({ launchAtLogin: adopt }).catch((error: unknown) => this.log.warn('could not store the login item state', { error: describeError(error) }));
+  }
+
+  /**
+   * Settings or history could not be used and were reset (the old file is
+   * kept aside): one notification per problem (click: Settings, which lists
+   * them too — AppInfo.notices). Notifications switched off: Settings only.
+   */
+  private announceStartupNotices(): void {
+    if (!this.settings.get().notifications) return;
+    for (const { code, backup } of this.startupNotices) {
+      const body = backup !== null ? this.t(`notify.${code}.body`, { file: backup }) : this.t(`notify.${code}.bodyNoBackup`);
+      this.showNotification(this.t(`notify.${code}.title`), body, () => this.windows?.open('settings'));
     }
   }
 
@@ -725,12 +839,8 @@ export class OrbitApp {
   }
 
   private setupAppMenu(): void {
-    if (process.platform === 'darwin') {
-      // Accessory app: the menu bar is not shown, but Edit/Window key equivalents (⌘C/⌘V/⌘W…) need a menu.
-      Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]));
-    } else {
-      Menu.setApplicationMenu(null);
-    }
+    const template = appMenuTemplate(process.platform);
+    Menu.setApplicationMenu(template ? Menu.buildFromTemplate(template) : null);
   }
 
   private showNotification(title: string, body: string, onClick: () => void): void {

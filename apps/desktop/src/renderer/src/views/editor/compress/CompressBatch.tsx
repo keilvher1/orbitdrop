@@ -3,6 +3,7 @@ import { useId } from 'react';
 import { useEnv } from '../../../app/env';
 import { Notice } from '../../../components/Notice';
 import { formatBytes, percentChange } from '../../../i18n/format';
+import { useSettledAnnouncement } from '../editorKit';
 import type { EstimateSummary, FileEstimate } from './useBatchEstimates';
 
 /** "+12" / "−34" / "0" for percentage changes (true minus sign). */
@@ -10,6 +11,31 @@ export function signedPercent(value: number): string {
   if (value > 0) return `+${value}`;
   if (value < 0) return `−${Math.abs(value)}`;
   return '0';
+}
+
+/** Label of the change box: the Δ glyph for the eye, "Change" for screen readers. */
+export function ChangeLabel() {
+  const { t } = useEnv();
+  return (
+    <span className="compress-size-label">
+      <span aria-hidden="true">Δ</span>
+      <span className="visually-hidden">{t('compress.change')}</span>
+    </span>
+  );
+}
+
+/**
+ * The estimate boxes are not a live region (they change on every slider step).
+ * Instead one summary is spoken once the estimate has settled: `text` is null
+ * while it is still changing or not up to date.
+ */
+export function EstimateAnnouncer({ text }: { readonly text: string | null }) {
+  const spoken = useSettledAnnouncement(text);
+  return (
+    <div className="visually-hidden" aria-live="polite" aria-atomic="true">
+      {spoken}
+    </div>
+  );
 }
 
 /**
@@ -29,19 +55,27 @@ export function BatchTotals({ summary }: { readonly summary: EstimateSummary }) 
   else if (summary.complete) estimatedText = '—'; // some estimates failed: no total to show
   else estimatedText = t('compress.estimateProgress', { done: summary.done, total: summary.total });
 
+  // Warnings are not live regions (they come and go while estimates arrive): the settled summary speaks them.
+  let warning: string | null = null;
+  if (summary.complete && totalNotSmaller) warning = t('compress.batchNotSmaller');
+  // Partial results already show files that will not shrink: say so now rather than after the rest.
+  else if (summary.notSmaller > 0) warning = t.plural('compress.someNotSmaller', summary.notSmaller);
   let verdict = null;
-  if (summary.complete) {
-    if (totalNotSmaller) verdict = <Notice tone="warning">{t('compress.batchNotSmaller')}</Notice>;
-    else if (summary.notSmaller > 0) verdict = <Notice tone="warning">{t.plural('compress.someNotSmaller', summary.notSmaller)}</Notice>;
-    else if (change !== null) verdict = <p className="compress-expect">{t('compress.batchSmaller', { percent: Math.abs(change) })}</p>;
-  } else if (summary.notSmaller > 0) {
-    // Partial results already show files that will not shrink: say so now rather than after the rest.
-    verdict = <Notice tone="warning">{t.plural('compress.someNotSmaller', summary.notSmaller)}</Notice>;
-  }
+  if (warning !== null)
+    verdict = (
+      <Notice tone="warning" live="off">
+        {warning}
+      </Notice>
+    );
+  else if (summary.complete && change !== null) verdict = <p className="compress-expect">{t('compress.batchSmaller', { percent: Math.abs(change) })}</p>;
+
+  const changeText = change === null ? null : t('common.percent', { value: signedPercent(change) });
+  // A total exists only once every file has an estimate for the current options (changing them makes all pending).
+  const settled = changeText === null ? null : [t('compress.announceBatch', { size: estimatedText, change: changeText }), ...(warning === null ? [] : [warning])].join(' ');
 
   return (
     <>
-      <div className="compress-sizes" aria-live="polite">
+      <div className="compress-sizes">
         <div className="compress-size">
           <span className="compress-size-label">{t('compress.totalInput')}</span>
           <strong className="tabular">{formatBytes(inputBytes, t.locale, platform)}</strong>
@@ -53,14 +87,13 @@ export function BatchTotals({ summary }: { readonly summary: EstimateSummary }) 
           </strong>
         </div>
         <div className="compress-size">
-          <span className="compress-size-label" aria-hidden="true">
-            Δ
-          </span>
+          <ChangeLabel />
           <strong className="tabular" data-tone={change === null ? undefined : totalNotSmaller ? 'warning' : 'good'}>
-            {change === null ? '—' : t('common.percent', { value: signedPercent(change) })}
+            {changeText ?? '—'}
           </strong>
         </div>
       </div>
+      <EstimateAnnouncer text={settled} />
       {verdict}
     </>
   );

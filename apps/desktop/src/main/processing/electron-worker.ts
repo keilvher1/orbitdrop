@@ -45,16 +45,26 @@ export function createUtilityWorkerFactory(options: { readonly hostPath: string;
 }
 
 /** Variables only main may set for workers; inherited values are dropped (another process could plant them). */
-const MAIN_OWNED_WORKER_VARS = ['ORBITDROP_IMAGEIO_HELPER', 'ORBITDROP_PARENT_PID'] as const;
+const MAIN_OWNED_WORKER_VARS: ReadonlySet<string> = new Set(['ORBITDROP_IMAGEIO_HELPER', 'ORBITDROP_PARENT_PID']);
 
 /**
  * Environment for workers: the parent's environment plus OrbitDrop variables.
  * UV_THREADPOOL_SIZE goes back to what the user had (main raises its own).
+ * Packaged builds pass no inherited ORBITDROP_* variable at all: the
+ * processors honour development overrides such as ORBITDROP_PDFJS_DIR (the
+ * folder PDF.js is imported from), and a value planted with
+ * `launchctl setenv` would otherwise load foreign code into a process that
+ * reads files with OrbitDrop's permissions. Names are compared case-
+ * insensitively: on Windows `orbitdrop_pdfjs_dir` is the same variable.
  */
-export function workerEnv(extra: Readonly<Record<string, string | undefined>>): Record<string, string> {
+export function workerEnv(extra: Readonly<Record<string, string | undefined>>, packaged = false, source: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
-  for (const key of MAIN_OWNED_WORKER_VARS) delete env[key];
+  for (const [key, value] of Object.entries(source)) {
+    if (value === undefined) continue;
+    const name = key.toUpperCase();
+    if (MAIN_OWNED_WORKER_VARS.has(name) || (packaged && name.startsWith('ORBITDROP_'))) continue;
+    env[key] = value;
+  }
   if (ORIGINAL_UV_THREADPOOL_SIZE === undefined) delete env.UV_THREADPOOL_SIZE;
   else env.UV_THREADPOOL_SIZE = ORIGINAL_UV_THREADPOOL_SIZE;
   for (const [key, value] of Object.entries(extra)) if (value !== undefined) env[key] = value;

@@ -219,15 +219,17 @@ img {
     color var(--motion-sector) ease;
 }
 
-.btn:hover:not(:disabled) {
+.btn:hover:not(:disabled, [aria-disabled='true']) {
   background: var(--c-surface-muted);
 }
 
-.btn:active:not(:disabled) {
+.btn:active:not(:disabled, [aria-disabled='true']) {
   filter: brightness(0.97);
 }
 
-.btn:disabled {
+/* aria-disabled: unavailable but still focusable — a control that turns itself off keeps keyboard focus. */
+.btn:disabled,
+.btn[aria-disabled='true'] {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -239,11 +241,11 @@ img {
   font-weight: 700;
 }
 
-.btn-primary:hover:not(:disabled) {
+.btn-primary:hover:not(:disabled, [aria-disabled='true']) {
   background: var(--c-accent-hover);
 }
 
-.btn-primary:active:not(:disabled) {
+.btn-primary:active:not(:disabled, [aria-disabled='true']) {
   background: var(--c-accent-pressed);
   filter: none;
 }
@@ -274,12 +276,13 @@ img {
   cursor: pointer;
 }
 
-.btn-icon:hover:not(:disabled) {
+.btn-icon:hover:not(:disabled, [aria-disabled='true'], [aria-pressed='true']) {
   background: var(--c-surface-muted);
   color: var(--c-text);
 }
 
-.btn-icon:disabled {
+.btn-icon:disabled,
+.btn-icon[aria-disabled='true'] {
   opacity: 0.4;
   cursor: not-allowed;
 }
@@ -287,6 +290,11 @@ img {
 .btn-icon[aria-pressed='true'] {
   background: var(--c-accent);
   color: var(--c-accent-text);
+}
+
+/* A pressed button keeps its accent (and its accent-text colour) under the pointer. */
+.btn-icon[aria-pressed='true']:hover:not(:disabled, [aria-disabled='true']) {
+  background: var(--c-accent-hover);
 }
 
 .btn-tool {
@@ -302,7 +310,7 @@ img {
   cursor: pointer;
 }
 
-.btn-tool:hover:not(:disabled) {
+.btn-tool:hover:not(:disabled, [aria-disabled='true'], [aria-pressed='true'], [aria-checked='true']) {
   background: var(--c-surface-muted);
 }
 
@@ -313,7 +321,13 @@ img {
   color: var(--c-accent-text);
 }
 
-.btn-tool:disabled {
+.btn-tool[aria-pressed='true']:hover:not(:disabled, [aria-disabled='true']),
+.btn-tool[aria-checked='true']:hover:not(:disabled, [aria-disabled='true']) {
+  background: var(--c-accent-hover);
+}
+
+.btn-tool:disabled,
+.btn-tool[aria-disabled='true'] {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -630,6 +644,15 @@ img {
     background: Highlight;
     color: HighlightText;
     border-color: HighlightText;
+  }
+
+  /* Their hover / active colours (accent shades) would sit under HighlightText: stay Highlight. */
+  .btn-primary:hover:not(:disabled, [aria-disabled='true']),
+  .btn-primary:active:not(:disabled, [aria-disabled='true']),
+  .btn-tool[aria-pressed='true']:hover:not(:disabled, [aria-disabled='true']),
+  .btn-tool[aria-checked='true']:hover:not(:disabled, [aria-disabled='true']),
+  .btn-icon[aria-pressed='true']:hover:not(:disabled, [aria-disabled='true']) {
+    background: Highlight;
   }
 
   .btn,

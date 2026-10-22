@@ -50,6 +50,8 @@ const ORBIT_API_KEYS = [
   'requestEstimate',
   'clearFinishedJobs',
   'retryJob',
+  'setCloseGuard',
+  'onCloseRequested',
 ];
 
 test.describe.configure({ mode: 'serial' });

@@ -10,7 +10,7 @@ import {
   type Locale,
   type WarningCode,
 } from '@orbitdrop/contracts';
-import { errorText, type MainStringKey, type Translate } from './i18n';
+import { errorText, warningSentence, type MainStringKey, type Translate } from './i18n';
 import type { JobManager, JobRecordView } from './jobs/manager';
 import { silentLogger, type Logger } from './log';
 
@@ -49,7 +49,7 @@ export interface NotifierDeps {
  * title already says so, e.g. "DOCX (image embedded, no OCR)"; conversions drop
  * metadata by default). The others mean "look at the result".
  */
-const INFORMATIONAL_WARNINGS: ReadonlySet<WarningCode> = new Set<WarningCode>(['METADATA_REMOVED', 'DOCX_TEXT_ONLY', 'DOCX_IMAGE_ONLY', 'SKIPPED_SAME_FORMAT']);
+export const INFORMATIONAL_WARNINGS: ReadonlySet<WarningCode> = new Set<WarningCode>(['METADATA_REMOVED', 'DOCX_TEXT_ONLY', 'DOCX_IMAGE_ONLY', 'SKIPPED_SAME_FORMAT']);
 
 /** Warnings worth the user's attention (see INFORMATIONAL_WARNINGS). */
 export function noteworthyWarnings(warnings: readonly JobWarning[]): JobWarning[] {
@@ -83,13 +83,15 @@ export function needsAnotherFolder(view: Pick<JobRecordView, 'spec' | 'snapshot'
 }
 
 /** Short notification text per noteworthy warning (main.json; the keys are checked at compile time). */
-const WARNING_TEXT: Partial<Readonly<Record<WarningCode, MainStringKey>>> = {
+export const WARNING_TEXT: Partial<Readonly<Record<WarningCode, MainStringKey>>> = {
   OUTPUT_LARGER_THAN_INPUT: 'notify.warning.OUTPUT_LARGER_THAN_INPUT',
   EXTENSION_MISMATCH: 'notify.warning.EXTENSION_MISMATCH',
   ALPHA_FLATTENED: 'notify.warning.ALPHA_FLATTENED',
   DOWNSCALED: 'notify.warning.DOWNSCALED',
   PDF_PAGES_WITHOUT_TEXT: 'notify.warning.PDF_PAGES_WITHOUT_TEXT',
   ANNOTATION_FONT_FALLBACK: 'notify.warning.ANNOTATION_FONT_FALLBACK',
+  FIRST_FRAME_ONLY: 'notify.warning.FIRST_FRAME_ONLY',
+  FIRST_PAGE_ONLY: 'notify.warning.FIRST_PAGE_ONLY',
 };
 
 export class Notifier {
@@ -181,9 +183,10 @@ export class Notifier {
     }
   }
 
+  /** Short reason for a notification; a warning added without one gets the Jobs window's sentence. */
   private warningText(code: WarningCode): string | null {
     const key = WARNING_TEXT[code];
-    return key === undefined ? null : this.deps.t(key);
+    return key === undefined ? warningSentence(this.deps.locale(), code) : this.deps.t(key);
   }
 
   private show(title: string, body: string, onClick: () => void): void {

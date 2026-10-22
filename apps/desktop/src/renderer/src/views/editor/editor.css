@@ -150,12 +150,16 @@
   gap: 6px;
 }
 
+/*
+ * The opaque muted-text border keeps every swatch visible against the window (WCAG 1.4.11, ≥ 3:1 in all four
+ * colour sets) whatever its fill — white on the light window, black or dark grey on the dark one.
+ */
 .swatch {
   position: relative;
   width: 28px;
   height: 28px;
   padding: 0;
-  border: 1px solid rgb(0 0 0 / 14%);
+  border: 1px solid var(--c-text-muted);
   border-radius: var(--radius-swatch);
   cursor: pointer;
   transition: transform var(--motion-sector) var(--motion-easing);
@@ -206,6 +210,19 @@
 
   .swatch[aria-checked='true'] {
     outline-color: Highlight;
+  }
+
+  /*
+   * Focus must differ from "checked", and with roving focus the focused swatch is the checked one: a wider
+   * CanvasText ring further out, the selection kept as an inner Highlight ring.
+   */
+  .swatch:focus-visible {
+    outline: 3px solid CanvasText;
+    outline-offset: 3px;
+  }
+
+  .swatch[aria-checked='true']:focus-visible {
+    box-shadow: 0 0 0 2px Highlight;
   }
 }
 

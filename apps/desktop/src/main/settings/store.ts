@@ -1,8 +1,7 @@
-import { rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DEFAULT_SETTINGS, OrbitError, applySettingsPatch, migrateSettings, type Settings } from '@orbitdrop/contracts';
 import { describeError, silentLogger, type Logger } from '../log';
-import { SerialQueue, readJson, writeJsonAtomic } from '../util/atomic-json';
+import { SerialQueue, moveAside, readJson, writeJsonAtomic, type StoreLoadIssue, type UnusableReason } from '../util/atomic-json';
 
 export type SettingsListener = (next: Settings, previous: Settings) => void;
 
@@ -24,14 +23,19 @@ export function modifierProblem(settings: Settings, platform: NodeJS.Platform): 
 
 /**
  * Persisted settings: `<userData>/settings.json`.
- *  - load: any version is passed through `migrateSettings`; a corrupt file is
- *    kept aside as settings.corrupt-<time>.json and defaults are used.
+ *  - load: any version is passed through `migrateSettings`; a corrupt file
+ *    (not JSON) is kept aside as settings.corrupt-<time>.json, an unreadable
+ *    one (permissions, a folder in its place) as settings.unreadable-<time>.json,
+ *    and defaults are used — `loadIssue` tells the app, which lets the user
+ *    know. Never a crash.
  *  - update: `applySettingsPatch` (deep merge + schema validation); invalid
  *    patches are rejected with INVALID_OPTIONS and nothing changes.
  *  - save: atomic (temp file + rename), serialized.
  */
 export class SettingsStore {
   readonly file: string;
+  /** Set by load() when settings.json could not be used and defaults apply. */
+  loadIssue: StoreLoadIssue | null = null;
   private current: Settings = DEFAULT_SETTINGS;
   private readonly listeners = new Set<SettingsListener>();
   private readonly writes = new SerialQueue();
@@ -63,25 +67,23 @@ export class SettingsStore {
   }
 
   async load(): Promise<Settings> {
+    this.loadIssue = null;
     let raw: Awaited<ReturnType<typeof readJson>>;
     try {
       raw = await readJson(this.file);
     } catch (error) {
-      this.log.warn('settings unreadable; using defaults', { error: describeError(error) });
-      this.current = DEFAULT_SETTINGS;
-      return this.current;
+      // Kept aside like a corrupt file: the next save must not replace something that could not be read.
+      this.log.warn('settings unreadable; kept aside and reset to defaults', { error: describeError(error) });
+      return this.resetAside('unreadable');
     }
     if (raw.kind === 'missing') {
       this.current = DEFAULT_SETTINGS;
       return this.current;
     }
-    if (raw.kind === 'corrupt') {
-      const aside = join(this.file, '..', `settings.corrupt-${Date.now()}.json`);
-      await rename(this.file, aside).catch(() => undefined);
+    // Not JSON, or JSON that is no settings object at all (null, an array, a number…).
+    if (raw.kind === 'corrupt' || typeof raw.value !== 'object' || raw.value === null || Array.isArray(raw.value)) {
       this.log.warn('settings file was corrupt; kept aside and reset to defaults');
-      this.current = DEFAULT_SETTINGS;
-      await this.persist(this.current);
-      return this.current;
+      return this.resetAside('corrupt');
     }
     this.current = this.repairModifiers(migrateSettings(raw.value));
     if (JSON.stringify(this.current) !== JSON.stringify(raw.value)) {
@@ -119,6 +121,15 @@ export class SettingsStore {
   /** Resolves when pending writes are on disk. */
   flush(): Promise<void> {
     return this.writes.idle();
+  }
+
+  /** Defaults after an unusable file; written only once the old file is out of the way. */
+  private async resetAside(reason: UnusableReason): Promise<Settings> {
+    const backup = await moveAside(this.file, reason);
+    this.loadIssue = { reason, backup };
+    this.current = DEFAULT_SETTINGS;
+    if (backup !== null) await this.persist(this.current);
+    return this.current;
   }
 
   private persist(settings: Settings): Promise<void> {

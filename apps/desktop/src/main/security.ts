@@ -1,5 +1,28 @@
 import type { App, Session, WebContents } from 'electron';
+import { isAllowedExternalUrl } from '@orbitdrop/contracts';
 import { silentLogger, type Logger } from './log';
+
+/** System Settings panes the renderer links to (Settings › Drag: permission guidance). */
+const MAC_PRIVACY_PANES = new Set(['Privacy_Accessibility', 'Privacy_ListenEvent']);
+
+/**
+ * What openExternal accepts from a renderer: the contracts prefix list
+ * (ALLOWED_EXTERNAL_URL_PREFIXES) narrowed to what the UI really opens — the
+ * two macOS privacy panes, Windows' privacy settings pages (no action URIs
+ * such as ms-settings:windowsupdate-action) and https pages on github.com.
+ */
+export function isRendererExternalUrl(url: string): boolean {
+  if (!isAllowedExternalUrl(url) || /[\s\u0000-\u001f\u007f]/.test(url)) return false;
+  const mac = /^x-apple\.systempreferences:com\.apple\.preference\.security\?([A-Za-z_]+)$/.exec(url);
+  if (mac) return MAC_PRIVACY_PANES.has(mac[1]!);
+  if (url.startsWith('ms-settings:')) return /^ms-settings:privacy(?:-[a-z]+)?$/.test(url);
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' && parsed.hostname === 'github.com' && parsed.port === '' && parsed.username === '' && parsed.password === '';
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Process-wide hardening (spec §9):

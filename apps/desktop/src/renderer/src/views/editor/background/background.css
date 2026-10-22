@@ -32,6 +32,14 @@
   outline-offset: 2px;
 }
 
+/* Forced colours: focus is a wider CanvasText ring, distinct from the selection outline (see editor.css). */
+@media (forced-colors: active) {
+  .bg-custom:focus-within {
+    outline: 3px solid CanvasText;
+    outline-offset: 3px;
+  }
+}
+
 .bg-image-name {
   overflow: hidden;
   font-size: 12px;

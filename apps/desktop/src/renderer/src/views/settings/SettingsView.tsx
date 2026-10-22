@@ -8,6 +8,7 @@ import {
   type Platform,
   type Settings,
   type SettingsPatch,
+  type StartupNotice,
 } from '@orbitdrop/contracts';
 import { Accessibility, Gauge, Images, Info, MousePointer2, Settings as SettingsIcon, type LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
@@ -123,7 +124,8 @@ export function SettingsView() {
               id={tabId(id)}
               className="settings-tab"
               aria-selected={tab === id}
-              aria-controls={panelId(id)}
+              // Only the selected tab's panel is rendered: no reference to panels that don't exist.
+              aria-controls={tab === id ? panelId(id) : undefined}
               tabIndex={tab === id ? 0 : -1}
               onClick={() => setTab(id)}
             >
@@ -157,6 +159,9 @@ interface PanelProps {
 
 // ------------------------------------------------------------------ building blocks
 
+/** Id of a field's hint (`hintId(htmlFor)`): pass it to the control as aria-describedby. */
+const hintId = (htmlFor: string): string => `${htmlFor}-hint`;
+
 function SettingsField({ label, htmlFor, hint, children }: { readonly label: string; readonly htmlFor?: string; readonly hint?: string; readonly children: ReactNode }) {
   return (
     <div className="settings-field">
@@ -168,7 +173,11 @@ function SettingsField({ label, htmlFor, hint, children }: { readonly label: str
         <span className="settings-label">{label}</span>
       )}
       {children}
-      {hint ? <p className="settings-hint">{hint}</p> : null}
+      {hint ? (
+        <p className="settings-hint" id={htmlFor ? hintId(htmlFor) : undefined}>
+          {hint}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -256,10 +265,41 @@ function intCommit(min: number, max: number, send: (value: number) => void) {
 
 // ---------------------------------------------------------------------- panels
 
+/**
+ * Problems main handled at startup (AppInfo.notices): a settings or history
+ * file that could not be used was kept aside and replaced by defaults.
+ */
+function StartupNotices() {
+  const { orbit, t } = useEnv();
+  const [notices, setNotices] = useState<readonly StartupNotice[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    orbit.getAppInfo().then(
+      (info) => {
+        if (!cancelled) setNotices(info.notices ?? []);
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [orbit]);
+  return (
+    <>
+      {notices.map((notice) => (
+        <Notice key={notice.code} tone="warning" live="off">
+          {notice.backup !== null ? t(`settings.notice.${notice.code}`, { file: notice.backup }) : t(`settings.notice.${notice.code}.noBackup`)}
+        </Notice>
+      ))}
+    </>
+  );
+}
+
 function GeneralPanel({ settings, apply }: PanelProps) {
   const { t } = useEnv();
   return (
     <div className="settings-group">
+      <StartupNotices />
       <SettingsField label={t('settings.language')}>
         <Segmented<'ko' | 'en'>
           label={t('settings.language')}
@@ -315,6 +355,7 @@ function OutputPanel({ settings, apply }: PanelProps) {
         <span className="settings-inline">
           <NumberInput
             id={maxEdgeId}
+            describedBy={hintId(maxEdgeId)}
             value={settings.background.maxEdge}
             min={min}
             max={max}
@@ -664,6 +705,7 @@ function ProcessingPanel({ settings, apply }: PanelProps) {
         <span className="settings-inline">
           <NumberInput
             id={timeoutId}
+            describedBy={hintId(timeoutId)}
             value={settings.processing.timeoutSec}
             min={10}
             max={3600}

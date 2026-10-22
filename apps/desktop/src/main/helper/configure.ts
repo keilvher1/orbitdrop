@@ -20,6 +20,8 @@ export interface HelperStrings {
   readonly unsupportedFolder?: string;
   readonly unsupportedNonFile?: string;
   readonly unsupportedVirtual?: string;
+  /** Online-only cloud file (iCloud dataless, OneDrive placeholder): its contents are not on this computer. */
+  readonly unsupportedCloud?: string;
 }
 
 export interface ConfigureInputs {
@@ -76,6 +78,7 @@ export function buildConfigureMessage(inputs: ConfigureInputs): HelperConfigureM
       ...(inputs.strings.unsupportedFolder !== undefined ? { unsupportedFolder: clip(inputs.strings.unsupportedFolder, 60) } : {}),
       ...(inputs.strings.unsupportedNonFile !== undefined ? { unsupportedNonFile: clip(inputs.strings.unsupportedNonFile, 60) } : {}),
       ...(inputs.strings.unsupportedVirtual !== undefined ? { unsupportedVirtual: clip(inputs.strings.unsupportedVirtual, 60) } : {}),
+      ...(inputs.strings.unsupportedCloud !== undefined ? { unsupportedCloud: clip(inputs.strings.unsupportedCloud, 60) } : {}),
     },
   };
   return HelperConfigureSchema.parse(message) as HelperConfigureMessage;

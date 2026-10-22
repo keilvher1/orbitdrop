@@ -113,12 +113,18 @@ describe('Wheel keyboard', () => {
     expect(onActivate).not.toHaveBeenCalled();
   });
 
-  it('announces the highlighted sector in a live region', async () => {
+  it('the highlighted sector is announced once (aria-activedescendant); the live region only explains a disabled one on Enter', async () => {
     const { menu, user } = setup();
     menu.focus();
     await user.keyboard('{ArrowRight}');
     const live = document.querySelector('[aria-live="polite"]');
-    expect(live?.textContent).toBe('압축');
+    expect(menu.getAttribute('aria-activedescendant')).toBeTruthy();
+    expect(activeLabel(menu)).toBe('압축');
+    expect(live?.textContent).toBe(''); // no second announcement of the same item
+    await user.keyboard('{ArrowRight}{ArrowRight}{Enter}');
+    expect(live?.textContent).toBe('편집, 사용할 수 없음: 테스트 사유');
+    await user.keyboard('{ArrowLeft}');
+    expect(live?.textContent).toBe(''); // cleared: the next Enter on it is read again
   });
 
   it('Escape calls onEscape', async () => {

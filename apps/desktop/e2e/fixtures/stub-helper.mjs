@@ -4,11 +4,14 @@
 // UI and observes nothing: it reports `ready`, answers ping/queryPermissions,
 // logs every message it receives to STUB_LOG and, after the first `configure`,
 // replays the drops listed in STUB_DROPS (JSON array) — each one twice, to check
-// that main accepts a drop only once per session. Exits on `shutdown` or stdin EOF.
+// that main accepts a drop only once per session — and opens the session
+// STUB_OPEN_SESSION (a wheel that stays up until main sends `cancelSession`,
+// answered with `cancelled`). Exits on `shutdown` or stdin EOF.
 import { appendFileSync } from 'node:fs';
 
 const log = process.env.STUB_LOG;
 const drops = process.env.STUB_DROPS ? JSON.parse(process.env.STUB_DROPS) : [];
+const openSession = process.env.STUB_OPEN_SESSION ?? null;
 
 if (process.argv[2] === 'imageio') {
   // ImageIO codec mode (ORBITDROP_IMAGEIO_HELPER): report no extra codecs.
@@ -60,8 +63,12 @@ process.stdin.on('data', (chunk) => {
               send(message);
               send(message); // duplicate: must be ignored by main
             }
+            if (openSession) send({ type: 'state', sessionId: openSession, state: 'WheelActive', mode: 'convert', menuKey: 'pdf', fileCount: 1 });
           }, 100);
         }
+        break;
+      case 'cancelSession':
+        if (message.sessionId === openSession) send({ type: 'cancelled', sessionId: openSession, reason: 'parentRequest' });
         break;
       case 'shutdown':
         process.exit(0);

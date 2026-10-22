@@ -2,6 +2,7 @@ import type { EditorContext, RedactRegion } from '@orbitdrop/contracts';
 import { Grid3x3, Plus, Trash2 } from 'lucide-react';
 import {
   useCallback,
+  useEffect,
   useId,
   useMemo,
   useRef,
@@ -146,8 +147,29 @@ export function RedactEditor({ ctx, title }: { readonly ctx: EditorContext; read
     [setRegions],
   );
 
-  // -------------------------------------------------------------- gestures
+  // Keyboard focus must not fall to <body> when the focused list item (or the delete button with the last
+  // region) leaves the DOM: it moves on once the list has re-rendered.
   const surfaceRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef(new Map<string, HTMLButtonElement>());
+  const focusAfterRemove = useRef<{ readonly item: string } | 'surface' | null>(null);
+  useEffect(() => {
+    const target = focusAfterRemove.current;
+    if (target === null) return;
+    focusAfterRemove.current = null;
+    (target === 'surface' ? surfaceRef.current : itemRefs.current.get(target.item))?.focus({ preventScroll: true });
+  }, [regions]);
+
+  /** Delete from the list: focus goes to the next item, else the previous one, else the canvas. */
+  const removeListItem = (id: string) => {
+    const list = regionsRef.current;
+    const index = list.findIndex((region) => region.id === id);
+    if (index < 0) return;
+    const neighbour = list[index + 1] ?? list[index - 1];
+    focusAfterRemove.current = neighbour === undefined ? 'surface' : { item: neighbour.id };
+    removeRegion(id);
+  };
+
+  // -------------------------------------------------------------- gestures
   const gestureRef = useRef<Gesture | null>(null);
   const [gesture, setGestureState] = useState<Gesture | null>(null);
   const setGesture = (next: Gesture | null) => {
@@ -305,7 +327,7 @@ export function RedactEditor({ ctx, title }: { readonly ctx: EditorContext; read
   const altKey = platform === 'darwin' ? 'Option' : 'Alt';
 
   /**
-   * "Add region" (keyboard users): a region in the centre of the image, in the
+   * "Add area" (keyboard users): a region in the centre of the image, in the
    * current style, selected, with focus on the canvas — the arrow keys move it
    * and Alt/Option+arrows resize it.
    */
@@ -398,6 +420,10 @@ export function RedactEditor({ ctx, title }: { readonly ctx: EditorContext; read
         {regions.map((region, index) => (
             <button
               key={region.id}
+              ref={(el) => {
+                if (el) itemRefs.current.set(region.id, el);
+                else itemRefs.current.delete(region.id);
+              }}
               type="button"
               className="btn-tool btn-small redact-list-item"
               aria-pressed={region.id === selectedId}
@@ -405,7 +431,7 @@ export function RedactEditor({ ctx, title }: { readonly ctx: EditorContext; read
               onKeyDown={(event) => {
                 if (event.key === 'Delete' || event.key === 'Backspace') {
                   event.preventDefault();
-                  removeRegion(region.id);
+                  removeListItem(region.id);
                 }
               }}
             >
@@ -414,14 +440,18 @@ export function RedactEditor({ ctx, title }: { readonly ctx: EditorContext; read
             </button>
           ))}
         {regions.length > 0 ? (
+          // aria-disabled, not disabled: deleting turns the button off, and it keeps keyboard focus.
           <button
             type="button"
             className="btn-icon"
             aria-label={t('redact.delete')}
             title={t('redact.delete')}
-            disabled={selected === null}
+            aria-disabled={selected === null || undefined}
             onClick={() => {
-              if (selected !== null) removeRegion(selected.id);
+              if (selected === null) return;
+              // The last region takes this button with it: continue on the canvas.
+              if (regionsRef.current.length === 1) focusAfterRemove.current = 'surface';
+              removeRegion(selected.id);
             }}
           >
             <Trash2 size={15} aria-hidden="true" />

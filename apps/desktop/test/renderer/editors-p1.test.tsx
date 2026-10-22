@@ -251,9 +251,10 @@ describe('AdjustEditor', () => {
     const user = userEvent.setup();
     renderWithEnv(<AdjustEditor ctx={sampleEditorContext('tool.edit', { defaults })} title="이미지 편집" />);
     const reset = screen.getByRole('button', { name: t('common.reset') });
-    expect((reset as HTMLButtonElement).disabled).toBe(true);
+    // Unavailable but focusable (aria-disabled) while there is nothing to reset.
+    expect(reset.getAttribute('aria-disabled')).toBe('true');
     await user.click(screen.getByRole('button', { name: t('adjust.flipV') }));
-    expect((reset as HTMLButtonElement).disabled).toBe(false);
+    expect(reset.hasAttribute('aria-disabled')).toBe(false);
     await user.click(reset);
     expect(screen.getByRole('button', { name: t('adjust.flipV') }).getAttribute('aria-pressed')).toBe('false');
   });
@@ -280,7 +281,11 @@ describe('PdfOrderEditor', () => {
     const user = userEvent.setup();
     const { orbit } = renderWithEnv(<PdfOrderEditor ctx={ctx} title="PDF로 변환" />);
     expect(names()).toEqual(['a.jpg', 'b.png', 'c.webp']);
-    expect((screen.getByRole('button', { name: t('pdf.moveUp', { name: 'a.jpg' }) }) as HTMLButtonElement).disabled).toBe(true);
+    // The first row cannot move up (aria-disabled: still focusable, pressing it changes nothing).
+    const upFirst = screen.getByRole('button', { name: t('pdf.moveUp', { name: 'a.jpg' }) });
+    expect(upFirst.getAttribute('aria-disabled')).toBe('true');
+    await user.click(upFirst);
+    expect(names()).toEqual(['a.jpg', 'b.png', 'c.webp']);
 
     await user.click(screen.getByRole('button', { name: t('pdf.moveDown', { name: 'a.jpg' }) }));
     expect(names()).toEqual(['b.png', 'a.jpg', 'c.webp']);

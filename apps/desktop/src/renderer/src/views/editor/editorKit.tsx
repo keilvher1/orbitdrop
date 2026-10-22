@@ -142,6 +142,59 @@ export function useDecodedPreview(preview: PreviewResponse | null): PreviewRespo
   return shown;
 }
 
+/** A preview render must take this long before "Rendering preview…" is shown and announced (quick ones pass silently). */
+export const BUSY_DELAY_MS = 500;
+/** The busy status keeps its text until rendering has been idle this long: one burst of slider steps, one announcement. */
+export const BUSY_HOLD_MS = 1000;
+/** Live values (estimates) are announced only after they stayed unchanged this long — never on every slider step. */
+export const SETTLE_MS = 700;
+
+/** True once `active` has stayed true for `delayMs`; false again as soon as `active` is. */
+export function useDelayedFlag(active: boolean, delayMs: number): boolean {
+  const [late, setLate] = useState(false);
+  useEffect(() => {
+    if (!active) {
+      setLate(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setLate(true), delayMs);
+    return () => clearTimeout(timer);
+  }, [active, delayMs]);
+  return active && late;
+}
+
+/** True while `active`, and for `holdMs` after it last was. */
+export function useHeldFlag(active: boolean, holdMs: number): boolean {
+  const [held, setHeld] = useState(false);
+  useEffect(() => {
+    if (active) {
+      setHeld(true);
+      return undefined;
+    }
+    const timer = setTimeout(() => setHeld(false), holdMs);
+    return () => clearTimeout(timer);
+  }, [active, holdMs]);
+  return active || held;
+}
+
+/**
+ * Text for a persistent polite live region: `text` once it has stayed the same
+ * for `delayMs`. `null` (still changing, or nothing to say) empties the region
+ * at once, so the next settled value is spoken even when it repeats the last.
+ */
+export function useSettledAnnouncement(text: string | null, delayMs = SETTLE_MS): string {
+  const [spoken, setSpoken] = useState('');
+  useEffect(() => {
+    if (text === null) {
+      setSpoken('');
+      return undefined;
+    }
+    const timer = setTimeout(() => setSpoken(text), delayMs);
+    return () => clearTimeout(timer);
+  }, [text, delayMs]);
+  return spoken;
+}
+
 export interface StageProps {
   readonly display: Size;
   readonly children: ReactNode;
@@ -151,21 +204,36 @@ export interface StageProps {
   readonly style?: CSSProperties;
 }
 
-/** Dark-ish stage that centres the image (or canvas) at `display` CSS px. */
+/**
+ * Dark-ish stage that centres the image (or canvas) at `display` CSS px.
+ * While `pending` the stage is aria-busy; "Rendering preview…" appears only
+ * when a render takes longer than BUSY_DELAY_MS, and is announced through one
+ * status element that exists from mount — outside the busy stage, which may
+ * hold back announcements — rather than a new status per preview. The status
+ * is emptied once rendering has been idle for BUSY_HOLD_MS, so previews that
+ * follow each other closely (slider steps) do not repeat it.
+ */
 export function Stage({ display, children, checker = false, pending = false, style }: StageProps) {
   const { t } = useEnv();
+  const slow = useDelayedFlag(pending, BUSY_DELAY_MS);
+  const announced = useHeldFlag(slow, BUSY_HOLD_MS);
   return (
-    <div className="stage" style={style}>
-      <div className={`stage-canvas${checker ? ' checker' : ''}`} style={{ width: display.width, height: display.height }}>
-        {children}
-      </div>
-      {pending ? (
-        <div className="stage-busy" role="status">
-          <Spinner size={11} />
-          <span>{t('editor.previewLoading')}</span>
+    <>
+      <div className="stage" style={style} aria-busy={pending || undefined}>
+        <div className={`stage-canvas${checker ? ' checker' : ''}`} style={{ width: display.width, height: display.height }}>
+          {children}
         </div>
-      ) : null}
-    </div>
+        {slow ? (
+          <div className="stage-busy" aria-hidden="true">
+            <Spinner size={11} />
+            <span>{t('editor.previewLoading')}</span>
+          </div>
+        ) : null}
+      </div>
+      <span className="visually-hidden" role="status">
+        {announced ? t('editor.previewLoading') : ''}
+      </span>
+    </>
   );
 }
 

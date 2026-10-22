@@ -1,24 +1,29 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { BrowserWindow } from 'electron';
 import { FILE_FORMATS, OrbitError, type ActionId } from '@orbitdrop/contracts';
+import { WINDOW_PROBE, describeProbe, judgeWindow, type WindowProbe } from '../shared/window-probe';
 import type { OrbitApp } from './app';
 import { describeError } from './log';
 import { probeHasEngines } from './processing/probe-fallback';
-import { withTimeout } from './util/concurrency';
+import { delay, withTimeout } from './util/concurrency';
 import { readJpegSize } from './util/jpeg';
 import { minimalPdf, readPngSize } from './util/pdf';
 import { encodePng, testPattern } from './util/png';
 
 /**
- * `--smoke-test` (docs/architecture.md): no windows, no tray. Probes the
- * engines in a worker, starts the native helper and waits up to 5 s for
+ * `--smoke-test` (docs/architecture.md): no tray, nothing on screen. Probes
+ * the engines in a worker, starts the native helper and waits up to 5 s for
  * `ready`, converts a generated PNG to JPG in a temp folder through the real
  * pipeline (FileRegistry → SubmissionService → JobManager → ProcessorPool →
  * processors) — and, as an extra check, renders a generated one-page PDF to
- * PNG (PDF.js inside the utility process) — prints exactly one
- * `ORBITDROP_SMOKE {json}` line to stdout and returns the exit code (0 ok,
- * 1 failed). Every field reports what actually happened.
+ * PNG (PDF.js inside the utility process) — and opens the About window the
+ * way every window opens (same BrowserWindow options, renderer file, preload,
+ * IPC), hidden: it must load and render (`window`; a packaged app whose
+ * windows stay blank fails here). Prints exactly one `ORBITDROP_SMOKE {json}`
+ * line to stdout and returns the exit code (0 ok, 1 failed). Every field
+ * reports what actually happened.
  */
 
 export interface ConversionReport {
@@ -62,8 +67,31 @@ export interface SmokeReport {
   conversion: ConversionReport;
   /** PDF → PNG at the default 300 DPI (PDF.js page rendering in the worker). */
   pdfConversion: ConversionReport;
+  /** The About window, opened hidden like any window: loaded, preload ran, rendered with main's data. */
+  window: WindowReport;
 }
 
+export interface WindowReport {
+  /** loaded && preload && rendered, never shown, no error. */
+  ok: boolean;
+  view: 'about';
+  /** Opening the window → view rendered. */
+  ms: number | null;
+  /** The renderer's page finished loading (did-finish-load, no did-fail-load). */
+  loaded: boolean;
+  /** The sandboxed preload ran (window.orbit exists). */
+  preload: boolean;
+  /** React rendered the About view with the version main sent (IPC round trip) and its stylesheets loaded. */
+  rendered: boolean;
+  /** The window appeared on screen at some point (must stay false). */
+  shown: boolean;
+  error: string | null;
+  /** First console errors of the page (e.g. CSP violations), for diagnosis; they do not fail the check. */
+  consoleErrors: string[];
+}
+
+/** The hidden window must have rendered within this time. */
+export const WINDOW_TIMEOUT_MS = 15_000;
 const IMAGE_W = 64;
 const IMAGE_H = 48;
 /** 72 × 36 pt → 300 × 150 px at 300 DPI. */
@@ -96,12 +124,14 @@ export async function runSmokeTest(orbit: OrbitApp, version: string, packaged: b
     },
     conversion: emptyConversion('convert.jpeg'),
     pdfConversion: emptyConversion('convert.png'),
+    window: { ok: false, view: 'about', ms: null, loaded: false, preload: false, rendered: false, shown: false, error: null, consoleErrors: [] },
   };
 
   let workDir: string | null = null;
   try {
     await orbit.startCore();
     const helperCheck = checkHelper(orbit, report);
+    const windowCheck = checkWindow(orbit, report.window, version);
 
     const snapshot = await orbit.capabilities.get();
     const { probe } = snapshot;
@@ -127,17 +157,90 @@ export async function runSmokeTest(orbit: OrbitApp, version: string, packaged: b
       convert(orbit, image, report.conversion, (data) => readJpegSize(data), { width: IMAGE_W, height: IMAGE_H }, 'JPEG'),
       convert(orbit, pdf, report.pdfConversion, (data) => readPngSize(data), { width: 300, height: 150 }, 'PNG'),
     ]);
-    await helperCheck;
+    await Promise.all([helperCheck, windowCheck]);
   } catch (error) {
     report.conversion.error ??= describeError(error);
   } finally {
     if (workDir) await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
   }
 
-  report.ok = report.probe.ok && report.conversion.ok && report.pdfConversion.ok && (report.helper.ok || !report.helper.required);
+  report.ok = report.probe.ok && report.conversion.ok && report.pdfConversion.ok && report.window.ok && (report.helper.ok || !report.helper.required);
   report.durationMs = Date.now() - started;
   await new Promise<void>((resolve) => process.stdout.write(`ORBITDROP_SMOKE ${JSON.stringify(report)}\n`, () => resolve()));
   return report.ok ? 0 : 1;
+}
+
+/**
+ * Opens the About window hidden — through the WindowManager, so with the
+ * BrowserWindow options, renderer file (file:// inside app.asar when
+ * packaged), preload, CSP and IPC every window uses — and waits until it
+ * rendered: the page loaded, the preload ran, and the view shows the version
+ * main sent. Fails on did-fail-load, preload-error, a renderer crash, an error
+ * the page shows, or WINDOW_TIMEOUT_MS. The window is never shown and is
+ * closed again.
+ */
+async function checkWindow(orbit: OrbitApp, report: WindowReport, version: string): Promise<void> {
+  const started = Date.now();
+  let window: BrowserWindow | null = null;
+  try {
+    window = orbit.startWindows({ hidden: true }).open('about');
+    const contents = window.webContents;
+    let failure: string | null = null;
+    // A failed load still ends in did-finish-load (of Chromium's error page): loaded = finished, never failed.
+    let finished = false;
+    let loadFailed = false;
+    window.on('show', () => {
+      report.shown = true;
+    });
+    contents.on('did-finish-load', () => {
+      finished = true;
+    });
+    contents.on('did-fail-load', (_event, code, description, _url, isMainFrame) => {
+      if (!isMainFrame) return;
+      loadFailed = true;
+      failure ??= `did-fail-load ${description} (${code})`;
+    });
+    contents.on('preload-error', (_event, _path, error) => {
+      failure ??= `preload-error ${describeError(error)}`;
+    });
+    contents.on('render-process-gone', (_event, details) => {
+      failure ??= `render-process-gone ${details.reason}`;
+    });
+    contents.on('console-message', (details) => {
+      if (details.level === 'error' && report.consoleErrors.length < 5) report.consoleErrors.push(details.message.slice(0, 300));
+    });
+
+    let probe: WindowProbe | null = null;
+    while (failure === null && Date.now() - started < WINDOW_TIMEOUT_MS) {
+      report.loaded = finished && !loadFailed;
+      if (report.loaded && !contents.isDestroyed()) {
+        // Bounded: a hung or crashed renderer never answers.
+        probe = await withTimeout(contents.executeJavaScript(WINDOW_PROBE) as Promise<WindowProbe>, 2000, () => new OrbitError('TIMEOUT', 'page did not answer')).catch(() => null);
+        if (probe) {
+          report.preload = probe.preload;
+          const verdict = judgeWindow(probe, version);
+          if (verdict.error !== null) failure = verdict.error;
+          else if (verdict.rendered) {
+            report.rendered = true;
+            report.ms = Date.now() - started;
+            break;
+          }
+        }
+      }
+      if (failure === null) await delay(100);
+    }
+    report.loaded = finished && !loadFailed;
+    if (failure !== null) report.error = failure;
+    else if (!report.rendered) report.error = `not rendered within ${WINDOW_TIMEOUT_MS / 1000} s (loaded ${report.loaded}, ${describeProbe(probe)})`;
+  } catch (error) {
+    report.error = describeError(error);
+  } finally {
+    if (window && !window.isDestroyed()) {
+      report.shown ||= window.isVisible();
+      window.destroy();
+    }
+  }
+  report.ok = report.loaded && report.preload && report.rendered && !report.shown && report.error === null;
 }
 
 async function checkHelper(orbit: OrbitApp, report: SmokeReport): Promise<void> {

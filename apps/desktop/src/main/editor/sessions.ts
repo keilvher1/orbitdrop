@@ -21,6 +21,7 @@ import {
   type ThumbnailRequest,
   type ThumbnailResponse,
 } from '@orbitdrop/contracts';
+import { stat } from 'node:fs/promises';
 import { processorSettings } from '../jobs/manager';
 import { describeError, silentLogger, type Logger } from '../log';
 import type { ProcessorPool } from '../processing/pool';
@@ -122,6 +123,23 @@ export interface EditorSessionsDeps {
   readonly backgroundConcurrency?: number;
   /** Thumbnail images kept per editor (least recently requested ones are released). */
   readonly keepThumbnails?: number;
+  /** Identity of a file on disk; thumbnails are cached per identity (default: `fileIdentity`). */
+  readonly fileIdentity?: (path: string) => Promise<string>;
+}
+
+/**
+ * Identity of a file on disk: device, inode, size and change time (what the
+ * processors' decode cache keys on too, `fileIdentityKey`). A file replaced
+ * or rewritten under the same path is a different file and gets a new
+ * thumbnail; a file that cannot be read gets 'missing' (the render then fails).
+ */
+export async function fileIdentity(path: string): Promise<string> {
+  try {
+    const info = await stat(path, { bigint: true });
+    return `${info.dev}:${info.ino}:${info.size}:${info.ctimeNs}`;
+  } catch {
+    return 'missing';
+  }
 }
 
 const STALE_ERROR = { code: 'CANCELLED', message: 'Superseded by a newer preview', retryable: false } as const;
@@ -278,16 +296,20 @@ export class EditorSessions {
   /**
    * getEditorThumbnail (OrbitApi): a small preview (≤ THUMBNAIL_MAX_EDGE) of
    * one of the session's files, rendered by the preview worker ('thumbnail')
-   * through the background limiter. Cached per file + size while its token is
-   * still in the store; concurrent requests share one render; a failed render
-   * is not cached. The token belongs to the editor (released when it closes).
+   * through the background limiter. Cached per file + size + file identity
+   * (device, inode, size, change time: a file replaced on disk gets a new
+   * thumbnail) while its token is still in the store; concurrent requests
+   * share one render; a failed render is not cached. The token belongs to the
+   * editor (released when it closes).
    */
   async thumbnail(request: ThumbnailRequest): Promise<ThumbnailResponse> {
     const session = this.require(request.editorId);
     const input = session.inputs.find((candidate) => candidate.fileId === request.fileId);
     if (!input) throw new OrbitError('INVALID_OPTIONS', 'Unknown file');
     const edge = Math.min(THUMBNAIL_MAX_EDGE, request.maxEdge ?? DEFAULT_THUMBNAIL_EDGE);
-    const key = `${input.fileId}:${edge}`;
+    const identity = await (this.deps.fileIdentity ?? fileIdentity)(input.path);
+    if (session.disposed) throw new OrbitError('CANCELLED', 'Editor closed');
+    const key = `${input.fileId}:${edge}:${identity}`;
     let entry = session.thumbnails.get(key);
     if (entry && entry.token !== null && !this.deps.store.has(entry.token)) entry = undefined; // evicted from the store: render again
     if (entry) session.thumbnails.delete(key); // most recently used goes last

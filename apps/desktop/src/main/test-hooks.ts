@@ -119,7 +119,15 @@ export function installTestHooks(orbit: OrbitApp): void {
     },
     windows: async () => {
       await started();
-      return orbit.windows?.list().map((record) => ({ kind: record.kind, context: record.context, windowId: record.windowId, url: record.window.webContents.getURL() })) ?? [];
+      return (
+        orbit.windows?.list().map((record) => ({
+          kind: record.kind,
+          context: record.context,
+          windowId: record.windowId,
+          url: record.window.webContents.getURL(),
+          unsaved: record.guard.unsaved,
+        })) ?? []
+      );
     },
     outputPath: async (outputId) => {
       await started();

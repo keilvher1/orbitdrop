@@ -1,7 +1,7 @@
 import { type OrbitErrorInfo, type SubmitActionResult } from '@orbitdrop/contracts';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useEnv } from '../../app/env';
-import { useEscapeKey } from '../../app/useEscapeKey';
+import { isImeKey, useEscapeKey } from '../../app/useEscapeKey';
 import { useWindowFit } from '../../app/useWindowFit';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { Notice, Spinner } from '../../components/Notice';
@@ -17,6 +17,11 @@ export interface EditorCommit {
   readonly commit: (options: unknown, stayOpen?: boolean) => Promise<SubmitActionResult | null>;
   /** cancelEditor + close. Nothing has been written at this point. */
   readonly cancel: () => void;
+  /**
+   * An OS-level close came while saving: acted on once a stay-open save succeeded. Kept with the commit
+   * (not the frame) because Compress shows its results in another EditorFrame.
+   */
+  readonly closeAfterSave: { current: boolean };
 }
 
 export function useEditorCommit(editorId: string): EditorCommit {
@@ -61,7 +66,8 @@ export function useEditorCommit(editorId: string): EditorCommit {
     orbit.closeWindow();
   }, [orbit, editorId]);
 
-  return { busy, error, clearError: () => setError(null), commit, cancel };
+  const closeAfterSave = useRef(false);
+  return { busy, error, clearError: () => setError(null), commit, cancel, closeAfterSave };
 }
 
 export interface EditorFrameProps {
@@ -97,6 +103,12 @@ export interface EditorFrameProps {
  * With `confirmClose`, × / Esc open a ConfirmDialog instead; while it is open
  * the panel is `inert` (no pointer, focus or shortcut reaches it), and
  * choosing "keep editing" returns focus to where it was (else to ×).
+ *
+ * OS-level closes (close button, ⌘W, Alt+F4) ask the same way: while there is
+ * unsaved work — or a save is under way — the window reports a close guard
+ * (setCloseGuard), main holds such closes back and calls onCloseRequested,
+ * which behaves exactly like × (one dialog however often it comes; nothing
+ * while saving, the window closes itself once the save went through).
  */
 export function EditorFrame({
   title,
@@ -113,12 +125,13 @@ export function EditorFrame({
   escapeEnabled = true,
   confirmClose = null,
 }: EditorFrameProps) {
-  const { t } = useEnv();
+  const { orbit, t } = useEnv();
   const rootRef = useRef<HTMLDivElement>(null);
   useWindowFit(rootRef);
 
   const [confirming, setConfirming] = useState(false);
   const needsConfirm = confirmClose !== null;
+  const guarded = needsConfirm || commit.busy;
   /** Element focused when the dialog opened; focus returns there when the user keeps editing. */
   const openerRef = useRef<HTMLElement | null>(null);
   const pendingRestoreRef = useRef(false);
@@ -134,10 +147,42 @@ export function EditorFrame({
       commit.cancel();
       return;
     }
+    if (confirming) return; // already asking (e.g. ⌘W pressed again): one dialog, focus stays in it
     const active = document.activeElement;
     openerRef.current = active instanceof HTMLElement && active !== document.body ? active : null;
     setConfirming(true);
   };
+  const requestCloseRef = useRef(requestClose);
+  requestCloseRef.current = requestClose;
+
+  // OS-level closes: main holds them back while `guarded` and asks through onCloseRequested. Each request is
+  // acknowledged with setCloseGuard (main treats a window that doesn't as hung and lets the next close
+  // through). One that comes while saving is remembered and acted on once a stay-open save (Compress)
+  // succeeded; after a failed save it is dropped, so the error stays visible.
+  const guardedRef = useRef(guarded);
+  guardedRef.current = guarded;
+  const busyRef = useRef(commit.busy);
+  busyRef.current = commit.busy;
+  const { closeAfterSave } = commit;
+  useEffect(() => {
+    orbit.setCloseGuard?.(guarded);
+  }, [orbit, guarded]);
+  useEffect(() => () => orbit.setCloseGuard?.(false), [orbit]);
+  useEffect(
+    () =>
+      orbit.onCloseRequested?.(() => {
+        orbit.setCloseGuard?.(guardedRef.current);
+        if (busyRef.current) closeAfterSave.current = true;
+        else requestCloseRef.current();
+      }),
+    [orbit],
+  );
+  useEffect(() => {
+    if (commit.busy) return;
+    const wanted = closeAfterSave.current;
+    closeAfterSave.current = false;
+    if (wanted && commit.error === null) requestCloseRef.current();
+  }, [commit.busy, commit.error]);
   const keepEditing = (): void => {
     pendingRestoreRef.current = true;
     setConfirming(false);
@@ -160,12 +205,13 @@ export function EditorFrame({
   useEscapeKey(requestClose, escapeEnabled && !commit.busy && !showConfirm);
 
   const canPrimary = !primaryDisabled && !commit.busy;
+  const canReset = !resetDisabled && !commit.busy;
   const shortcutEnabled = canPrimary && !showConfirm;
   const primaryRef = useRef(onPrimary);
   primaryRef.current = onPrimary;
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.isComposing && shortcutEnabled) {
+      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !isImeKey(event) && shortcutEnabled) {
         event.preventDefault();
         primaryRef.current();
       }
@@ -187,14 +233,31 @@ export function EditorFrame({
       ) : null}
       {footer === undefined && footerNote ? <p className="editor-footnote">{footerNote}</p> : null}
       {footer ?? (
+        // aria-disabled, not disabled: Reset and the primary button turn themselves off (nothing left to reset,
+        // saving…) and must keep keyboard focus instead of dropping it to <body>.
         <footer className="editor-footer">
           {onReset ? (
-            <button type="button" className="btn" onClick={onReset} disabled={resetDisabled || commit.busy}>
+            <button
+              type="button"
+              className="btn"
+              aria-disabled={!canReset || undefined}
+              onClick={() => {
+                if (canReset) onReset();
+              }}
+            >
               {t('common.reset')}
             </button>
           ) : null}
           <div className="editor-footer-spacer" />
-          <button type="button" className="btn btn-primary" onClick={onPrimary} disabled={!canPrimary} aria-busy={commit.busy || undefined}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            aria-disabled={!canPrimary || undefined}
+            aria-busy={commit.busy || undefined}
+            onClick={() => {
+              if (canPrimary) onPrimary();
+            }}
+          >
             {commit.busy ? <Spinner size={13} /> : null}
             {commit.busy ? t('editor.saving') : primaryLabel}
           </button>

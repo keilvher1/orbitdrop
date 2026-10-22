@@ -63,7 +63,7 @@ type Hooks = {
   openWindow(kind: 'jobs' | 'settings' | 'dropzone' | 'about'): void;
   waitForJob(jobId: string): Promise<JobSnapshot>;
   jobs(): JobSnapshot[];
-  windows(): { kind: WindowKind; context: WindowContext; windowId: number; url: string }[];
+  windows(): { kind: WindowKind; context: WindowContext; windowId: number; url: string; unsaved: boolean }[];
   outputPath(outputId: string): string | null;
   updateSettings(patch: unknown): Promise<unknown>;
   trayMenu(): string[] | null;

@@ -1,4 +1,6 @@
-import { basename, dirname } from 'node:path';
+import { lstat } from 'node:fs/promises';
+import { basename, dirname, extname } from 'node:path';
+import { FILE_FORMATS, FORMAT_INFO } from '@orbitdrop/contracts';
 import { newId } from '../util/ids';
 
 /**
@@ -11,6 +13,25 @@ export interface OutputRecord {
   readonly name: string;
   /** Folder name shown to the user (display only). */
   readonly dirDisplay: string;
+}
+
+/** Extensions of the formats OrbitDrop writes (canonical and accepted spellings), lower case with the dot. */
+export const OUTPUT_EXTENSIONS: ReadonlySet<string> = new Set(FILE_FORMATS.flatMap((format) => [FORMAT_INFO[format].extension, ...FORMAT_INFO[format].extensions]));
+
+/**
+ * Whether an output may be handed to the OS "open" action: a regular file
+ * (not a folder — an app bundle is one —, not a symlink) with the extension
+ * of a format OrbitDrop writes. Output paths come from the processors but
+ * also from history.json: a damaged or planted history file must never make
+ * "Open" launch a program.
+ */
+export async function isOpenableOutput(path: string): Promise<boolean> {
+  if (!OUTPUT_EXTENSIONS.has(extname(path).toLowerCase())) return false;
+  try {
+    return (await lstat(path)).isFile();
+  } catch {
+    return false;
+  }
 }
 
 export class OutputRegistry {

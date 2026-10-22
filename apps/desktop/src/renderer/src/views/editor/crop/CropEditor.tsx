@@ -1,6 +1,7 @@
 import { ASPECT_RATIOS, type AspectRatioId, type EditorContext } from '@orbitdrop/contracts';
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useCallback, useId, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { useEnv } from '../../../app/env';
+import { isImeKey } from '../../../app/useEscapeKey';
 import { Segmented } from '../../../components/Segmented';
 import { EditorFrame, useEditorCommit } from '../EditorFrame';
 import { isOneOf, isRecord, outputFileName, Stage, usePreviewBox } from '../editorKit';
@@ -97,14 +98,14 @@ export function CropEditor({ ctx, title }: { readonly ctx: EditorContext; readon
   const wId = useId();
   const hId = useId();
 
-  // W/H fields: free text while focused, otherwise mirror the selection.
+  // W/H fields: free text while being edited, otherwise derived from the selection in the same render — a
+  // value synced later (after paint) would be validated against the new aspect for a frame and flash a false
+  // error alert while Apply turns off.
   const [editing, setEditing] = useState<'width' | 'height' | null>(null);
-  const [wText, setWText] = useState(String(defaults.rect.width));
-  const [hText, setHText] = useState(String(defaults.rect.height));
-  useEffect(() => {
-    if (editing !== 'width') setWText(String(rect.width));
-    if (editing !== 'height') setHText(String(rect.height));
-  }, [rect, editing]);
+  const [wDraft, setWText] = useState(String(defaults.rect.width));
+  const [hDraft, setHText] = useState(String(defaults.rect.height));
+  const wText = editing === 'width' ? wDraft : String(rect.width);
+  const hText = editing === 'height' ? hDraft : String(rect.height);
   const wResult = parseDimension(wText, 'width', aspect, oriented);
   const hResult = parseDimension(hText, 'height', aspect, oriented);
   const fieldsValid = wResult.ok && hResult.ok;
@@ -112,12 +113,18 @@ export function CropEditor({ ctx, title }: { readonly ctx: EditorContext; readon
   // Typed values are applied to the selection as it was when the field got
   // focus, so intermediate keystrokes ("1", "10", "100"…) don't drift its centre.
   const editAnchor = useRef<Rect | null>(null);
+  const startEditing = (axis: 'width' | 'height') => {
+    if (axis === 'width') setWText(String(rect.width));
+    else setHText(String(rect.height));
+    setEditing(axis);
+  };
   const onDimensionFocus = (axis: 'width' | 'height') => {
     editAnchor.current = rect;
-    setEditing(axis);
+    startEditing(axis);
   };
 
   const onDimensionChange = (axis: 'width' | 'height', text: string) => {
+    if (editing !== axis) setEditing(axis); // typing again after Enter (still focused)
     if (axis === 'width') setWText(text);
     else setHText(text);
     // Anchor on the first change too (focus may not precede it, e.g. typing again after Enter).
@@ -132,8 +139,12 @@ export function CropEditor({ ctx, title }: { readonly ctx: EditorContext; readon
     setEditing(null);
   };
 
-  /** Enter confirms; Esc first reverts an edit in progress (only an untouched field lets Esc cancel the editor). */
+  /**
+   * Enter confirms; Esc first reverts an edit in progress (only an untouched field lets Esc cancel the editor).
+   * Keys of an IME composition belong to the IME (they neither confirm nor revert).
+   */
   const onDimensionKeyDown = (event: KeyboardEvent<HTMLInputElement>, axis: 'width' | 'height') => {
+    if (isImeKey(event.nativeEvent)) return;
     if (event.key === 'Enter') {
       onDimensionBlur();
       return;
@@ -254,7 +265,9 @@ export function CropEditor({ ctx, title }: { readonly ctx: EditorContext; readon
           <div
             className="crop-selection"
             style={{ left: view.x, top: view.y, width: view.width, height: view.height }}
-            role="group"
+            // An operable surface (arrow keys move / resize it): screen readers switch to focus mode, like the
+            // Annotate and Redact canvases.
+            role="application"
             tabIndex={0}
             aria-label={`${t('crop.selection')} ${t('common.dimensions', { width: rect.width, height: rect.height })}`}
             aria-describedby={helpId}

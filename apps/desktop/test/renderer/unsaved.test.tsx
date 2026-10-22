@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import './setup';
 import type { SubmitActionResult } from '@orbitdrop/contracts';
-import { fireEvent, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import koUi from '../../src/shared/locales/ko/ui.json';
 import { AnnotateEditor } from '../../src/renderer/src/views/editor/annotate/AnnotateEditor';
+import { CropEditor } from '../../src/renderer/src/views/editor/crop/CropEditor';
 import { RedactEditor } from '../../src/renderer/src/views/editor/redact/RedactEditor';
-import { createFakeOrbit, deferred, renderWithEnv, sampleEditorContext, type FakeOrbit } from './helpers';
+import { createFakeOrbit, deferred, renderWithEnv, requestOsClose, sampleEditorContext, type FakeOrbit } from './helpers';
 
 /**
  * Closing Annotate / Redact with unsaved shapes or regions (× or Esc) asks in
@@ -202,6 +203,94 @@ describe('Annotate: closing with unsaved annotations', () => {
     surface.blur();
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(orbit.cancelEditor).not.toHaveBeenCalled();
+    pending.resolve({ kind: 'jobs', jobIds: ['job1'] });
+    await vi.waitFor(() => expect(orbit.closeWindow).toHaveBeenCalledTimes(1));
+    expect(orbit.cancelEditor).not.toHaveBeenCalled();
+  });
+});
+
+describe('OS-level close (close button, ⌘W, Alt+F4) with unsaved work', () => {
+  const lastGuard = (orbit: FakeOrbit) => orbit.setCloseGuard.mock.calls.at(-1)?.[0];
+
+  it('the window reports its close guard: on with unsaved shapes, off when nothing is left, off on unmount', async () => {
+    const { surface, user, orbit, unmount } = annotate();
+    expect(lastGuard(orbit)).toBe(false);
+    drag(surface, { x: 58, y: 87 }, { x: 174, y: 174 });
+    expect(lastGuard(orbit)).toBe(true);
+    await user.click(screen.getByRole('button', { name: '실행 취소' }));
+    expect(lastGuard(orbit)).toBe(false);
+    drag(surface, { x: 58, y: 87 }, { x: 174, y: 174 });
+    expect(lastGuard(orbit)).toBe(true);
+    unmount();
+    expect(lastGuard(orbit)).toBe(false);
+    expect(orbit.onCloseRequested).toHaveBeenCalled();
+  });
+
+  it('a held-back OS close asks exactly like ×: one dialog however often it comes; keep editing keeps everything', async () => {
+    const { surface, user, orbit } = annotate();
+    drag(surface, { x: 58, y: 87 }, { x: 174, y: 174 });
+    act(() => requestOsClose(orbit));
+    const confirm = screen.getByRole('alertdialog', { name: TITLE, description: koUi['annotate.unsaved'] });
+    const keep = within(confirm).getByRole('button', { name: KEEP });
+    expect(document.activeElement).toBe(keep);
+    act(() => requestOsClose(orbit)); // ⌘W again while it asks
+    expect(screen.getAllByRole('alertdialog')).toHaveLength(1);
+    expect(document.activeElement).toBe(keep);
+    expect(orbit.cancelEditor).not.toHaveBeenCalled();
+    expect(orbit.closeWindow).not.toHaveBeenCalled();
+
+    await user.click(keep);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(document.activeElement).toBe(surface); // focus back where it was
+    expect(screen.getByText('주석 1개')).toBeTruthy();
+    expect(lastGuard(orbit)).toBe(true); // still guarded
+  });
+
+  it('"close without saving" after an OS close cancels the editor and closes the window (main lets that close through)', async () => {
+    const { surface, user, orbit } = redact();
+    drag(surface, { x: 58, y: 87 }, { x: 174, y: 174 });
+    act(() => requestOsClose(orbit));
+    await user.click(within(dialog()).getByRole('button', { name: DISCARD }));
+    expect(orbit.cancelEditor).toHaveBeenCalledWith('ed1');
+    expect(orbit.closeWindow).toHaveBeenCalledTimes(1);
+    expect(orbit.commitEditor).not.toHaveBeenCalled();
+  });
+
+  it('while saving, the window stays guarded and an OS close does nothing; it closes itself once the save went through', async () => {
+    const pending = deferred<SubmitActionResult>();
+    const orbit = createFakeOrbit({ commitEditor: () => pending.promise });
+    const { surface, user } = annotate(orbit);
+    drag(surface, { x: 58, y: 87 }, { x: 174, y: 174 });
+    await user.click(screen.getByRole('button', { name: '주석 저장' }));
+    expect(lastGuard(orbit)).toBe(true);
+    act(() => requestOsClose(orbit));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(orbit.cancelEditor).not.toHaveBeenCalled();
+    pending.resolve({ kind: 'jobs', jobIds: ['job1'] });
+    await vi.waitFor(() => expect(orbit.closeWindow).toHaveBeenCalledTimes(1));
+    expect(orbit.cancelEditor).not.toHaveBeenCalled();
+  });
+
+  it('without unsaved work a (racing) close request closes right away, like ×', () => {
+    const { orbit } = annotate();
+    expect(lastGuard(orbit)).toBe(false); // main does not hold such a close back
+    act(() => requestOsClose(orbit));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(orbit.cancelEditor).toHaveBeenCalledWith('ed1');
+    expect(orbit.closeWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it('an editor without unsaved work is guarded while it saves, so an OS close cannot drop an Apply in flight', async () => {
+    const pending = deferred<SubmitActionResult>();
+    const orbit = createFakeOrbit({ commitEditor: () => pending.promise });
+    const ctx = sampleEditorContext('tool.crop');
+    renderWithEnv(<CropEditor ctx={ctx} title="자르기" />, { orbit });
+    expect(lastGuard(orbit)).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: koUi['common.apply'] }));
+    await vi.waitFor(() => expect(orbit.commitEditor).toHaveBeenCalledTimes(1));
+    expect(lastGuard(orbit)).toBe(true);
+    act(() => requestOsClose(orbit));
     expect(orbit.cancelEditor).not.toHaveBeenCalled();
     pending.resolve({ kind: 'jobs', jobIds: ['job1'] });
     await vi.waitFor(() => expect(orbit.closeWindow).toHaveBeenCalledTimes(1));

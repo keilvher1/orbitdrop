@@ -32,6 +32,11 @@ import { HELPER_REASON_NOT_FOUND } from './status-text';
  *    callback is never blocked by validation, dialogs or window creation;
  *  - crash/hang: restart with exponential backoff, at most `maxRestarts`
  *    within `restartWindowMs`, then status 'crashed';
+ *  - sleep / screen lock (`cancelSessions`): every open drag session is
+ *    cancelled with `cancelSession` (the helper hides its wheel and answers
+ *    `cancelled`); after resume (`recheck`) the helper is pinged, re-configured
+ *    (displays may have changed) and asked for its permissions again, and a
+ *    helper that had given up is restarted with a fresh budget;
  *  - quit: `shutdown`, close stdin, kill after a timeout.
  * Logs carry session ids, action ids and counts — never file paths.
  */
@@ -96,6 +101,8 @@ export class HelperManager {
   private permissionTimer: ReturnType<typeof setInterval> | null = null;
   private stableTimer: ReturnType<typeof setTimeout> | null = null;
   private readyWaiters: ((ready: HelperReadyMessage | null) => void)[] = [];
+  /** Sessions of the current process seen in a `state` message and not ended yet (wheel possibly on screen). */
+  private readonly openSessions = new Set<string>();
 
   constructor(private readonly options: HelperManagerOptions) {
     this.log = options.log ?? silentLogger;
@@ -172,6 +179,45 @@ export class HelperManager {
     await this.start();
   }
 
+  /**
+   * Sleep, screen lock or a user switch: ask the helper to cancel every drag
+   * session that is still open, so no wheel stays on screen and nothing is
+   * dropped on the other side. The helper ends them with `cancelled` (the
+   * tracker then closes them); a drop it had already sent still counts — the
+   * user made it before the system went away. Returns how many were cancelled.
+   */
+  cancelSessions(reason: string): number {
+    const sessions = [...this.openSessions];
+    for (const sessionId of sessions) this.write({ v: HELPER_PROTOCOL_VERSION, type: 'cancelSession', sessionId });
+    if (sessions.length > 0) this.log.info('drag sessions cancelled', { reason, sessions: sessions.length });
+    return sessions.length;
+  }
+
+  /**
+   * After resume / unlock: make sure the helper still works. A running helper
+   * is pinged at once (the watchdog restarts it if it stays silent), gets its
+   * configuration again (the displays may have changed while asleep) and, on
+   * macOS, is asked for its permissions again; a helper that had given up
+   * ('crashed') gets one more series of attempts with a fresh budget.
+   */
+  async recheck(reason: string): Promise<void> {
+    if (this.stopped) return;
+    if (this.statusValue.state === 'crashed') {
+      this.log.info('restarting the native helper after resume', { reason });
+      await this.restart();
+      return;
+    }
+    if (!this.child || this.childExited || !this.readyMessage) return; // starting, restarting or unavailable
+    this.log.debug('re-checking the native helper', { reason });
+    if (this.pendingPing === null) {
+      this.nonce += 1;
+      this.pendingPing = this.nonce;
+      this.write({ v: HELPER_PROTOCOL_VERSION, type: 'ping', nonce: this.nonce });
+    }
+    this.sendConfigure(true);
+    if ((this.options.platform ?? process.platform) === 'darwin') this.write({ v: HELPER_PROTOCOL_VERSION, type: 'queryPermissions' });
+  }
+
   async stop(): Promise<void> {
     this.stopped = true;
     this.clearTimers();
@@ -220,6 +266,7 @@ export class HelperManager {
     // One tracker generation per helper process: every line of this process is tagged with it, so
     // sessions of an earlier process (even with a reused id) can never produce a drop.
     const sessionGeneration = this.tracker.helperRestarted();
+    this.openSessions.clear();
     this.readyMessage = null;
     this.permissions = null;
     this.lastConfigure = null;
@@ -261,6 +308,7 @@ export class HelperManager {
     this.readyMessage = null;
     this.clearTimers();
     this.tracker.helperRestarted(); // sessions of the dead process are closed
+    this.openSessions.clear();
     if (this.stopped) return;
     this.log.warn('native helper stopped', { reason });
     const now = this.now();
@@ -325,8 +373,15 @@ export class HelperManager {
       case 'cancelled':
       case 'drop': {
         const decision = this.tracker.handle(message, sessionGeneration);
+        if (decision.kind === 'stateChanged') {
+          if (decision.state === 'Idle' || decision.state === 'Cancelled') this.openSessions.delete(decision.sessionId);
+          else this.openSessions.add(decision.sessionId);
+          // A helper has one session at a time; never let a misbehaving one grow this set.
+          if (this.openSessions.size > 16) this.openSessions.delete(this.openSessions.values().next().value!);
+        }
         if (decision.kind === 'acceptDrop') {
           const drop = decision.drop;
+          this.openSessions.delete(drop.sessionId);
           this.log.info('drop accepted', { sessionId: drop.sessionId, actionId: drop.actionId, mode: drop.mode, files: drop.files.length });
           // Next tick: the helper's drop callback has long returned before main does any work.
           setImmediate(() => {

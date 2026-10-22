@@ -1,5 +1,7 @@
-import type { ErrorCode, Locale } from '@orbitdrop/contracts';
+import type { ErrorCode, Locale, WarningCode } from '@orbitdrop/contracts';
+import enErrors from '../shared/locales/en/errors.json';
 import en from '../shared/locales/en/main.json';
+import koErrors from '../shared/locales/ko/errors.json';
 import ko from '../shared/locales/ko/main.json';
 
 /**
@@ -26,6 +28,17 @@ export function t(locale: Locale, key: MainStringKey, vars?: Vars): string {
 export function errorText(locale: Locale, code: ErrorCode): string {
   const key = `error.${code}` as MainStringKey;
   return key in KO ? t(locale, key) : t(locale, 'error.INTERNAL');
+}
+
+/**
+ * The renderer's full sentence for a warning (errors.json), or null. Used when
+ * a notification has no short main.json text for it (e.g. a warning added by
+ * the processors later).
+ */
+export function warningSentence(locale: Locale, code: WarningCode): string | null {
+  const key = `warning.${code}`;
+  const table: Readonly<Record<string, string>> = locale === 'en' ? enErrors : koErrors;
+  return table[key] ?? (koErrors as Readonly<Record<string, string>>)[key] ?? null;
 }
 
 /** Translator bound to a locale getter (the locale can change at runtime). */

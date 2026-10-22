@@ -6,6 +6,18 @@ const MIN_W = 200;
 const MIN_H = 120;
 const MAX = 4000;
 
+/**
+ * Width a vertical scrollbar takes from the content (0 for overlay scrollbars, as on macOS by default). A
+ * window that main had to make shorter than its content scrolls; a classic scrollbar (Windows) would then
+ * also push a fixed-width panel into horizontal scrolling.
+ */
+function scrollbarGutter(): number {
+  const viewport = document.documentElement.clientWidth;
+  if (viewport <= 0) return 0; // not laid out (jsdom)
+  const gutter = window.innerWidth - viewport;
+  return gutter > 0 && gutter < 40 ? gutter : 0;
+}
+
 function observe(el: HTMLElement, orbit: OrbitApi): () => void {
   let last = '';
   let frame = 0;
@@ -13,21 +25,25 @@ function observe(el: HTMLElement, orbit: OrbitApi): () => void {
     frame = 0;
     const rect = el.getBoundingClientRect();
     if (rect.width === 0 && rect.height === 0) return; // not laid out (e.g. jsdom)
-    const width = Math.min(MAX, Math.max(MIN_W, Math.ceil(rect.width)));
+    const width = Math.min(MAX, Math.max(MIN_W, Math.ceil(rect.width) + scrollbarGutter()));
     const height = Math.min(MAX, Math.max(MIN_H, Math.ceil(rect.height)));
     const key = `${width}x${height}`;
     if (key === last) return;
     last = key;
     orbit.resizeWindow(width, height);
   };
-  measure();
-  if (typeof ResizeObserver === 'undefined') return () => undefined;
-  const observer = new ResizeObserver(() => {
+  const schedule = () => {
     if (frame === 0) frame = requestAnimationFrame(measure);
-  });
+  };
+  measure();
+  // Also when main resized the window (e.g. clamped to the work area, so a scrollbar appeared).
+  window.addEventListener('resize', schedule);
+  if (typeof ResizeObserver === 'undefined') return () => window.removeEventListener('resize', schedule);
+  const observer = new ResizeObserver(schedule);
   observer.observe(el);
   return () => {
     observer.disconnect();
+    window.removeEventListener('resize', schedule);
     if (frame !== 0) cancelAnimationFrame(frame);
   };
 }

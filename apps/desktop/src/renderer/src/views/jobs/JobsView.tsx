@@ -70,11 +70,22 @@ export function jobInputKinds(job: Pick<JobSnapshot, 'inputName'>): InputKind[] 
 }
 
 /**
+ * Jobs that finished between two snapshots of the list (queued/running → completed/failed/cancelled), in
+ * list order. Jobs first seen already finished (history, the first snapshot) are not news.
+ */
+export function finishedSince(previous: ReadonlyMap<string, JobSnapshot['state']>, next: readonly JobSnapshot[]): JobSnapshot[] {
+  return next.filter((job) => TERMINAL_JOB_STATES.has(job.state) && previous.has(job.jobId) && !TERMINAL_JOB_STATES.has(previous.get(job.jobId)!));
+}
+
+/**
  * Jobs window: current and recent jobs from main (`listJobs` + live
  * `onJobsChanged`). Progress is shown exactly as reported — determinate bars
  * for counted pages/files/steps, an indeterminate animation otherwise; never a
  * timer-driven fake. Finished jobs can be cleared from the list (outputs stay
  * on disk); cancelled jobs and failures with a retryable error can be run again.
+ * A job that finishes while the window is open is announced (politely, one
+ * message per update); keyboard focus stays on a job whose focused control
+ * vanished (a cancelled job's × — its card moves to "Recent").
  */
 export function JobsView() {
   const { orbit, t, platform } = useEnv();
@@ -129,6 +140,46 @@ export function JobsView() {
   const { active, recent } = useMemo(() => partitionJobs(jobs ?? []), [jobs]);
   const cutoff = finishedCutoff(recent);
   const hasFinished = cutoff !== null;
+
+  // Jobs that finished since the last update are announced: one specific message, or a count for a batch.
+  const knownStates = useRef<ReadonlyMap<string, JobSnapshot['state']> | null>(null);
+  useEffect(() => {
+    if (jobs === null) return;
+    const previous = knownStates.current;
+    knownStates.current = new Map(jobs.map((job) => [job.jobId, job.state]));
+    if (previous === null) return; // the first snapshot is the starting point, not news
+    const done = finishedSince(previous, jobs);
+    if (done.length > 1) announce(t.plural('jobs.announce.many', done.length));
+    else if (done.length === 1) {
+      const job = done[0]!;
+      const title = t.text(actionTitle(job.actionId, jobInputKinds(job)));
+      const name = job.outputs[0]?.name ?? job.inputName;
+      announce(t(job.state === 'completed' ? 'jobs.announce.completed' : job.state === 'failed' ? 'jobs.announce.failed' : 'jobs.announce.cancelled', { title, name }));
+    }
+  }, [jobs, announce, t]);
+
+  // Keyboard focus that disappears with its control (a cancelled job's ×: the card moves to "Recent") goes
+  // to the same job's card, else to the list, instead of <body>.
+  const lastFocus = useRef<{ readonly element: HTMLElement; readonly jobId: string | null } | null>(null);
+  useEffect(() => {
+    const root = bodyRef.current;
+    if (root === null) return undefined;
+    const onFocusIn = (event: FocusEvent) => {
+      if (event.target instanceof HTMLElement) lastFocus.current = { element: event.target, jobId: event.target.closest<HTMLElement>('[data-job-id]')?.dataset.jobId ?? null };
+    };
+    root.addEventListener('focusin', onFocusIn);
+    return () => root.removeEventListener('focusin', onFocusIn);
+  }, []);
+  useEffect(() => {
+    const last = lastFocus.current;
+    if (last === null || last.element.isConnected) return;
+    const focused = document.activeElement;
+    if (focused !== null && focused !== document.body) return;
+    lastFocus.current = null;
+    const root = bodyRef.current;
+    const card = last.jobId === null ? null : root?.querySelector<HTMLElement>(`[data-job-id="${last.jobId}"] .job-title`);
+    (card ?? root?.querySelector<HTMLElement>('.jobs-section-title, .jobs-empty-title') ?? root)?.focus({ preventScroll: true });
+  }, [jobs]);
 
   const clearFinished = async () => {
     if (clearing || cutoff === null) return;
@@ -214,7 +265,14 @@ export function JobsView() {
           </div>
         ) : null}
         {clearError ? (
-          <Notice tone="danger" onDismiss={() => setClearError(null)} dismissLabel={t('common.dismiss')}>
+          <Notice
+            tone="danger"
+            onDismiss={() => {
+              setClearError(null);
+              (clearRef.current ?? bodyRef.current)?.focus({ preventScroll: true }); // the dismiss button goes away
+            }}
+            dismissLabel={t('common.dismiss')}
+          >
             <strong>{t('jobs.clearFailed')}</strong> {t.error(clearError)}
           </Notice>
         ) : null}
@@ -260,13 +318,15 @@ function JobCard({ job, onAnnounce }: { readonly job: JobSnapshot; readonly onAn
   /** This job was run again (here or in another folder); the new job is listed separately. */
   const [retried, setRetried] = useState(false);
   const retriedRef = useRef<HTMLParagraphElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
   const mounted = useRef(true);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // Set again on (re)mount: StrictMode and fast refresh run cleanup and effect once more.
+    mounted.current = true;
+    return () => {
       mounted.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
 
   const run = useCallback(async (kind: CardAction | null, task: () => Promise<OrbitErrorInfo | null | void>, retry = false) => {
     if (kind) setBusy(kind);
@@ -356,13 +416,13 @@ function JobCard({ job, onAnnounce }: { readonly job: JobSnapshot; readonly onAn
   ) : null;
 
   return (
-    <li className="job-card" data-state={job.state} aria-labelledby={titleId}>
+    <li className="job-card" data-state={job.state} data-job-id={job.jobId} aria-labelledby={titleId}>
       <div className="job-head">
         <span className="job-icon" aria-hidden="true">
           {action.icon ? <ActionIcon icon={action.icon} size={16} /> : <span className="job-format">{action.wheelLabel.en}</span>}
         </span>
         <div className="job-titles">
-          <h3 id={titleId} className="job-title">
+          <h3 id={titleId} ref={titleRef} className="job-title" tabIndex={-1}>
             {title}
           </h3>
           <p className="job-sub" title={job.inputName}>
@@ -384,8 +444,11 @@ function JobCard({ job, onAnnounce }: { readonly job: JobSnapshot; readonly onAn
             aria-label={t('jobs.cancel')}
             title={t('jobs.cancel')}
             aria-describedby={titleId}
-            disabled={busy === 'cancel'}
-            onClick={() => void run('cancel', () => orbit.cancelJob(job.jobId))}
+            // aria-disabled while cancelling: the button keeps keyboard focus until the card moves to "Recent".
+            aria-disabled={busy === 'cancel' || undefined}
+            onClick={() => {
+              if (busy !== 'cancel') void run('cancel', () => orbit.cancelJob(job.jobId));
+            }}
           >
             {busy === 'cancel' ? <Spinner size={12} /> : <X size={14} aria-hidden="true" />}
           </button>
@@ -417,7 +480,14 @@ function JobCard({ job, onAnnounce }: { readonly job: JobSnapshot; readonly onAn
       {job.state === 'cancelled' ? retryActions : null}
 
       {actionError ? (
-        <Notice tone="danger" onDismiss={() => setActionError(null)} dismissLabel={t('common.dismiss')}>
+        <Notice
+          tone="danger"
+          onDismiss={() => {
+            setActionError(null);
+            titleRef.current?.focus({ preventScroll: true }); // the dismiss button goes away with the notice
+          }}
+          dismissLabel={t('common.dismiss')}
+        >
           {actionError.retry ? <RetryErrorText error={actionError.error} /> : t.error(actionError.error)}
         </Notice>
       ) : null}
@@ -560,6 +630,9 @@ function SizeChange({ job }: { readonly job: JobSnapshot }) {
 export function warningDetail(warning: JobWarning, t: ReturnType<typeof useEnv>['t']): string | null {
   const params = warning.params;
   if (params === undefined) return null;
+  // Only the first page / frame was used: here the parameter is how many the input had, not a page list.
+  if (warning.code === 'FIRST_PAGE_ONLY') return params.pages === undefined ? null : t('jobs.warningDetail.pagesTotal', { count: params.pages });
+  if (warning.code === 'FIRST_FRAME_ONLY') return params.frames === undefined ? null : t('jobs.warningDetail.framesTotal', { count: params.frames });
   const details: string[] = [];
   if (params.pages !== undefined) details.push(t('jobs.warningDetail.pages', { pages: params.pages }));
   if (params.width !== undefined && params.height !== undefined) details.push(t('jobs.warningDetail.size', { width: params.width, height: params.height }));

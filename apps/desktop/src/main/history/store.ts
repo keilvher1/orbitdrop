@@ -13,12 +13,17 @@ import {
   type OrbitErrorInfo,
 } from '@orbitdrop/contracts';
 import { describeError, silentLogger, type Logger } from '../log';
-import { SerialQueue, readJson, writeJsonAtomic } from '../util/atomic-json';
+import { SerialQueue, moveAside, readJson, writeJsonAtomic, type StoreLoadIssue, type UnusableReason } from '../util/atomic-json';
 
 /**
  * Job history: `<userData>/history.json`, the last 100 finished jobs. Only
  * names, sizes, states and output paths are stored — never file contents —
  * so the tray's "Recent jobs" and the jobs window survive a restart.
+ *
+ * A file that cannot be used (not JSON, no `jobs` list, unreadable) is kept
+ * aside as history.corrupt-<time>.json / history.unreadable-<time>.json before
+ * the list starts empty, so the next save does not destroy it; `loadIssue`
+ * tells the app. Entries that fail validation are dropped one by one.
  */
 export const HISTORY_VERSION = 1;
 export const HISTORY_LIMIT = 100;
@@ -88,6 +93,8 @@ export interface HistoryEntry {
 
 export class HistoryStore {
   readonly file: string;
+  /** Set by load() when history.json could not be used and the list starts empty. */
+  loadIssue: StoreLoadIssue | null = null;
   private entries: HistoryEntry[] = [];
   private readonly writes = new SerialQueue();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -101,26 +108,30 @@ export class HistoryStore {
   }
 
   async load(): Promise<readonly HistoryEntry[]> {
+    this.loadIssue = null;
+    this.entries = [];
+    let raw: Awaited<ReturnType<typeof readJson>>;
     try {
-      const raw = await readJson(this.file);
-      if (raw.kind !== 'ok') {
-        if (raw.kind === 'corrupt') this.log.warn('history file was corrupt; starting empty');
-        this.entries = [];
-        return this.entries;
-      }
-      const list = (raw.value as { jobs?: unknown } | null)?.jobs;
-      const valid: HistoryEntry[] = [];
-      if (Array.isArray(list)) {
-        for (const item of list) {
-          const parsed = HistoryEntrySchema.safeParse(item);
-          if (parsed.success) valid.push(parsed.data as HistoryEntry);
-        }
-      }
-      this.entries = valid.sort((a, b) => (b.finishedAt ?? b.createdAt) - (a.finishedAt ?? a.createdAt)).slice(0, HISTORY_LIMIT);
+      raw = await readJson(this.file);
     } catch (error) {
-      this.log.warn('history unreadable; starting empty', { error: describeError(error) });
-      this.entries = [];
+      this.log.warn('history unreadable; kept aside, starting empty', { error: describeError(error) });
+      await this.keepAside('unreadable');
+      return this.entries;
     }
+    if (raw.kind === 'missing') return this.entries;
+    const list = raw.kind === 'ok' ? (raw.value as { jobs?: unknown } | null)?.jobs : undefined;
+    if (!Array.isArray(list)) {
+      this.log.warn('history file was corrupt; kept aside, starting empty');
+      await this.keepAside('corrupt');
+      return this.entries;
+    }
+    const valid: HistoryEntry[] = [];
+    for (const item of list) {
+      const parsed = HistoryEntrySchema.safeParse(item);
+      if (parsed.success) valid.push(parsed.data as HistoryEntry);
+    }
+    if (valid.length < list.length) this.log.warn('invalid history entries dropped', { dropped: list.length - valid.length });
+    this.entries = valid.sort((a, b) => (b.finishedAt ?? b.createdAt) - (a.finishedAt ?? a.createdAt)).slice(0, HISTORY_LIMIT);
     return this.entries;
   }
 
@@ -161,6 +172,10 @@ export class HistoryStore {
       await this.save();
     }
     await this.writes.idle();
+  }
+
+  private async keepAside(reason: UnusableReason): Promise<void> {
+    this.loadIssue = { reason, backup: await moveAside(this.file, reason) };
   }
 
   private scheduleSave(): void {

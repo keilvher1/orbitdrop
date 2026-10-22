@@ -1,7 +1,13 @@
 import { EventEmitter } from 'node:events';
 import type { Session, WebContents } from 'electron';
 import { describe, expect, it, vi } from 'vitest';
-import { hardenSession, hardenWebContents } from '../../src/main/security';
+import { hardenSession, hardenWebContents, isRendererExternalUrl } from '../../src/main/security';
+
+/** The panes Settings › Drag links to (renderer SettingsView PERMISSION_URLS). */
+const PERMISSION_URLS = {
+  accessibility: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
+  inputMonitoring: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent',
+};
 
 class FakeSession extends EventEmitter {
   requestHandler: ((contents: unknown, permission: string, callback: (granted: boolean) => void) => void) | null = null;
@@ -70,5 +76,32 @@ describe('webContents hardening', () => {
     const webview = event();
     contents.emit('will-attach-webview', webview);
     expect(webview.preventDefault).toHaveBeenCalled();
+  });
+});
+
+describe('openExternal from a renderer', () => {
+  it('accepts what the UI opens: the macOS privacy panes, Windows privacy pages, https GitHub pages', () => {
+    for (const url of Object.values(PERMISSION_URLS)) expect(isRendererExternalUrl(url), url).toBe(true);
+    expect(isRendererExternalUrl('ms-settings:privacy')).toBe(true);
+    expect(isRendererExternalUrl('ms-settings:privacy-webcam')).toBe(true);
+    expect(isRendererExternalUrl('https://github.com/orbitdrop/orbitdrop/issues')).toBe(true);
+  });
+
+  it('refuses everything else, including URLs the bare prefix list would let through', () => {
+    for (const url of [
+      'https://example.com/',
+      'http://github.com/',
+      'file:///etc/passwd',
+      'javascript:alert(1)',
+      'x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles',
+      'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility&x=1',
+      'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility\n',
+      'ms-settings:windowsupdate-action',
+      'ms-settings:privacy-webcam?x',
+      'https://github.com/\tsomething',
+      '',
+    ]) {
+      expect(isRendererExternalUrl(url), JSON.stringify(url)).toBe(false);
+    }
   });
 });

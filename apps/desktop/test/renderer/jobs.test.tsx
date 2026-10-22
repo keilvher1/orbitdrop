@@ -151,6 +151,10 @@ describe('JobsView results and warnings', () => {
     expect(warningDetail({ code: 'PDF_PAGES_WITHOUT_TEXT', params: { pages: '3, 5' } }, t)).toBe('페이지: 3, 5');
     expect(warningDetail({ code: 'DOWNSCALED', params: { width: 800, height: 600 } }, t)).toBe('800 × 600 px');
     expect(warningDetail({ code: 'DOWNSCALED', params: { secret: 'x' } }, t)).toBeNull();
+    // Only the first page / frame of the input was used: the parameter is a count, not a page list.
+    expect(warningDetail({ code: 'FIRST_PAGE_ONLY', params: { pages: 5, files: 1 } }, t)).toBe('전체 5페이지');
+    expect(warningDetail({ code: 'FIRST_FRAME_ONLY', params: { frames: 24, files: 1 } }, t)).toBe('전체 24프레임');
+    expect(warningDetail({ code: 'FIRST_FRAME_ONLY', params: { files: 1 } }, t)).toBeNull();
   });
 
   it('shows the empty state', async () => {

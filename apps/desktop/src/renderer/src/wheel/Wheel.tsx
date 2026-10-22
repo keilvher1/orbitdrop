@@ -171,7 +171,9 @@ export function Wheel({
   const moveTo = (index: number) => {
     setKeyboard(true);
     setActive(index);
-    announce(index);
+    // aria-activedescendant already announces the item (with its reason); the live region only speaks when a
+    // disabled item is activated. Cleared here so the same explanation is read again next time.
+    setAnnouncement('');
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {

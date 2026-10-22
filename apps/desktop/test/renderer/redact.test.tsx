@@ -45,9 +45,13 @@ describe('RedactEditor', () => {
   it('turns a drag into a region in oriented source pixels and commits it', async () => {
     const { surface, user, orbit } = setup();
     const save = screen.getByRole('button', { name: '가려서 저장' });
-    expect(save).toHaveProperty('disabled', true);
+    // Unavailable but focusable (aria-disabled): pressing it does nothing.
+    expect(save.getAttribute('aria-disabled')).toBe('true');
+    await user.click(save);
+    expect(orbit.commitEditor).not.toHaveBeenCalled();
     drag(surface, { x: 58, y: 87 }, { x: 174, y: 174 });
     expect(screen.getByText('영역 1개')).toBeTruthy();
+    expect(save.hasAttribute('aria-disabled')).toBe(false);
     await user.click(save);
     const options = committedRegions(orbit);
     expect(options?.outputFormat).toBe('input');

@@ -234,3 +234,15 @@
     transform: translateX(290%);
   }
 }
+
+/* Forced colours would paint track and fill both Canvas: outline the track, keep the fill in Highlight. */
+@media (forced-colors: active) {
+  .compress-bar-indeterminate {
+    border: 1px solid CanvasText;
+  }
+
+  .compress-bar-indeterminate span {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+}

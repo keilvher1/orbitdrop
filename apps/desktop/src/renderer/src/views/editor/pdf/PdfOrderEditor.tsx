@@ -353,8 +353,17 @@ export function PdfOrderEditor({ ctx, title }: { readonly ctx: EditorContext; re
                   {name}
                 </span>
                 <span className="pdf-size muted tabular">{file ? formatBytes(file.bytes, t.locale, platform) : ''}</span>
+                {/* aria-disabled, not disabled: the button moves with its row and turns itself off at the top/bottom,
+                    where it must keep keyboard focus. move() ignores moves past either end. */}
                 <span className="pdf-buttons">
-                  <button type="button" className="btn-icon" aria-label={t('pdf.moveUp', { name })} title={t('pdf.moveUp', { name })} disabled={index === 0} onClick={() => move(index, index - 1)}>
+                  <button
+                    type="button"
+                    className="btn-icon"
+                    aria-label={t('pdf.moveUp', { name })}
+                    title={t('pdf.moveUp', { name })}
+                    aria-disabled={index === 0 || undefined}
+                    onClick={() => move(index, index - 1)}
+                  >
                     <ChevronUp size={15} aria-hidden="true" />
                   </button>
                   <button
@@ -362,7 +371,7 @@ export function PdfOrderEditor({ ctx, title }: { readonly ctx: EditorContext; re
                     className="btn-icon"
                     aria-label={t('pdf.moveDown', { name })}
                     title={t('pdf.moveDown', { name })}
-                    disabled={index === order.length - 1}
+                    aria-disabled={index === order.length - 1 || undefined}
                     onClick={() => move(index, index + 1)}
                   >
                     <ChevronDown size={15} aria-hidden="true" />

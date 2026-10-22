@@ -1,9 +1,9 @@
 import { fileURLToPath } from 'node:url';
 import { BrowserWindow, app, screen, type WebContents } from 'electron';
-import type { Point, WheelMode, WindowContext, WindowKind } from '@orbitdrop/contracts';
+import { IPC_CHANNELS, type Point, type WheelMode, type WindowContext, type WindowKind } from '@orbitdrop/contracts';
 import { describeError, silentLogger, type Logger } from '../log';
 import { WINDOW_MARGIN, placeCentered, rectCenter, resizeWithin } from './placement';
-import { MAX_EDITOR_WINDOWS, WINDOW_SPECS } from './specs';
+import { WINDOW_SPECS, editorsToEvict } from './specs';
 
 /**
  * BrowserWindow factory and registry. Every renderer window is sandboxed
@@ -11,7 +11,34 @@ import { MAX_EDITOR_WINDOWS, WINDOW_SPECS } from './specs';
  * single renderer bundle; `getWindowContext()` tells it what to show. Main
  * maps each webContents to its WindowContext and IPC accepts only senders
  * that are registered here and whose main frame shows our renderer URL.
+ *
+ * Close guard: a window with unsaved work (Annotate shapes, Redact regions —
+ * the renderer reports it with setCloseGuard) is not closed by an OS-level
+ * close (close button, ⌘W, Alt+F4): the close is held back and the renderer
+ * asks the user with the same dialog as its own × / Esc. Closes the window
+ * itself or main asked for are not held back, nor is anything once the app
+ * quits, the session ends, or the renderer died or hangs.
  */
+
+/** Per-window close guard state (mutable; see the class comment). */
+export interface CloseGuardState {
+  /** The renderer reported unsaved work. */
+  unsaved: boolean;
+  /** A close the window or main asked for is under way: not held back. */
+  approved: boolean;
+  /** Electron reported the renderer hung: it could not ask, so closes pass. */
+  unresponsive: boolean;
+  /**
+   * A held-back close was not acknowledged within CLOSE_ACK_MS (a hung renderer: Electron's own
+   * unresponsive timer only runs for closes that are not held back), so the next close passes.
+   */
+  noAck: boolean;
+  /** Pending acknowledgement timer of a held-back close. */
+  ackTimer: ReturnType<typeof setTimeout> | null;
+}
+
+/** How long a renderer has to acknowledge a held-back close (setCloseGuard) before it counts as hung. */
+export const CLOSE_ACK_MS = 5000;
 
 export interface WindowRecord {
   readonly windowId: number;
@@ -20,6 +47,7 @@ export interface WindowRecord {
   readonly context: WindowContext;
   readonly window: BrowserWindow;
   readonly createdAt: number;
+  readonly guard: CloseGuardState;
 }
 
 export interface WindowManagerDeps {
@@ -32,6 +60,8 @@ export interface WindowManagerDeps {
   readonly title: (context: WindowContext) => string;
   /** E2E/automation: show windows without taking focus. */
   readonly quiet: boolean;
+  /** Smoke test: windows are created and loaded but never shown (nothing on screen, no focus). */
+  readonly hidden?: boolean;
   readonly devTools: boolean;
   readonly onClosed?: (record: WindowRecord) => void;
   readonly onOpened?: (record: WindowRecord) => void;
@@ -41,9 +71,30 @@ export interface WindowManagerDeps {
 export class WindowManager {
   private readonly records = new Map<number, WindowRecord>();
   private readonly log: Logger;
+  /** Quitting, or the OS session ends: no close is held back any more. */
+  private ending = false;
 
   constructor(private readonly deps: WindowManagerDeps) {
     this.log = deps.log ?? silentLogger;
+  }
+
+  /** The app is quitting: let every close through (unsaved-work guards included). */
+  setQuitting(): void {
+    this.ending = true;
+  }
+
+  /** setCloseGuard from a window's renderer (also its acknowledgement of a held-back close). */
+  setCloseGuard(record: WindowRecord, unsaved: boolean): void {
+    const { guard } = record;
+    guard.unsaved = unsaved;
+    guard.noAck = false;
+    if (guard.ackTimer) clearTimeout(guard.ackTimer);
+    guard.ackTimer = null;
+  }
+
+  /** The window asked to close itself (closeWindow): never held back. */
+  closeWindow(record: WindowRecord): void {
+    this.closeRecord(record);
   }
 
   /**
@@ -68,11 +119,8 @@ export class WindowManager {
 
   /** Open an editor; `replace` (a picker window id) is closed once the editor is visible. */
   openEditor(editorId: string, anchor?: Point, replace?: number): BrowserWindow {
-    const editors = this.list('editor').sort((a, b) => a.createdAt - b.createdAt);
-    while (editors.length >= MAX_EDITOR_WINDOWS) {
-      const oldest = editors.shift();
-      if (oldest) this.closeRecord(oldest);
-    }
+    // Beyond the limit the oldest editors go — except ones with unsaved work (then the limit is exceeded).
+    for (const record of editorsToEvict(this.list('editor'))) this.closeRecord(record);
     const window = this.create({ kind: 'editor', editorId }, anchor);
     if (replace !== undefined) {
       const closeReplaced = (): void => {
@@ -206,8 +254,25 @@ export class WindowManager {
       context,
       window,
       createdAt: Date.now(),
+      guard: { unsaved: false, approved: false, unresponsive: false, noAck: false, ackTimer: null },
     };
     this.records.set(record.webContentsId, record);
+    window.on('close', (event) => this.onCloseAttempt(record, event));
+    window.on('unresponsive', () => {
+      record.guard.unresponsive = true;
+    });
+    window.on('responsive', () => {
+      record.guard.unresponsive = false;
+    });
+    // Windows log-off / shutdown: never hold the session up. ('query-session-end' can still be cancelled by
+    // another app; 'session-end' is final.)
+    window.on('session-end', () => {
+      this.ending = true;
+    });
+    // A reload starts a fresh page that has nothing unsaved yet.
+    window.webContents.on('did-navigate', () => {
+      record.guard.unsaved = false;
+    });
 
     let shown = false;
     const show = (): void => {
@@ -218,11 +283,21 @@ export class WindowManager {
     window.once('ready-to-show', show);
     const fallback = setTimeout(show, 4000); // never leave a window invisible if ready-to-show does not come
     fallback.unref?.();
+    let crashes = 0;
     window.webContents.on('render-process-gone', (_event, details) => {
+      // Whatever was unsaved went with the renderer; the dead window must stay closable.
+      record.guard.unsaved = false;
       this.log.error('renderer process gone', { kind, reason: details.reason, exitCode: details.exitCode });
+      if (details.reason === 'clean-exit' || this.ending || window.isDestroyed()) return;
+      // A frameless window with a dead page has no close button: load it again once (main still has its
+      // context — an editor comes back without its unsaved shapes); a second crash closes it.
+      crashes += 1;
+      if (crashes === 1) window.webContents.reload();
+      else this.closeRecord(record);
     });
     window.on('closed', () => {
       clearTimeout(fallback);
+      if (record.guard.ackTimer) clearTimeout(record.guard.ackTimer);
       this.records.delete(record.webContentsId);
       try {
         this.deps.onClosed?.(record);
@@ -239,7 +314,7 @@ export class WindowManager {
   }
 
   private reveal(window: BrowserWindow, focus: boolean): void {
-    if (window.isDestroyed()) return;
+    if (window.isDestroyed() || this.deps.hidden === true) return;
     if (this.deps.quiet || !focus) {
       if (!window.isVisible()) window.showInactive();
       return;
@@ -249,7 +324,41 @@ export class WindowManager {
     window.focus();
   }
 
+  /**
+   * 'close' of one of our windows. Held back only when the renderer reported
+   * unsaved work and nobody approved this close (OS close button, ⌘W,
+   * Alt+F4…): the window is brought forward and its renderer asks the user —
+   * keep editing, or close without saving (which then closes through
+   * cancelEditor / closeWindow, approved). Repeated closes while it asks just
+   * ask again; the renderer shows one dialog. The renderer acknowledges each
+   * request with setCloseGuard; one that does not within CLOSE_ACK_MS is hung,
+   * and the next close goes through.
+   */
+  private onCloseAttempt(record: WindowRecord, event: { preventDefault(): void }): void {
+    const { guard, window } = record;
+    if (!guard.unsaved || guard.approved || this.ending || guard.unresponsive || guard.noAck) return;
+    const contents = window.webContents;
+    if (contents.isDestroyed() || contents.isCrashed()) return;
+    event.preventDefault();
+    this.log.info('close held back: unsaved work', { kind: record.kind, windowId: record.windowId });
+    this.reveal(window, true);
+    try {
+      contents.send(IPC_CHANNELS.windowCloseRequested);
+    } catch (error) {
+      this.log.warn('could not ask the window about its unsaved work', { error: describeError(error) });
+    }
+    guard.ackTimer ??= setTimeout(() => {
+      guard.ackTimer = null;
+      guard.noAck = true;
+      this.log.warn('window did not answer a close request; the next close goes through', { kind: record.kind, windowId: record.windowId });
+    }, CLOSE_ACK_MS);
+    guard.ackTimer.unref?.();
+  }
+
+  /** A close the window itself or main decided on: never held back by the close guard. */
   private closeRecord(record: WindowRecord): void {
-    if (!record.window.isDestroyed()) record.window.close();
+    if (record.window.isDestroyed()) return;
+    record.guard.approved = true;
+    record.window.close();
   }
 }

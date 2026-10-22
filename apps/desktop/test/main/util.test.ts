@@ -1,11 +1,13 @@
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
-import { ERROR_CODES } from '@orbitdrop/contracts';
+import { ERROR_CODES, WARNING_CODES } from '@orbitdrop/contracts';
 import en from '../../src/shared/locales/en/main.json';
 import ko from '../../src/shared/locales/ko/main.json';
-import { errorText, t } from '../../src/main/i18n';
+import { errorText, t, warningSentence } from '../../src/main/i18n';
 import { parseLaunchOptions } from '../../src/main/launch-options';
+import { INFORMATIONAL_WARNINGS, WARNING_TEXT } from '../../src/main/notifications';
 import { redactPaths, scrubPaths } from '../../src/main/log';
+import { workerEnv } from '../../src/main/processing/electron-worker';
 import { errorFromInfo } from '../../src/main/processing/pool';
 import { failedProbe, probeHasEngines } from '../../src/main/processing/probe-fallback';
 import { publicErrorInfo } from '../../src/main/util/errors';
@@ -88,6 +90,19 @@ describe('locales', () => {
     }
   });
 
+  it('every warning worth a look gives drag notifications a reason in both languages', () => {
+    for (const code of WARNING_CODES) {
+      if (INFORMATIONAL_WARNINGS.has(code)) continue;
+      const key = WARNING_TEXT[code];
+      for (const locale of ['ko', 'en'] as const) {
+        const text = key !== undefined ? t(locale, key) : warningSentence(locale, code);
+        expect(text, `${locale} ${code}`).toMatch(/\S/);
+        expect(text, `${locale} ${code}`).not.toBe(key);
+      }
+    }
+    expect(warningSentence('en', 'FIRST_FRAME_ONLY')).toMatch(/first frame/);
+  });
+
   it('helper wheel strings fit the protocol limits', () => {
     for (const table of [ko, en]) {
       for (const key of ['helper.dropHint', 'helper.unsupported', 'helper.multiFileUnsupported', 'helper.fileCount'] as const) {
@@ -125,6 +140,36 @@ describe('libuv thread pool size', () => {
   });
 });
 
+describe('worker environment', () => {
+  const inherited = { PATH: '/usr/bin', UV_THREADPOOL_SIZE: '16', ORBITDROP_PDFJS_DIR: '/tmp/planted', ORBITDROP_IMAGEIO_HELPER: '/tmp/planted-helper', ORBITDROP_PARENT_PID: '1', ORBITDROP_FUTURE_OVERRIDE: 'x' };
+
+  it('main-owned variables always come from main, never from the inherited environment', () => {
+    const env = workerEnv({ ORBITDROP_PARENT_PID: '4242', ORBITDROP_IMAGEIO_HELPER: undefined }, false, inherited);
+    expect(env.ORBITDROP_PARENT_PID).toBe('4242');
+    expect(env.ORBITDROP_IMAGEIO_HELPER).toBeUndefined();
+    expect(env.PATH).toBe('/usr/bin');
+    expect(env.ORBITDROP_PDFJS_DIR).toBe('/tmp/planted'); // development override still works in dev builds
+  });
+
+  it('packaged builds pass no inherited ORBITDROP_* override (e.g. the folder PDF.js is imported from)', () => {
+    const env = workerEnv({ ORBITDROP_PARENT_PID: '4242', ORBITDROP_IMAGEIO_HELPER: '/app/helper' }, true, inherited);
+    expect(Object.keys(env).filter((key) => key.startsWith('ORBITDROP_')).sort()).toEqual(['ORBITDROP_IMAGEIO_HELPER', 'ORBITDROP_PARENT_PID']);
+    expect(env.ORBITDROP_IMAGEIO_HELPER).toBe('/app/helper');
+    expect(env.PATH).toBe('/usr/bin');
+  });
+
+  it('compares names case-insensitively (Windows environment names are: orbitdrop_pdfjs_dir is ORBITDROP_PDFJS_DIR)', () => {
+    const planted = { Path: 'C:\\Windows', orbitdrop_pdfjs_dir: 'C:\\evil', Orbitdrop_Imageio_Helper: 'C:\\evil\\helper.exe', orbitdrop_parent_pid: '1' };
+    const packaged = workerEnv({ ORBITDROP_PARENT_PID: '4242' }, true, planted);
+    expect(Object.keys(packaged).filter((key) => key.toUpperCase().startsWith('ORBITDROP_'))).toEqual(['ORBITDROP_PARENT_PID']);
+    expect(packaged.Path).toBe('C:\\Windows');
+    // Development builds keep dev overrides but never an inherited main-owned variable, whatever its spelling.
+    const dev = workerEnv({ ORBITDROP_PARENT_PID: '4242' }, false, planted);
+    expect(dev.orbitdrop_pdfjs_dir).toBe('C:\\evil');
+    expect(Object.keys(dev).filter((key) => ['ORBITDROP_IMAGEIO_HELPER', 'ORBITDROP_PARENT_PID'].includes(key.toUpperCase()))).toEqual(['ORBITDROP_PARENT_PID']);
+  });
+});
+
 describe('launch options', () => {
   it('parses the smoke test flag and automation switches', () => {
     expect(parseLaunchOptions(['electron', '.', '--smoke-test'], {})).toMatchObject({ smokeTest: true, noTray: true, disableHelper: false });
@@ -140,5 +185,34 @@ describe('launch options', () => {
     expect(parseLaunchOptions([], {})).toMatchObject({ e2e: false, noTray: false, disableHelper: false, userDataDir: null });
     // packaged builds ignore the automation switches
     expect(parseLaunchOptions([], { ORBITDROP_E2E: '1' }, true)).toMatchObject({ e2e: false, noTray: false, disableHelper: false });
+  });
+
+  it('packaged builds ignore every development switch except the smoke test and debug logging', () => {
+    const planted = {
+      ORBITDROP_E2E: '1',
+      ORBITDROP_E2E_TRAY: '1',
+      ORBITDROP_E2E_HELPER: '1',
+      ORBITDROP_USER_DATA_DIR: '/tmp/planted',
+      ORBITDROP_NO_TRAY: '1',
+      ORBITDROP_DISABLE_HELPER: '1',
+      ORBITDROP_DEBUG: '1',
+    };
+    expect(parseLaunchOptions(['OrbitDrop'], planted, true)).toEqual({
+      smokeTest: false,
+      smokeOptionalHelper: false,
+      e2e: false,
+      disableHelper: false,
+      noTray: false,
+      userDataDir: null,
+      debug: true,
+    });
+    // The same switches work in development builds.
+    expect(parseLaunchOptions(['electron', '.'], { ORBITDROP_USER_DATA_DIR: '/tmp/dev', ORBITDROP_NO_TRAY: '1', ORBITDROP_DISABLE_HELPER: '1' })).toMatchObject({
+      userDataDir: '/tmp/dev',
+      noTray: true,
+      disableHelper: true,
+    });
+    // scripts/package.mjs runs every package with --smoke-test (and --smoke-optional-helper when the helper is missing).
+    expect(parseLaunchOptions(['OrbitDrop', '--smoke-test', '--smoke-optional-helper'], {}, true)).toMatchObject({ smokeTest: true, smokeOptionalHelper: true, noTray: true, userDataDir: null });
   });
 });

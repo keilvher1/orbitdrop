@@ -56,7 +56,7 @@ describe('Crop editor', () => {
     await user.clear(w);
     await user.type(w, '12a');
     expect(screen.getByRole('alert').textContent).toContain('정수를 입력하세요.');
-    expect(apply.disabled).toBe(true);
+    expect(apply.getAttribute('aria-disabled')).toBe('true'); // unavailable but still focusable
     await user.clear(w);
     await user.type(w, '0');
     expect(screen.getByRole('alert').textContent).toContain('1–2550 사이의 값을 입력하세요.');
@@ -66,7 +66,7 @@ describe('Crop editor', () => {
     await user.clear(w);
     await user.type(w, '1200');
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(apply.disabled).toBe(false);
+    expect(apply.getAttribute('aria-disabled')).toBeNull();
     // 16:9 on a 2550×3300 page: the height limit is 1434 px for the full width.
     await user.click(screen.getByRole('radio', { name: '16:9' }));
     const h = screen.getByLabelText('높이') as HTMLInputElement;
@@ -81,7 +81,7 @@ describe('Crop editor', () => {
     const w = screen.getByLabelText('너비') as HTMLInputElement;
     await user.clear(w);
     await user.type(w, '1000');
-    const selection = screen.getByRole('group', { name: /자르기 영역/ });
+    const selection = screen.getByRole('application', { name: /자르기 영역/ });
     selection.focus();
     await user.keyboard('{Alt>}{ArrowRight}{/Alt}');
     expect(Number(w.value)).toBeGreaterThan(1000);

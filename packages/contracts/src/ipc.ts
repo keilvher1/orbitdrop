@@ -57,6 +57,17 @@ export const IPC_CHANNELS = {
   outputReveal: 'orbit:output:reveal',
   outputOpen: 'orbit:output:open',
   externalOpen: 'orbit:external:open',
+  /**
+   * Added by the hardening pass (renderer → main, fire-and-forget): whether
+   * closing this window would throw away unsaved work (setCloseGuard).
+   */
+  windowCloseGuard: 'orbit:window:close-guard',
+  /**
+   * Added by the hardening pass (main → renderer event): an OS-level close
+   * (window close button, ⌘W, Alt+F4) was held back because of unsaved work;
+   * the window asks the user exactly like its own × (onCloseRequested).
+   */
+  windowCloseRequested: 'orbit:window:close-requested',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -91,6 +102,20 @@ export interface AppInfo {
   readonly node: string;
   readonly packaged: boolean;
   readonly locale: 'ko' | 'en';
+  /** Added by the hardening pass: problems main handled at startup that the user should know about. */
+  readonly notices?: readonly StartupNotice[];
+}
+
+/**
+ * Added by the hardening pass. settingsReset: settings.json could not be used
+ * (corrupt or unreadable), the defaults apply; historyReset: the same for the
+ * job history (history.json), which starts empty. The unusable file is kept
+ * next to the original as `backup`.
+ */
+export interface StartupNotice {
+  readonly code: 'settingsReset' | 'historyReset';
+  /** File name (no folder) of the kept copy, or null when it could not be moved. */
+  readonly backup: string | null;
 }
 
 export type HelperStatus =
@@ -186,6 +211,8 @@ export const WindowResizeRequestSchema = z.strictObject({
 });
 export const IdRequestSchema = z.strictObject({ id: Id });
 export const ExternalOpenRequestSchema = z.strictObject({ url: z.string().max(2048) });
+/** Added by the hardening pass: setCloseGuard payload. */
+export const WindowCloseGuardRequestSchema = z.strictObject({ guard: z.boolean() });
 
 export function isAllowedExternalUrl(url: string): boolean {
   return ALLOWED_EXTERNAL_URL_PREFIXES.some((prefix) => url.startsWith(prefix));
@@ -336,4 +363,15 @@ export interface OrbitApi {
    * retry's result.
    */
   retryJob(jobId: string): Promise<SubmitActionResult>;
+
+  // ------------------------------------------------- hardening pass additions (optional for older implementations)
+  /**
+   * This window has unsaved work (true) or not (false). While true, main holds
+   * back OS-level closes (close button, ⌘W, Alt+F4) and calls the
+   * onCloseRequested listeners instead; the window's own close path
+   * (closeWindow / cancelEditor) and quitting the app are not held back.
+   */
+  setCloseGuard?(guard: boolean): void;
+  /** An OS-level close was held back (see setCloseGuard): ask the user like the window's own × does. */
+  onCloseRequested?(listener: () => void): () => void;
 }

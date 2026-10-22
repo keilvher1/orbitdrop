@@ -85,12 +85,11 @@
   min-width: 0;
 }
 
+/* Titles wrap: in the narrowest window ("Convert to DOCX (text-focused)" at 360 DIP) nothing may be cut off. */
 .job-title {
-  overflow: hidden;
   font-size: 13px;
   font-weight: 700;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 .job-sub {
@@ -234,11 +233,14 @@
   background: var(--c-surface-muted);
 }
 
+/* Up to two lines: the end of a name (suffix, extension) is what tells outputs apart. */
 .job-output-name {
+  display: -webkit-box;
   overflow: hidden;
   font-weight: 600;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .job-output-meta {

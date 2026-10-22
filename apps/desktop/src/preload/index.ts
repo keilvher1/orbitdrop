@@ -81,6 +81,11 @@ const api: OrbitApi = {
   requestEstimate: (request) => invoke(IPC_CHANNELS.editorEstimate, request),
   clearFinishedJobs: (request) => invoke(IPC_CHANNELS.jobsClearFinished, request ?? {}),
   retryJob: (jobId) => invoke(IPC_CHANNELS.jobRetry, { id: jobId }),
+  setCloseGuard: (guard) => ipcRenderer.send(IPC_CHANNELS.windowCloseGuard, { guard: guard === true }),
+  onCloseRequested: (listener) => {
+    if (typeof listener !== 'function') throw new TypeError('listener must be a function');
+    return subscribe(IPC_CHANNELS.windowCloseRequested, () => listener());
+  },
 };
 
 contextBridge.exposeInMainWorld('orbit', api);

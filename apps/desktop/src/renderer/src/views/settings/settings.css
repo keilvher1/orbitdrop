@@ -64,6 +64,15 @@
   outline-offset: -2px;
 }
 
+/*
+ * Long choices ("Ask every time") must fit the narrowest window (440 DIP, English): the options wrap onto a
+ * second row instead of pushing the panel into horizontal scrolling.
+ */
+.settings-panel .seg {
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
 .settings-group {
   display: flex;
   flex-direction: column;

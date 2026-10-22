@@ -10,6 +10,7 @@ import {
   RegisterPathsRequestSchema,
   SubmitActionRequestSchema,
   ThumbnailRequestSchema,
+  WindowCloseGuardRequestSchema,
   WindowOpenRequestSchema,
   WindowResizeRequestSchema,
   type AppInfo,
@@ -73,9 +74,14 @@ export interface OrbitIpcServices<R> {
   /** Returns how many finished jobs were removed. */
   clearFinishedJobs(finishedUpTo: number | undefined): number;
   retryJob(jobId: string, record: R): Promise<SubmitActionResult>;
+  /** setCloseGuard: the window reports whether closing it would lose unsaved work. */
+  setCloseGuard(record: R, guard: boolean): void;
 }
 
-/** Wire every OrbitApi channel. Events (settingsChanged, helperStatusChanged, jobsChanged) are broadcast by main. */
+/**
+ * Wire every OrbitApi channel. Events (settingsChanged, helperStatusChanged, jobsChanged) are broadcast by
+ * main; windowCloseRequested goes to the one window whose close was held back.
+ */
 export function registerOrbitIpc<R>(router: IpcRouter<R>, s: OrbitIpcServices<R>): void {
   const C = IPC_CHANNELS;
   router.handle(C.windowContext, null, (_p, record) => s.windowContext(record));
@@ -108,7 +114,8 @@ export function registerOrbitIpc<R>(router: IpcRouter<R>, s: OrbitIpcServices<R>
   router.handle(C.editorEstimate, EstimateRequestSchema, (p) => s.estimate(p));
   router.handle(C.jobsClearFinished, ClearFinishedJobsRequestSchema, (p) => s.clearFinishedJobs(p.finishedUpTo));
   router.handle(C.jobRetry, IdRequestSchema, (p, record) => s.retryJob(p.id, record));
+  router.on(C.windowCloseGuard, WindowCloseGuardRequestSchema, (p, record) => s.setCloseGuard(record, p.guard));
 }
 
 /** Channels main pushes to renderers. */
-export const EVENT_CHANNELS = [IPC_CHANNELS.settingsChanged, IPC_CHANNELS.helperStatusChanged, IPC_CHANNELS.jobsChanged] as const;
+export const EVENT_CHANNELS = [IPC_CHANNELS.settingsChanged, IPC_CHANNELS.helperStatusChanged, IPC_CHANNELS.jobsChanged, IPC_CHANNELS.windowCloseRequested] as const;

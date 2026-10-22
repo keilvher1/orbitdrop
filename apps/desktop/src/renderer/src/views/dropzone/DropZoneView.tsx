@@ -179,7 +179,14 @@ export function DropZoneView() {
               <FolderOpen size={15} aria-hidden="true" />
               {t('dropzone.open')}
             </button>
-            <StatusLine status={status} onShowJobs={() => void orbit.openWindow('jobs')} onDismiss={() => setStatus(null)} />
+            <StatusLine
+              status={status}
+              onShowJobs={() => void orbit.openWindow('jobs')}
+              onDismiss={() => {
+                setStatus(null);
+                openButtonRef.current?.focus(); // the dismiss button goes away with the notice
+              }}
+            />
           </>
         )}
       </div>

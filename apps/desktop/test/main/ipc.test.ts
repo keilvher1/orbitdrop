@@ -93,6 +93,7 @@ function services(): OrbitIpcServices<Rec> & Record<string, ReturnType<typeof vi
     estimate: fn({ ok: true, seq: 1, fileId: 'f_1', estimatedBytes: 10 }),
     clearFinishedJobs: vi.fn(() => 0),
     retryJob: fn({ kind: 'jobs', jobIds: ['job_2'] }),
+    setCloseGuard: vi.fn(),
   } as unknown as OrbitIpcServices<Rec> & Record<string, ReturnType<typeof vi.fn>>;
 }
 
@@ -221,6 +222,22 @@ describe('IPC channels', () => {
     const leak = ipc.invoke(IPC_CHANNELS.outputReveal, fromOurs, { id: 'out_1' });
     await expect(leak).rejects.toThrow('INTERNAL: Unexpected error');
     await expect(leak).rejects.not.toThrow(/private\.png/);
+  });
+
+  it('close guard: a validated boolean from a trusted main frame reaches the service; anything else is dropped', () => {
+    const { ipc, s } = setup();
+    expect(EVENT_CHANNELS).toContain(IPC_CHANNELS.windowCloseRequested); // main → renderer only
+    expect(ipc.handlers.has(IPC_CHANNELS.windowCloseRequested) || ipc.listeners.has(IPC_CHANNELS.windowCloseRequested)).toBe(false);
+    ipc.send(IPC_CHANNELS.windowCloseGuard, fromOurs, { guard: true });
+    ipc.send(IPC_CHANNELS.windowCloseGuard, fromOurs, { guard: false });
+    expect((s.setCloseGuard as unknown as ReturnType<typeof vi.fn>).mock.calls).toEqual([
+      [{ windowId: 1 }, true],
+      [{ windowId: 1 }, false],
+    ]);
+    for (const payload of [{ guard: 'yes' }, { guard: true, windowId: 7 }, true, undefined]) ipc.send(IPC_CHANNELS.windowCloseGuard, fromOurs, payload);
+    ipc.send(IPC_CHANNELS.windowCloseGuard, fromForeign, { guard: true });
+    ipc.send(IPC_CHANNELS.windowCloseGuard, fromSubframe, { guard: true });
+    expect(s.setCloseGuard).toHaveBeenCalledTimes(2);
   });
 
   it('dispose removes every channel', () => {

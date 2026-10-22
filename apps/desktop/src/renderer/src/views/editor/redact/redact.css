@@ -112,6 +112,11 @@
   font-weight: 500;
 }
 
+/* Full strength on the pressed (accent) item: dimmed, the small label would miss 4.5:1 there. */
+.redact-list-item[aria-pressed='true'] .redact-list-style {
+  opacity: 1;
+}
+
 .redact-controls {
   display: flex;
   flex-direction: column;

@@ -254,11 +254,14 @@ describe('AnnotateEditor', () => {
   it('draws a rectangle in source pixels and commits it', async () => {
     const { surface, user, orbit } = setup();
     const save = screen.getByRole('button', { name: '주석 저장' });
-    expect(save).toHaveProperty('disabled', true);
+    // Unavailable but focusable (aria-disabled): pressing it does nothing.
+    expect(save.getAttribute('aria-disabled')).toBe('true');
+    await user.click(save);
+    expect(orbit.commitEditor).not.toHaveBeenCalled();
     await user.click(screen.getByRole('radio', { name: '사각형' }));
     drag(surface, { x: 58, y: 87 }, { x: 174, y: 174 });
     expect(screen.getByText('주석 1개')).toBeTruthy();
-    expect(save).toHaveProperty('disabled', false);
+    expect(save.hasAttribute('aria-disabled')).toBe(false);
     await user.click(save);
     expect(orbit.commitEditor).toHaveBeenCalledTimes(1);
     expect(orbit.commitEditor.mock.calls[0]?.[0]).toMatchObject({ editorId: 'ed1' });
@@ -289,8 +292,8 @@ describe('AnnotateEditor', () => {
     expect(screen.getByText('주석 0개')).toBeTruthy();
     await user.keyboard('{Control>}y{/Control}');
     expect(screen.getByText('주석 1개')).toBeTruthy();
-    // Buttons mirror the history.
-    expect(screen.getByRole('button', { name: '다시 실행' })).toHaveProperty('disabled', true);
+    // Buttons mirror the history (aria-disabled: they stay focusable at the ends).
+    expect(screen.getByRole('button', { name: '다시 실행' }).getAttribute('aria-disabled')).toBe('true');
     await user.click(screen.getByRole('button', { name: '실행 취소' }));
     expect(screen.getByText('주석 0개')).toBeTruthy();
   });

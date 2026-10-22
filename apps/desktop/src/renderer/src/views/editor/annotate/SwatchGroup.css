@@ -20,3 +20,19 @@
 .swatch-icon:has(input:disabled) input {
   cursor: not-allowed;
 }
+
+/* Forced colours: as for the preset swatches (editor.css), focus is a wider CanvasText ring outside the selection. */
+@media (forced-colors: active) {
+  .swatch-icon[data-checked='true'] {
+    outline-color: Highlight;
+  }
+
+  .swatch-icon:focus-within {
+    outline: 3px solid CanvasText;
+    outline-offset: 3px;
+  }
+
+  .swatch-icon[data-checked='true']:focus-within {
+    box-shadow: 0 0 0 2px Highlight;
+  }
+}

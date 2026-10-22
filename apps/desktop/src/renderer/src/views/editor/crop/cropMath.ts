@@ -276,7 +276,8 @@ export function sizeLimits(aspect: AspectRatioId, bounds: Size): Size {
  * fixed ratio also small enough that the other side still fits.
  */
 export function parseDimension(text: string, axis: 'width' | 'height', aspect: AspectRatioId, bounds: Size): DimensionResult {
-  const trimmed = text.trim().replace(/[,\s]/g, '');
+  // NFKC: full-width digits typed through an IME ("１２０") are the same number.
+  const trimmed = text.normalize('NFKC').trim().replace(/[,\s]/g, '');
   if (!/^\d+$/.test(trimmed)) return { ok: false, error: { kind: 'notInteger' } };
   const value = Number.parseInt(trimmed, 10);
   const sourceMax = Math.floor(axis === 'width' ? bounds.width : bounds.height);

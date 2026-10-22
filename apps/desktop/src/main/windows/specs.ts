@@ -33,3 +33,17 @@ export const WINDOW_SPECS: Readonly<Record<WindowKind, WindowSpec>> = {
 
 /** Editors open at most this many at once; the oldest is closed beyond it. */
 export const MAX_EDITOR_WINDOWS = 8;
+
+/**
+ * Editors to close before one more opens: the oldest first, but never one
+ * with unsaved work (closing it would silently throw that work away) — then
+ * the limit is exceeded instead.
+ */
+export function editorsToEvict<T extends { readonly createdAt: number; readonly guard: { readonly unsaved: boolean } }>(editors: readonly T[], max: number = MAX_EDITOR_WINDOWS): T[] {
+  const excess = editors.length - max + 1;
+  if (excess <= 0) return [];
+  return [...editors]
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .filter((record) => !record.guard.unsaved)
+    .slice(0, excess);
+}

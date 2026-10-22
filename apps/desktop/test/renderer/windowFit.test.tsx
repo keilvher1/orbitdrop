@@ -30,6 +30,21 @@ describe('useWindowFit', () => {
     expect(orbit.resizeWindow).toHaveBeenCalledWith(408, 549);
   });
 
+  it('a window main made shorter than its content asks for the width its scrollbar takes (no sideways scrolling)', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 520, height: 675, x: 0, y: 0, top: 0, left: 0, right: 520, bottom: 675, toJSON: () => ({}) } as DOMRect);
+    const clientWidth = vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(520);
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(520);
+    const { orbit } = renderWithEnv(<Fitted loading={false} />);
+    expect(orbit.resizeWindow).toHaveBeenLastCalledWith(520, 675);
+    // Main clamped the height to the work area: a 15 px classic scrollbar appears and the window is resized.
+    clientWidth.mockReturnValue(505);
+    await act(async () => {
+      window.dispatchEvent(new Event('resize'));
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+    });
+    expect(orbit.resizeWindow).toHaveBeenLastCalledWith(535, 675);
+  });
+
   it('clamps to the IPC schema range and skips unmeasured (0×0) elements', () => {
     const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect');
     spy.mockReturnValue({ width: 0, height: 0 } as DOMRect);

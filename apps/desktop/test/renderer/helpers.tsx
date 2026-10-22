@@ -20,10 +20,17 @@ import type { ReactElement } from 'react';
 import { vi, type Mock } from 'vitest';
 import { EnvProvider } from '../../src/renderer/src/app/env';
 
-/** OrbitApi whose methods are vitest mocks with sensible defaults. */
+/** OrbitApi whose methods (optional ones included) are vitest mocks with sensible defaults. */
 export type FakeOrbit = {
-  -readonly [K in keyof OrbitApi]: OrbitApi[K] extends (...args: infer A) => infer R ? Mock<(...args: A) => R> : OrbitApi[K];
+  -readonly [K in keyof OrbitApi]-?: NonNullable<OrbitApi[K]> extends (...args: infer A) => infer R ? Mock<(...args: A) => R> : OrbitApi[K];
 };
+
+const closeRequestListeners = new WeakMap<FakeOrbit, Set<() => void>>();
+
+/** What main does when it holds back an OS-level close (close button, ⌘W, Alt+F4) of a guarded window. */
+export function requestOsClose(orbit: FakeOrbit): void {
+  for (const listener of closeRequestListeners.get(orbit) ?? []) listener();
+}
 
 const SUPPORT = (input: boolean, output: boolean): FormatSupport => ({
   input,
@@ -186,6 +193,15 @@ export function createFakeOrbit(overrides: Partial<OrbitApi> = {}): FakeOrbit {
     requestEstimate: vi.fn(async (request) => ({ ok: true as const, seq: request.seq, fileId: request.fileId, estimatedBytes: 500_000 })),
     clearFinishedJobs: vi.fn(async () => 0),
     retryJob: vi.fn(async () => ({ kind: 'jobs' as const, jobIds: ['job-retry'] })),
+    setCloseGuard: vi.fn(),
+    onCloseRequested: vi.fn((listener: () => void) => {
+      const listeners = closeRequestListeners.get(base) ?? new Set<() => void>();
+      closeRequestListeners.set(base, listeners);
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    }),
   };
   for (const [key, value] of Object.entries(overrides)) {
     const current = (base as Record<string, unknown>)[key];

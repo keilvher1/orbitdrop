@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -39,8 +39,58 @@ describe('SettingsStore', () => {
     const store = new SettingsStore(dir);
     expect(await store.load()).toEqual(DEFAULT_SETTINGS);
     const names = await readdir(dir);
-    expect(names.some((n) => n.startsWith('settings.corrupt-'))).toBe(true);
+    const backup = names.find((n) => n.startsWith('settings.corrupt-'));
+    expect(backup).toBeDefined();
+    expect(await readFile(join(dir, backup!), 'utf8')).toBe('{ not json'); // the original bytes, untouched
     expect(await readJson('settings.json')).toEqual(DEFAULT_SETTINGS);
+    expect(store.loadIssue).toEqual({ reason: 'corrupt', backup }); // the app tells the user
+  });
+
+  it('an unreadable settings file (a folder in its place) is kept aside too, never overwritten, never a crash', async () => {
+    await mkdir(join(dir, 'settings.json'));
+    await writeFile(join(dir, 'settings.json', 'inside.txt'), 'keep me');
+    const store = new SettingsStore(dir);
+    expect(await store.load()).toEqual(DEFAULT_SETTINGS);
+    const backup = (await readdir(dir)).find((n) => n.startsWith('settings.unreadable-'));
+    expect(store.loadIssue).toEqual({ reason: 'unreadable', backup });
+    expect(await readFile(join(dir, backup!, 'inside.txt'), 'utf8')).toBe('keep me');
+    expect(await readJson('settings.json')).toEqual(DEFAULT_SETTINGS);
+    await expect(store.update({ locale: 'en' })).resolves.toMatchObject({ locale: 'en' });
+    expect(await readJson('settings.json')).toMatchObject({ locale: 'en' });
+  });
+
+  it('a file that cannot be moved aside is left alone until a real change is saved', async () => {
+    await writeFile(join(dir, 'settings.json'), '{ broken');
+    await chmod(dir, 0o555); // folder not writable: neither the move nor a save can happen
+    try {
+      const store = new SettingsStore(dir);
+      expect(await store.load()).toEqual(DEFAULT_SETTINGS);
+      expect(store.loadIssue).toEqual({ reason: 'corrupt', backup: null });
+      expect(await readFile(join(dir, 'settings.json'), 'utf8')).toBe('{ broken');
+      // Saving fails quietly (logged); the app keeps running with the in-memory settings.
+      await expect(store.update({ locale: 'en' })).resolves.toMatchObject({ locale: 'en' });
+    } finally {
+      await chmod(dir, 0o755);
+    }
+  });
+
+  it('JSON that is not a settings object (null, an array, a number) is kept aside like a corrupt file', async () => {
+    for (const content of ['null', '[]', '42', '"settings"']) {
+      await writeFile(join(dir, 'settings.json'), content);
+      const store = new SettingsStore(dir);
+      expect(await store.load(), content).toEqual(DEFAULT_SETTINGS);
+      const backup = (await readdir(dir)).find((n) => n.startsWith('settings.corrupt-'));
+      expect(store.loadIssue, content).toEqual({ reason: 'corrupt', backup });
+      expect(await readFile(join(dir, backup!), 'utf8'), content).toBe(content);
+      await rm(join(dir, backup!));
+    }
+  });
+
+  it('a valid file reports no load issue', async () => {
+    await writeFile(join(dir, 'settings.json'), JSON.stringify(DEFAULT_SETTINGS));
+    const store = new SettingsStore(dir);
+    await store.load();
+    expect(store.loadIssue).toBeNull();
   });
 
   it('applies valid patches atomically, notifies listeners and rejects invalid patches', async () => {
@@ -142,9 +192,38 @@ describe('HistoryStore', () => {
 
   it('drops invalid entries and survives a corrupt file', async () => {
     await writeFile(join(dir, 'history.json'), JSON.stringify({ version: 1, jobs: [entry(1), { jobId: '../x', state: 'completed' }, { ...entry(2), actionId: 'convert.exe' }] }));
-    expect((await new HistoryStore(dir).load()).map((e) => e.jobId)).toEqual(['job_1']);
+    const partial = new HistoryStore(dir);
+    expect((await partial.load()).map((e) => e.jobId)).toEqual(['job_1']);
+    expect(partial.loadIssue).toBeNull(); // single bad entries are dropped, the file itself was usable
     await writeFile(join(dir, 'history.json'), '[[[');
     expect(await new HistoryStore(dir).load()).toEqual([]);
+  });
+
+  it('a corrupt history file is kept aside before the next save could destroy it', async () => {
+    for (const [content, label] of [
+      ['{ not json', 'not JSON'],
+      [JSON.stringify({ version: 1, jobs: 'nope' }), 'no jobs list'],
+      [JSON.stringify([entry(1)]), 'wrong shape'],
+    ] as const) {
+      await writeFile(join(dir, 'history.json'), content);
+      const store = new HistoryStore(dir, undefined, 5);
+      expect(await store.load(), label).toEqual([]);
+      const backup = (await readdir(dir)).find((n) => n.startsWith('history.corrupt-'));
+      expect(store.loadIssue, label).toEqual({ reason: 'corrupt', backup });
+      expect(await readFile(join(dir, backup!), 'utf8'), label).toBe(content);
+      store.record(entry(7));
+      await store.flush();
+      expect(((await readJson('history.json')) as { jobs: unknown[] }).jobs, label).toHaveLength(1);
+      expect(await readFile(join(dir, backup!), 'utf8'), label).toBe(content); // still there after the save
+      await rm(join(dir, backup!));
+    }
+  });
+
+  it('an unreadable history file is kept aside and the list starts empty', async () => {
+    await mkdir(join(dir, 'history.json'));
+    const store = new HistoryStore(dir);
+    expect(await store.load()).toEqual([]);
+    expect(store.loadIssue).toMatchObject({ reason: 'unreadable', backup: expect.stringMatching(/^history\.unreadable-\d+\.json$/) });
   });
 
   it('removeWhere drops the selected entries, persists the rest and reports the removed ids', async () => {

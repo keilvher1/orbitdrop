@@ -30,7 +30,7 @@ import {
   type FormatChange,
 } from '../editorKit';
 import { usePreview } from '../usePreview';
-import { BatchTotals, EstimateList, signedPercent } from './CompressBatch';
+import { BatchTotals, ChangeLabel, EstimateAnnouncer, EstimateList, signedPercent } from './CompressBatch';
 import { summarizeEstimates, useBatchEstimates } from './useBatchEstimates';
 import './compress.css';
 
@@ -171,7 +171,14 @@ export function CompressEditor({ ctx, title }: { readonly ctx: EditorContext; re
   const inputBytes = ctx.image.bytes > 0 ? ctx.image.bytes : (first?.bytes ?? 0);
   const estimated = preview?.estimatedBytes;
   const change = estimated === undefined ? null : percentChange(inputBytes, estimated);
+  const changeText = change === null ? null : t('common.percent', { value: signedPercent(change) });
   const notSmaller = estimated !== undefined && estimated >= inputBytes;
+  // Spoken once the shown estimate belongs to the current options (and its image has decoded), with the
+  // not-smaller warning: the notice itself is not live — near the threshold it would come and go per step.
+  const settled =
+    upToDate && preview === latest && estimated !== undefined && changeText !== null
+      ? [t('compress.announce', { size: formatBytes(estimated, t.locale, platform), change: changeText }), ...(notSmaller ? [t('compress.notSmaller')] : [])].join(' ')
+      : null;
   const changed = JSON.stringify(state) !== JSON.stringify(initial);
   const presets = MAX_EDGE_PRESETS.filter((edge) => edge < sourceLong);
   const customMax = Math.min(MAX_EDGE_LIMIT, sourceLong);
@@ -227,7 +234,7 @@ export function CompressEditor({ ctx, title }: { readonly ctx: EditorContext; re
         </>
       ) : (
         <>
-          <div className="compress-sizes" aria-live="polite">
+          <div className="compress-sizes">
             <div className="compress-size">
               <span className="compress-size-label">{t('compress.inputSize')}</span>
               <strong className="tabular">{formatBytes(inputBytes, t.locale, platform)}</strong>
@@ -239,17 +246,18 @@ export function CompressEditor({ ctx, title }: { readonly ctx: EditorContext; re
               </strong>
             </div>
             <div className="compress-size">
-              <span className="compress-size-label" aria-hidden="true">
-                Δ
-              </span>
+              <ChangeLabel />
               <strong className="tabular" data-tone={change === null ? undefined : notSmaller ? 'warning' : 'good'}>
-                {change === null ? '—' : t('common.percent', { value: signedPercent(change) })}
+                {changeText ?? '—'}
               </strong>
             </div>
           </div>
+          <EstimateAnnouncer text={settled} />
           {estimated !== undefined ? (
             notSmaller ? (
-              <Notice tone="warning">{t('compress.notSmaller')}</Notice>
+              <Notice tone="warning" live="off">
+                {t('compress.notSmaller')}
+              </Notice>
             ) : (
               <p className="compress-expect">{t('compress.smaller', { percent: Math.abs(change ?? 0) })}</p>
             )

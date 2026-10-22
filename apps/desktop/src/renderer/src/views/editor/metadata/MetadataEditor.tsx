@@ -27,7 +27,7 @@ export function colorSpaceLabel(space: string | null, t: Translator): string {
     case 'rgb':
       return 'RGB';
     case 'rgb16':
-      return 'RGB (16 bit)';
+      return t('meta.rgb16');
     case 'cmyk':
       return 'CMYK';
     case 'lab':

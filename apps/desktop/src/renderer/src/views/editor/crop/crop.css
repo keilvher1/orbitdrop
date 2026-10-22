@@ -12,9 +12,17 @@
   cursor: move;
 }
 
+/*
+ * Focus ring drawn inside the selection: by default the selection covers the whole image, and an outer ring
+ * would fall outside the stage (overflow: hidden). The white inset halo keeps the ring visible on any image;
+ * forced colours drop the box-shadow but keep the outline.
+ */
 .crop-selection:focus-visible {
   outline: 2px solid var(--c-focus-ring);
-  outline-offset: 3px;
+  outline-offset: -5px;
+  box-shadow:
+    0 0 0 9999px var(--c-mask),
+    inset 0 0 0 5px rgb(255 255 255 / 75%);
 }
 
 /* Rule-of-thirds guides while dragging. */

@@ -92,8 +92,11 @@ describe('configure strings', () => {
     const base = { settings: DEFAULT_SETTINGS, snapshot: snapshotWith(), theme: 'light' as const, reduceMotion: false, highContrast: false };
     const strings = { dropHint: '여기에 놓기', unsupported: '지원하지 않는 파일', multiFileUnsupported: '한 번에 한 파일만', fileCount: '{n}개 파일' };
     expect(buildConfigureMessage({ ...base, strings }).strings).toEqual(strings);
-    const specific = buildConfigureMessage({ ...base, strings: { ...strings, unsupportedFolder: '폴더는 처리할 수 없음', unsupportedNonFile: '파일이 아님', unsupportedVirtual: '먼저 '.repeat(40) } });
-    expect(specific.strings).toMatchObject({ unsupportedFolder: '폴더는 처리할 수 없음', unsupportedNonFile: '파일이 아님' });
+    const specific = buildConfigureMessage({
+      ...base,
+      strings: { ...strings, unsupportedFolder: '폴더는 처리할 수 없음', unsupportedNonFile: '파일이 아님', unsupportedVirtual: '먼저 '.repeat(40), unsupportedCloud: '먼저 내려받으세요' },
+    });
+    expect(specific.strings).toMatchObject({ unsupportedFolder: '폴더는 처리할 수 없음', unsupportedNonFile: '파일이 아님', unsupportedCloud: '먼저 내려받으세요' });
     expect([...specific.strings.unsupportedVirtual!].length).toBe(60); // clipped like the other texts
   });
 });
@@ -378,6 +381,75 @@ describe('HelperManager', () => {
     await h.manager.start();
     await waitFor(() => h.children[0]!.killed, 1000, 'kill');
     await waitFor(() => h.children.length === 2, 1000, 'respawn');
+  });
+
+  it('sleep / screen lock cancels the open drag session; a drop already made still counts', async () => {
+    const h = harness();
+    await h.manager.start();
+    const child = h.children[0]!;
+    child.send(READY);
+    await waitFor(() => h.manager.status.state === 'running');
+    expect(h.manager.cancelSessions('suspend')).toBe(0); // nothing open: nothing sent
+    expect(child.ofType('cancelSession')).toHaveLength(0);
+
+    child.send({ v: 1, type: 'state', sessionId: 'open', state: 'WheelActive', mode: 'convert', menuKey: 'pdf', fileCount: 1 });
+    child.send({ v: 1, type: 'state', sessionId: 'ended', state: 'AwaitingPayload' });
+    child.send({ v: 1, type: 'state', sessionId: 'ended', state: 'Idle' });
+    child.send({ v: 1, type: 'state', sessionId: 'dropped', state: 'WheelActive', mode: 'convert' });
+    child.send(drop('dropped'));
+    await waitFor(() => h.drops.length === 1, 1000, 'drop');
+    expect(h.manager.cancelSessions('lock-screen')).toBe(1);
+    await waitFor(() => child.ofType('cancelSession').length === 1, 1000, 'cancelSession');
+    expect(child.ofType('cancelSession')[0]).toEqual({ v: 1, type: 'cancelSession', sessionId: 'open' });
+
+    // The helper confirms; the session is closed and a late drop for it is ignored.
+    child.send({ v: 1, type: 'cancelled', sessionId: 'open', reason: 'parentRequest' });
+    child.send(drop('open'));
+    await tick();
+    await tick();
+    expect(h.manager.tracker.stateOf('open')).toBe('Cancelled');
+    expect(h.drops.map((d) => d.sessionId)).toEqual(['dropped']);
+    expect(h.manager.cancelSessions('suspend')).toBe(0);
+  });
+
+  it('after resume a running helper is pinged, re-configured and asked for permissions; a crashed one is restarted', async () => {
+    const h = harness({ maxRestarts: 1 });
+    await h.manager.start();
+    const child = h.children[0]!;
+    child.send(READY);
+    await waitFor(() => child.ofType('configure').length === 1);
+    expect(child.ofType('ping')).toHaveLength(0);
+    await h.manager.recheck('resume');
+    await waitFor(() => child.ofType('ping').length === 1, 1000, 'ping');
+    expect(child.ofType('configure')).toHaveLength(2); // forced: the helper re-reads the displays on configure
+    expect(child.ofType('queryPermissions')).toHaveLength(2);
+    await h.manager.recheck('unlock-screen'); // the first ping is still unanswered: no second one
+    expect(child.ofType('ping')).toHaveLength(1);
+
+    child.exit(1);
+    await waitFor(() => h.children.length === 2, 1000, 'restart');
+    h.children[1]!.exit(1);
+    await waitFor(() => h.manager.status.state === 'crashed', 1000, 'crashed');
+    await h.manager.recheck('resume');
+    await waitFor(() => h.children.length === 3, 1000, 'restart after resume');
+    h.children[2]!.send(READY);
+    await waitFor(() => h.manager.status.state === 'running', 1000, 'running again');
+  });
+
+  it('re-checking a stopped or missing helper does nothing', async () => {
+    const missing = harness({}, null);
+    await missing.manager.start();
+    await missing.manager.recheck('resume');
+    expect(missing.children).toHaveLength(0);
+    expect(missing.manager.status.state).toBe('unavailable');
+
+    const stopped = harness();
+    await stopped.manager.start();
+    stopped.children[0]!.send(READY);
+    await waitFor(() => stopped.manager.status.state === 'running');
+    await stopped.manager.stop();
+    await stopped.manager.recheck('resume');
+    expect(stopped.children).toHaveLength(1);
   });
 
   it('logs no file paths for drops', async () => {

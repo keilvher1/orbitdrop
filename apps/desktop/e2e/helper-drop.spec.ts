@@ -80,7 +80,12 @@ test('helper drops: configure round-trip, one job per session, notification, edi
       if (parsed.success) {
         expect(parsed.data.locale).toBe('ko');
         expect(parsed.data.strings.dropHint).toBe('여기에 놓기');
-        expect(parsed.data.strings).toMatchObject({ unsupportedFolder: '폴더는 처리할 수 없음', unsupportedNonFile: '파일이 아님', unsupportedVirtual: '먼저 파일로 저장하세요' });
+        expect(parsed.data.strings).toMatchObject({
+          unsupportedFolder: '폴더는 처리할 수 없음',
+          unsupportedNonFile: '파일이 아님',
+          unsupportedVirtual: '먼저 파일로 저장하세요',
+          unsupportedCloud: '먼저 내려받으세요',
+        });
         expect(parsed.data.menus.find((m) => m.key === 'pdf')!.convert.map((s) => s.label)).toEqual(['DOCX', 'JPG', 'PNG', 'TXT']);
         expect(parsed.data.extensions['.pdf']).toBe('pdf');
       }

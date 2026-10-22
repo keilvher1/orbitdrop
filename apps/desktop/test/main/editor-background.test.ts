@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS, OrbitError, type PreviewKind, type PreviewRequest, type PreviewResult, type ProcessorInput } from '@orbitdrop/contracts';
-import { EditorSessions } from '../../src/main/editor/sessions';
+import { mkdtempSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { EditorSessions, fileIdentity } from '../../src/main/editor/sessions';
 import { PreviewStore, tokenFromPreviewUrl } from '../../src/main/preview/store';
 import { deferred, imageInfo, tick, type Deferred } from './helpers';
 
@@ -52,10 +55,18 @@ const estimate = (bytes: number): PreviewResult => ({
 function setup(actionId: 'convert.pdf' | 'tool.compress' = 'convert.pdf', options: { keepThumbnails?: number } = {}) {
   const { pool, calls, of } = fakePool();
   const store = new PreviewStore();
-  const editors = new EditorSessions({ pool, store, settings: () => DEFAULT_SETTINGS, ...(options.keepThumbnails ? { keepThumbnails: options.keepThumbnails } : {}) });
+  /** File identity per path (device/inode/size/ctime in the app); a test changes one to "replace" that file. */
+  const identities = new Map<string, string>();
+  const editors = new EditorSessions({
+    pool,
+    store,
+    settings: () => DEFAULT_SETTINGS,
+    fileIdentity: async (path) => identities.get(path) ?? 'v1',
+    ...(options.keepThumbnails ? { keepThumbnails: options.keepThumbnails } : {}),
+  });
   const session = editors.create({ actionId, files, inputs, origin: { source: 'test', sessionId: null } });
   of('source')[0]!.d.resolve({ data: new Uint8Array(10), mime: 'image/jpeg', width: 160, height: 120, sourceWidth: 400, sourceHeight: 300 });
-  return { editors, session, pool, calls, of, store, editorId: session.editorId };
+  return { editors, session, pool, calls, of, store, identities, editorId: session.editorId };
 }
 
 const compressOptions = { format: 'jpeg', quality: 60, maxEdge: null, pngMode: 'palette', keepMetadata: false };
@@ -157,6 +168,42 @@ describe('thumbnails', () => {
     const tokenC = tokenFromPreviewUrl((await c).url)!;
     // keepThumbnails = 2: the least recently requested one (a) was released.
     expect([store.has(tokenA2), store.has(tokenB), store.has(tokenC)]).toEqual([false, true, true]);
+  });
+
+  it('a file replaced on disk under the same path (other inode, size or change time) gets a new thumbnail', async () => {
+    const { editors, of, identities, editorId } = setup();
+    const first = editors.thumbnail({ editorId, fileId: 'f_a' });
+    await tick();
+    of('thumbnail')[0]!.d.resolve(thumb(96, 72));
+    const before = await first;
+    expect(await editors.thumbnail({ editorId, fileId: 'f_a' })).toEqual(before); // unchanged file: cached
+    expect(of('thumbnail')).toHaveLength(1);
+
+    identities.set('/in/a.jpg', 'v2');
+    const second = editors.thumbnail({ editorId, fileId: 'f_a' });
+    await tick();
+    expect(of('thumbnail')).toHaveLength(2);
+    of('thumbnail')[1]!.d.resolve(thumb(96, 54));
+    const after = await second;
+    expect(after.url).not.toBe(before.url);
+    expect(after).toMatchObject({ fileId: 'f_a', width: 96, height: 54 });
+  });
+
+  it('fileIdentity changes when a file is rewritten or replaced, and is "missing" for a file that is gone', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orbit-identity-'));
+    const file = join(dir, 'a.jpg');
+    writeFileSync(file, 'one');
+    const first = await fileIdentity(file);
+    expect(await fileIdentity(file)).toBe(first);
+    writeFileSync(file, 'longer'); // rewritten in place: other size / change time
+    const rewritten = await fileIdentity(file);
+    expect(rewritten).not.toBe(first);
+    writeFileSync(join(dir, 'b.jpg'), 'longer');
+    renameSync(join(dir, 'b.jpg'), file); // replaced by another file of the same size: other inode
+    expect(await fileIdentity(file)).not.toBe(rewritten);
+    unlinkSync(file);
+    expect(await fileIdentity(file)).toBe('missing');
+    rmdirSync(dir);
   });
 });
 

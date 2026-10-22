@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { isImeKey } from '../app/useEscapeKey';
 
 export interface NumberInputProps {
   readonly value: number;
@@ -18,10 +19,17 @@ export function clampInt(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(value)));
 }
 
+/** Number typed by the user: full-width digits and signs (IME input, e.g. "１２０") count, thousands separators don't. */
+export function parseTypedNumber(raw: string): number {
+  return Number.parseFloat(raw.normalize('NFKC').replace(/[,\s]/g, ''));
+}
+
 /**
  * Integer text field. Typing is free-form; the value is parsed, clamped and
  * committed on Enter/blur. ArrowUp/ArrowDown step by `step` (×10 with Shift).
- * Escape restores the last committed value.
+ * Escape restores the last committed value. Keys that belong to an IME
+ * composition (Korean input…) are left to the IME: they never commit, revert
+ * or step.
  */
 export function NumberInput({ value, min, max, step = 1, onCommit, ariaLabel, id, className, disabled, describedBy }: NumberInputProps) {
   const [text, setText] = useState(String(value));
@@ -32,7 +40,7 @@ export function NumberInput({ value, min, max, step = 1, onCommit, ariaLabel, id
   }, [value]);
 
   const commit = (raw: string) => {
-    const parsed = Number.parseFloat(raw.replace(/,/g, ''));
+    const parsed = parseTypedNumber(raw);
     if (!Number.isFinite(parsed)) {
       setText(String(value));
       return;
@@ -43,6 +51,7 @@ export function NumberInput({ value, min, max, step = 1, onCommit, ariaLabel, id
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (isImeKey(event.nativeEvent)) return;
     if (event.key === 'Enter') {
       event.preventDefault();
       commit(text);
@@ -55,7 +64,7 @@ export function NumberInput({ value, min, max, step = 1, onCommit, ariaLabel, id
     } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
       event.preventDefault();
       const delta = (event.key === 'ArrowUp' ? 1 : -1) * step * (event.shiftKey ? 10 : 1);
-      const base = Number.parseFloat(text);
+      const base = parseTypedNumber(text);
       const next = clampInt((Number.isFinite(base) ? base : value) + delta, min, max);
       setText(String(next));
       if (next !== value) onCommit(next);

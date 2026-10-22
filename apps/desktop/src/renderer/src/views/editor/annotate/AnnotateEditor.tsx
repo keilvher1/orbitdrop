@@ -450,9 +450,10 @@ export function AnnotateEditor({ ctx, title }: { readonly ctx: EditorContext; re
 
   const deleteSelected = useCallback(() => {
     const id = selectedId;
-    if (id === null) return;
+    if (id === null) return false;
     update((list) => removeShape(list, id));
     setSelectedId(null);
+    return true;
   }, [selectedId, update]);
 
   const onSurfaceKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -580,6 +581,18 @@ export function AnnotateEditor({ ctx, title }: { readonly ctx: EditorContext; re
     setAnnouncement(t(kind === 'arrow' ? 'annotate.added.arrow' : 'annotate.added.rect', { alt: altKey }));
   };
 
+  /**
+   * Toolbar buttons that turn themselves off (start/end of history, nothing selected) use aria-disabled, not
+   * disabled: they keep keyboard focus instead of dropping it to <body>. A mouse press on one must not take
+   * focus either — the open text box would confirm itself on blur and so make the button act.
+   */
+  const unavailable = (off: boolean) => ({
+    'aria-disabled': off || undefined,
+    onMouseDown: (event: ReactMouseEvent) => {
+      if (off) event.preventDefault();
+    },
+  });
+
   const toolLabel = (icon: ReactElement, text: string) => (
     <span className="annot-tool-label">
       {icon}
@@ -624,8 +637,10 @@ export function AnnotateEditor({ ctx, title }: { readonly ctx: EditorContext; re
           aria-label={t('annotate.undo')}
           title={`${t('annotate.undo')} (${mac ? '⌘Z' : 'Ctrl+Z'})`}
           aria-keyshortcuts={mac ? 'Meta+Z' : 'Control+Z'}
-          disabled={!canUndo(history)}
-          onClick={() => travel(undo)}
+          {...unavailable(!canUndo(history))}
+          onClick={() => {
+            if (canUndo(historyRef.current)) travel(undo);
+          }}
         >
           <Undo2 size={16} aria-hidden="true" />
         </button>
@@ -635,12 +650,24 @@ export function AnnotateEditor({ ctx, title }: { readonly ctx: EditorContext; re
           aria-label={t('annotate.redo')}
           title={`${t('annotate.redo')} (${mac ? '⇧⌘Z' : 'Ctrl+Y'})`}
           aria-keyshortcuts={mac ? 'Shift+Meta+Z' : 'Control+Y'}
-          disabled={!canRedo(history)}
-          onClick={() => travel(redo)}
+          {...unavailable(!canRedo(history))}
+          onClick={() => {
+            if (canRedo(historyRef.current)) travel(redo);
+          }}
         >
           <Redo2 size={16} aria-hidden="true" />
         </button>
-        <button type="button" className="btn-icon" aria-label={t('annotate.delete')} title={t('annotate.delete')} disabled={selected === null} onClick={deleteSelected}>
+        <button
+          type="button"
+          className="btn-icon"
+          aria-label={t('annotate.delete')}
+          title={t('annotate.delete')}
+          {...unavailable(selected === null)}
+          onClick={() => {
+            // The shape is gone: continue on the canvas, where the next one is drawn or added.
+            if (deleteSelected()) surfaceRef.current?.focus({ preventScroll: true });
+          }}
+        >
           <Trash2 size={16} aria-hidden="true" />
         </button>
       </div>
