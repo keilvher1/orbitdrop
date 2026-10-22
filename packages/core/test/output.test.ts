@@ -47,7 +47,7 @@ describe('writeOutput', () => {
     expect(await tempLeftovers()).toEqual([]);
   });
 
-  for (const strategy of ['auto', 'copy'] as const) {
+  for (const strategy of ['auto', 'link', 'rename', 'copy'] as const) {
     it(`gives 50 concurrent writers 50 distinct names with their own content (${strategy})`, async () => {
       await writeFile(join(dir, 'x.bin'), 'user file');
       const results = await Promise.all(
@@ -69,7 +69,7 @@ describe('writeOutput', () => {
     });
   }
 
-  for (const strategy of ['auto', 'copy'] as const) {
+  for (const strategy of ['auto', 'link', 'rename', 'copy'] as const) {
     it(`never replaces a file that appears between writing and committing (${strategy})`, async () => {
       const result = await writeOutput(dir, 'race.png', 'j', async (tmp) => {
         await writeFile(tmp, 'ours');

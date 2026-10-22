@@ -91,7 +91,10 @@ monitor (Per-Monitor DPI Aware v2).
   unknown types, empty files, oversized files, cloud placeholders and symlink
   loops are reported with an `ErrorCode`.
 * Outputs: `writeOutput(dir, desiredName, jobId, write)` — temp file in the target
-  folder, exclusive commit via hard link (fallback `copyFile(COPYFILE_EXCL)`), free
+  folder, exclusive commit via hard link — on macOS reserve the name (O_EXCL) and
+  rename over it, because a hard link in Desktop/Documents/Downloads makes macOS
+  ask for folder access ([permissions.md](permissions.md)) — with an exclusive
+  create + copy fallback, free
   name `name (2).ext`… Never overwrites. Temp files are tagged with the job id and
   cleaned on failure/cancel/crash.
 * Naming (`packages/core/src/naming.ts`): `Page 001.pdf → Page 001.jpg`,

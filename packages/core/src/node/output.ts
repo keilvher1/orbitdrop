@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { link, lstat, open, readdir, stat, unlink } from 'node:fs/promises';
+import { link, lstat, open, readdir, rename, stat, unlink } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { OrbitError } from '@orbitdrop/contracts';
 import { numberedName, splitName, utf8Length } from '../naming';
@@ -9,9 +9,13 @@ import { numberedName, splitName, utf8Length } from '../naming';
  *  1. The result is written to a hidden temp file in the destination folder
  *     (same volume, so committing never copies across devices).
  *  2. Commit claims the final name exclusively with a hard link (fails if the
- *     name exists, atomically), then removes the temp name. On file systems
- *     without hard links it falls back to an exclusive create (O_EXCL) + copy;
- *     a partially copied file is removed again.
+ *     name exists, atomically), then removes the temp name. On macOS it instead
+ *     reserves the final name with an exclusive create (O_EXCL, an empty
+ *     placeholder) and renames the finished temp file over it: macOS asks the
+ *     user before an app makes a hard link in Desktop, Documents or Downloads,
+ *     while creating and renaming its own files there needs no consent. On file
+ *     systems without hard links (or rename) it falls back to an exclusive
+ *     create + copy; a partially copied file is removed again.
  *  3. If the name is taken, "name (2).ext", "name (3).ext"… are tried.
  * Existing user files are never overwritten, moved or deleted; only temp files
  * created by this module (tagged with the job id) and files this module created
@@ -137,6 +141,51 @@ async function claimByLink(tempPath: string, finalPath: string): Promise<'ok' | 
 }
 
 /**
+ * Reserve, then rename (the default on macOS, see the module doc). The empty
+ * placeholder is checked again right before the rename and removed after a
+ * failed rename — in both cases only while it is still ours (same device and
+ * inode, still empty), so a file someone else put under that name is never
+ * replaced or deleted. Measured on macOS 14.8 in Desktop, Documents and
+ * Downloads: `link` shows the "would like to access files in your … folder"
+ * prompt and blocks until it is answered; exclusive create, rename and copy
+ * show nothing.
+ */
+async function claimByReserveRename(tempPath: string, finalPath: string): Promise<'ok' | 'exists' | 'unsupported'> {
+  let placeholder: { dev: number; ino: number };
+  try {
+    const handle = await open(finalPath, 'wx');
+    try {
+      const info = await handle.stat();
+      placeholder = { dev: info.dev, ino: info.ino };
+    } finally {
+      await handle.close();
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return 'exists';
+    throw error;
+  }
+  const stillOurs = async (): Promise<boolean> => {
+    try {
+      const info = await lstat(finalPath);
+      return info.isFile() && info.size === 0 && info.dev === placeholder.dev && info.ino === placeholder.ino;
+    } catch {
+      return false;
+    }
+  };
+  // Replaced meanwhile (another program writing that name without O_EXCL): leave it and try the next name.
+  if (!(await stillOurs())) return 'exists';
+  try {
+    await rename(tempPath, finalPath);
+    return 'ok';
+  } catch (error) {
+    if (await stillOurs()) await unlink(finalPath).catch(() => undefined);
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'EPERM' || code === 'ENOTSUP' || code === 'EOPNOTSUPP' || code === 'ENOSYS' || code === 'EINVAL') return 'unsupported';
+    throw error;
+  }
+}
+
+/**
  * Exclusive copy: create the final name with O_EXCL (atomic "fail if it
  * exists"), then copy the temp file's bytes into it. If copying fails the file
  * we just created is removed again, so no partial output is left behind.
@@ -174,11 +223,20 @@ async function claimByExclusiveCopy(tempPath: string, finalPath: string): Promis
   return 'ok';
 }
 
-export type CommitStrategy = 'auto' | 'copy';
+export type CommitStrategy = 'auto' | 'link' | 'rename' | 'copy';
 
 export interface CommitOptions {
-  /** 'auto' (default): hard link, falling back to an exclusive copy where links are unsupported. 'copy': always copy. */
+  /**
+   * 'auto' (default): 'rename' on macOS, 'link' elsewhere. 'link': hard link;
+   * 'rename': reserve the name (O_EXCL), then rename over it; both fall back to
+   * an exclusive copy where unsupported. 'copy': always copy.
+   */
   readonly strategy?: CommitStrategy;
+}
+
+function resolveStrategy(strategy: CommitStrategy | undefined): 'link' | 'rename' | 'copy' {
+  if (strategy === undefined || strategy === 'auto') return process.platform === 'darwin' ? 'rename' : 'link';
+  return strategy;
 }
 
 /**
@@ -187,18 +245,19 @@ export interface CommitOptions {
  * replaces an existing file, including one created after the temp file.
  */
 export async function commitTempFile(tempPath: string, dir: string, desiredName: string, options: CommitOptions = {}): Promise<string> {
-  let linkSupported = options.strategy !== 'copy';
+  let strategy = resolveStrategy(options.strategy);
   for (let n = 1; n <= MAX_ATTEMPTS; n += 1) {
     const finalPath = join(dir, numberedName(desiredName, n));
     try {
-      if (linkSupported) {
-        const outcome = await claimByLink(tempPath, finalPath);
+      if (strategy !== 'copy') {
+        const outcome = strategy === 'rename' ? await claimByReserveRename(tempPath, finalPath) : await claimByLink(tempPath, finalPath);
         if (outcome === 'exists') continue;
         if (outcome === 'ok') {
-          await unlink(tempPath).catch(() => undefined);
+          // A rename moved the temp file; a link left its old name behind.
+          if (strategy === 'link') await unlink(tempPath).catch(() => undefined);
           return finalPath;
         }
-        linkSupported = false;
+        strategy = 'copy';
       }
       if ((await claimByExclusiveCopy(tempPath, finalPath)) === 'exists') continue;
       await unlink(tempPath).catch(() => undefined);
