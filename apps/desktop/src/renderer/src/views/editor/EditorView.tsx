@@ -10,6 +10,7 @@ import { CropEditor } from './crop/CropEditor';
 import { MetadataEditor } from './metadata/MetadataEditor';
 import { PdfOrderEditor } from './pdf/PdfOrderEditor';
 import { RedactEditor } from './redact/RedactEditor';
+import { StageBudgetProvider } from './editorKit';
 import { asErrorInfo } from '../../app/errors';
 
 /** Loads the EditorContext for this window and shows the matching editor. */
@@ -37,6 +38,10 @@ export function EditorView({ editorId }: { readonly editorId: string }) {
   if (ctx === null) return <ViewLoading label={t('common.loading')} title="OrbitDrop" />;
 
   const title = t.text(ACTIONS[ctx.actionId].title);
+  return <StageBudgetProvider>{editorFor(ctx, title)}</StageBudgetProvider>;
+}
+
+function editorFor(ctx: EditorContext, title: string) {
   switch (ctx.actionId) {
     case 'tool.crop':
       return <CropEditor ctx={ctx} title={title} />;
@@ -55,6 +60,11 @@ export function EditorView({ editorId }: { readonly editorId: string }) {
     case 'convert.pdf':
       return <PdfOrderEditor ctx={ctx} title={title} />;
     default:
-      return <ViewError title={t('editor.unsupported')} windowTitle={title} />;
+      return <UnsupportedEditor title={title} />;
   }
+}
+
+function UnsupportedEditor({ title }: { readonly title: string }) {
+  const { t } = useEnv();
+  return <ViewError title={t('editor.unsupported')} windowTitle={title} />;
 }

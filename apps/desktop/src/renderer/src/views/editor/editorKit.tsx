@@ -1,6 +1,6 @@
 import { ACTIONS, FORMAT_INFO, type EditorContext, type FileFormat, type OrbitErrorInfo, type PreviewResponse, type ToolOutputFormat } from '@orbitdrop/contracts';
 import { toolResultName } from '@orbitdrop/core';
-import { createContext, useContext, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { useEnv } from '../../app/env';
 import { Notice, Spinner } from '../../components/Notice';
 import type { Size } from './crop/cropMath';
@@ -37,8 +37,48 @@ export function stageBudget(workAreaHeight: number, panelHeight: number, stageHe
   return Math.floor(workAreaHeight - 2 * WINDOW_MARGIN - rest);
 }
 
-/** Measured stage budget from EditorFrame (null until measured, or when the editor has no stage). */
+/** Measured stage budget (null until measured, or when the editor has no stage). */
 export const StageBudgetContext = createContext<number | null>(null);
+
+/**
+ * Wraps an editor (EditorView): measures the editor panel (`.editor-view`) and its image stage
+ * (`.stage`) after every layout change and provides the stage budget. It sits above the editor
+ * component because editors call usePreviewBox in their own body, outside EditorFrame.
+ */
+export function StageBudgetProvider({ children }: { readonly children: ReactNode }) {
+  const [budget, setBudget] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      const panel = document.querySelector<HTMLElement>('.editor-view');
+      const stage = panel?.querySelector<HTMLElement>('.stage');
+      const workArea = window.screen?.availHeight > 0 ? window.screen.availHeight : 0;
+      const panelHeight = panel?.getBoundingClientRect().height ?? 0;
+      if (!panel || !stage || panelHeight === 0 || workArea === 0) {
+        setBudget(null);
+        return;
+      }
+      const next = stageBudget(workArea, panelHeight, stage.getBoundingClientRect().height);
+      // Sub-pixel layout differences must not cause a re-render loop.
+      setBudget((previous) => (previous !== null && Math.abs(previous - next) < 2 ? previous : next));
+    };
+    const schedule = () => {
+      if (frame === 0) frame = requestAnimationFrame(measure);
+    };
+    measure();
+    window.addEventListener('resize', schedule);
+    // The body grows and shrinks with the panel (controls that appear, a stage that shrinks).
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule);
+    observer?.observe(document.body);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', schedule);
+      if (frame !== 0) cancelAnimationFrame(frame);
+    };
+  }, []);
+  return <StageBudgetContext.Provider value={budget}>{children}</StageBudgetContext.Provider>;
+}
 
 /**
  * Box available for the image stage: full panel width, and a height that
