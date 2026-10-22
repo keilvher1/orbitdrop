@@ -130,7 +130,7 @@ Virtualization.framework의 VNC 서버(tart `--vnc-experimental`)로 넣었다 �
    캡션의 "파일이 아님"이 보임을 확인했다(`vm-macos14-18`). Windows helper에는 이 보조 캡션 자체가 없어 따로 추가 중이다.
 3. **VNC 입력 한계.** Ctrl+⌘+Q(잠금)는 동작하지 않았고, 포인터 모양(Copy의 초록 +)은 VNC 캡처에 찍히지 않는다.
 
-**재현.** `tart clone ghcr.io/cirruslabs/macos-sonoma-vanilla:latest od-sonoma` → `tart run od-sonoma --no-graphics
+**재현.** 도구와 절차: [scripts/vm/README.md](../scripts/vm/README.md). 요약: `tart clone ghcr.io/cirruslabs/macos-sonoma-vanilla:latest od-sonoma` → `tart run od-sonoma --no-graphics
 --vnc-experimental --dir=xfer:<폴더>:ro` → 게스트(admin/admin)에서 DMG 설치 → VNC 클라이언트로 드래그(버튼 누름 → 몇 픽셀씩
 이동 → Shift(또는 Meta+Shift) 누름 → 조각으로 이동 → 놓기). 회선이 느리면 tart가 연결 하나로 받아 매우 느릴 수 있어(이 Mac에서
 0.5 MB/s), 이번에는 이미지 조각을 여러 연결로 받아(해시 확인) 로컬 레지스트리로 넘겼다.
