@@ -1,5 +1,5 @@
 import { open, type FileHandle } from 'node:fs/promises';
-import sharp, { type Metadata, type Sharp, type SharpOptions } from 'sharp';
+import sharp, { type JpegOptions, type Metadata, type Sharp, type SharpOptions } from 'sharp';
 import {
   FORMAT_INFO,
   OrbitError,
@@ -262,6 +262,43 @@ export function defaultQuality(format: ImageFormat, settings: ProcessorSettings)
 }
 
 /**
+ * Above this many pixels a JPEG is written in one streaming pass: baseline with
+ * the standard Huffman tables. mozjpeg (progressive scans, trellis) and
+ * optimised Huffman tables keep every DCT coefficient of the image in memory —
+ * measured with sharp 0.35.5 at 256 Mpx: mozjpeg 2.11 GB, baseline + optimised
+ * tables 1.75 GB, streaming 0.24 GB. The file is larger (up to ~5× for flat
+ * images), which is the price for not swapping with several workers.
+ */
+export const STREAMING_JPEG_PIXELS = 60_000_000;
+
+export function streamsJpeg(pixels: number): boolean {
+  return pixels > STREAMING_JPEG_PIXELS;
+}
+
+/** JPEG settings for an output of `pixels` pixels; 4:4:4 chroma from quality 90 unless given. */
+export function jpegOptions(quality: number, pixels: number, chroma?: '4:2:0' | '4:4:4'): JpegOptions {
+  const chromaSubsampling = chroma ?? (quality >= 90 ? '4:4:4' : '4:2:0');
+  if (streamsJpeg(pixels)) {
+    return {
+      quality,
+      chromaSubsampling,
+      mozjpeg: false,
+      progressive: false,
+      optimiseCoding: false,
+      trellisQuantisation: false,
+      overshootDeringing: false,
+      optimiseScans: false,
+    };
+  }
+  return { quality, chromaSubsampling, mozjpeg: true };
+}
+
+/** Pixels of one frame/page of an image (what an encoder writes for a single-image format). */
+export function framePixels(meta: Pick<Metadata, 'width' | 'height' | 'pageHeight'>): number {
+  return (meta.width ?? 0) * (meta.pageHeight ?? meta.height ?? 0);
+}
+
+/**
  * Encode to the target format. Returns the encoded bytes and whether alpha had
  * to be flattened. Metadata is dropped unless keepMetadata is set (orientation
  * is already applied to the pixels, so dropping EXIF never rotates the image).
@@ -296,7 +333,7 @@ export async function encodeImage(
 
   switch (format) {
     case 'jpeg':
-      pipeline = pipeline.jpeg({ quality, mozjpeg: true, chromaSubsampling: quality >= 90 ? '4:4:4' : '4:2:0' });
+      pipeline = pipeline.jpeg(jpegOptions(quality, framePixels(meta)));
       break;
     case 'png':
       // Level 6 (zlib's default) is ~12× faster than 9 on large images for ~20% larger files.

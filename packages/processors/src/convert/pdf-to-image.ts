@@ -11,7 +11,7 @@ import {
   type ProcessorRunContext,
 } from '@orbitdrop/contracts';
 import { convertedName } from '@orbitdrop/core';
-import { configureSharp, defaultQuality, readInputBytes } from '../common/io';
+import { configureSharp, defaultQuality, jpegOptions, readInputBytes, streamsJpeg } from '../common/io';
 import { loadPdfEngine, openPdf, pageSizeAt, renderPage, type PdfPage } from '../pdf/engine';
 import { OutputLedger, extensionMismatchWarning, mapWithLimit, reporter, throwIfCancelled, toOrbitError, writableOutputDir } from './common';
 
@@ -91,17 +91,22 @@ async function encodePage(
   configureSharp();
   const image = sharp(data, { raw: { width, height, channels: 4 } }).removeAlpha().withDensity(dpi);
   if (target === 'jpeg') {
+    // Huge pages stream (no optimised Huffman pass, see STREAMING_JPEG_PIXELS).
     const jpeg = await image
-      .jpeg({
-        quality,
-        chromaSubsampling: quality >= 90 ? '4:4:4' : '4:2:0',
-        optimiseCoding: true,
-        quantisationTable: 3,
-        overshootDeringing: true,
-        trellisQuantisation: false,
-        optimiseScans: false,
-        progressive: false,
-      })
+      .jpeg(
+        streamsJpeg(width * height)
+          ? jpegOptions(quality, width * height)
+          : {
+              quality,
+              chromaSubsampling: quality >= 90 ? '4:4:4' : '4:2:0',
+              optimiseCoding: true,
+              quantisationTable: 3,
+              overshootDeringing: true,
+              trellisQuantisation: false,
+              optimiseScans: false,
+              progressive: false,
+            },
+      )
       .toBuffer();
     return withJfifDensity(jpeg, dpi);
   }

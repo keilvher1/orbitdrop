@@ -31,7 +31,12 @@ export interface ProcessingLimits {
   /** Max decoded pixels of an input image (width × height). */
   readonly maxInputPixels: number;
   readonly maxPdfPages: number;
-  /** Max pixels of one rendered PDF page or one output image. */
+  /**
+   * Max pixels of one rendered PDF page (larger pages are rendered at a lower
+   * DPI with a DOWNSCALED warning) or of a new canvas (Add Background). A page
+   * costs about 12 bytes per pixel while it is rendered and copied, so 100 Mpx
+   * (A0 at ~254 DPI) keeps one worker near 1.2 GB.
+   */
   readonly maxOutputPixels: number;
   /** Pages rendered concurrently for PDF → image. */
   readonly pdfPageConcurrency: number;
@@ -41,7 +46,7 @@ export const DEFAULT_PROCESSING_LIMITS: ProcessingLimits = {
   maxInputBytes: 1024 * 1024 * 1024,
   maxInputPixels: 268_402_689,
   maxPdfPages: 2000,
-  maxOutputPixels: 150_000_000,
+  maxOutputPixels: 100_000_000,
   pdfPageConcurrency: 2,
 };
 

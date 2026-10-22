@@ -211,6 +211,7 @@ export async function runAddBackground(job: ProcessorJob, ctx: ProcessorRunConte
       quality: options.quality,
       hasAlpha: transparent,
       flattenBackground: '#FFFFFF',
+      outputPixels: canvas.width * canvas.height,
     });
     const warnings: JobWarning[] = framesWarnings(image);
     if (encoded.flattened) warnings.push({ code: 'ALPHA_FLATTENED', params: { background: '#FFFFFF' } });

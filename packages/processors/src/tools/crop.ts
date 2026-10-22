@@ -59,6 +59,7 @@ export async function runCrop(job: ProcessorJob, ctx: ProcessorRunContext): Prom
       hasAlpha: image.hasAlpha,
       flattenBackground: options.flattenBackground,
       keepIcc: image.keepIcc,
+      outputPixels: region.width * region.height,
     });
     const warnings: JobWarning[] = framesWarnings(image);
     if (encoded.flattened && (await regionHasTransparency(image, region))) {

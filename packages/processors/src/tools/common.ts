@@ -26,7 +26,9 @@ import {
   defaultQuality,
   droppedFrames,
   encodeImage,
+  framePixels,
   framesWarning,
+  jpegOptions,
   keepMetadataFor,
   mapSharpError,
   openImage,
@@ -342,6 +344,8 @@ export interface EncodeToolRequest {
   readonly png?: { readonly palette?: boolean; readonly compressionLevel?: number };
   readonly webp?: { readonly lossless?: boolean; readonly effort?: number };
   readonly jpegChroma?: '4:2:0' | '4:4:4';
+  /** Pixels of the encoded image when they differ from the source's (crop, resize, new canvas). */
+  readonly outputPixels?: number;
 }
 
 export interface EncodedImage {
@@ -353,10 +357,10 @@ export interface EncodedImage {
   readonly flattened: boolean;
 }
 
-function applyEncoder(pipeline: Sharp, format: 'jpeg' | 'png' | 'webp' | 'avif' | 'tiff', quality: number, req: EncodeToolRequest): Sharp {
+function applyEncoder(pipeline: Sharp, format: 'jpeg' | 'png' | 'webp' | 'avif' | 'tiff', quality: number, req: EncodeToolRequest, pixels: number): Sharp {
   switch (format) {
     case 'jpeg':
-      return pipeline.jpeg({ quality, mozjpeg: true, chromaSubsampling: req.jpegChroma ?? (quality >= 90 ? '4:4:4' : '4:2:0') });
+      return pipeline.jpeg(jpegOptions(quality, pixels, req.jpegChroma));
     case 'png':
       return pipeline.png(
         req.png?.palette
@@ -404,7 +408,9 @@ export async function encodeToolImage(make: () => Sharp, req: EncodeToolRequest)
     }
   }
   const quality = req.quality ?? defaultQuality(target, req.settings);
-  const { data, info } = await applyEncoder(prepare(), target, quality, req).toBuffer({ resolveWithObject: true });
+  // Only JPEG's settings depend on the size (streaming above STREAMING_JPEG_PIXELS).
+  const pixels = target === 'jpeg' ? (req.outputPixels ?? framePixels(await make().metadata())) : 0;
+  const { data, info } = await applyEncoder(prepare(), target, quality, req, pixels).toBuffer({ resolveWithObject: true });
   return { data, width: info.width, height: info.height, format: target, flattened: flatten };
 }
 

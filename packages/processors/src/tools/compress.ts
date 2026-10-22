@@ -74,6 +74,13 @@ export interface CompressedImage extends EncodedImage {
   readonly alphaFlattened: boolean;
 }
 
+/** Pixels after fitting inside maxEdge × maxEdge (sharp's `fit: 'inside'` rounding), or as is. */
+function resizedPixels(width: number, height: number, maxEdge: number | null): number {
+  if (maxEdge === null) return width * height;
+  const scale = maxEdge / Math.max(width, height);
+  return Math.max(1, Math.round(width * scale)) * Math.max(1, Math.round(height * scale));
+}
+
 export async function encodeCompressed(image: LoadedImage, options: CompressOptions, settings: ProcessorSettings): Promise<CompressedImage> {
   const format = resolveCompressFormat(options.format, image.input.format, await canEncode('avif'));
   const resize = options.maxEdge !== null && Math.max(image.width, image.height) > options.maxEdge ? options.maxEdge : null;
@@ -91,6 +98,7 @@ export async function encodeCompressed(image: LoadedImage, options: CompressOpti
       keepMetadata: options.keepMetadata,
       png: { palette: options.pngMode === 'palette', compressionLevel: 9 },
       webp: { effort: 6 },
+      outputPixels: resizedPixels(image.width, image.height, resize),
     },
   );
   const alphaFlattened = encoded.flattened && (await regionHasTransparency(image));
