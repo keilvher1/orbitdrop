@@ -221,3 +221,28 @@ Current verified state: vitest 1071 passed / 4 skipped; Playwright 39/39;
 electron-verify 36/36; swift test 167 (isolation check fatal); Windows host
 tests 99 + parity + MinGW -Werror; packaged smoke (with the hidden window)
 OK on arm64 and x64; macOS 14.8.7 VM GUI run passed (see verification.md).
+
+## Stage 6 — full-function check on macOS (2026-10-23)
+
+The user asked to make sure everything works on the Mac first. In the
+macOS 14.8.7 VM, every input format and every tool was used through real
+Finder drags (plus Open File and the Drop Zone), and outputs were decoded
+again: 14 PDF cases, 24 image conversions, all 7 tool editors, images →
+PDF with the order editor, settings (language, login item, DPI, ask for
+folder, modifier combos, wheel size, global drag off/on), the Jobs window,
+read-only folder → save elsewhere, APFS and exFAT volumes, quit/relaunch,
+screen lock, dark mode, HEIC in/out. Record: verification.md "가상 머신 전
+기능 점검".
+
+Found and fixed (each re-verified by reinstalling in the VM):
+- misnamed image (PNG named .jpg) on PNG → "unsupported format" with no
+  file; now re-encoded under the right name (45c6990);
+- editors taller than the work area hid the Save button; measured stage
+  budget above the editors + sticky footer (4b5375d, 8379e89, 049d644);
+- first click into the unfocused Jobs window was swallowed (86c309b);
+- jobs from an earlier run offered retry buttons that could only fail;
+  "retried" note lost on reopening (d1ce089).
+
+Packages from d1ce089 (hashes in verification.md). vitest 1081 passed,
+Playwright 39/39, electron-verify 36/36, smoke with window on arm64/x64.
+Next: the same core flow on a macOS 26 guest (image downloading).

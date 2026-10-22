@@ -1,6 +1,6 @@
 # 지원·검증 상태표 (Support matrix)
 
-> 기준일 2026-10-23. 독립 스펙 감사(2026-10-21)와 영역별 2차 점검(2026-10-22, `docs/workstreams/hardening-*.md`) 결과를 반영했다. 단위 테스트·CI·빌드 성공을 "실제 OS GUI 검증됨"으로
+> 기준일 2026-10-23. 독립 스펙 감사(2026-10-21), 영역별 2차 점검(2026-10-22, `docs/workstreams/hardening-*.md`), macOS 14 가상 머신 전 기능 점검(2026-10-23) 결과를 반영했다. 단위 테스트·CI·빌드 성공을 "실제 OS GUI 검증됨"으로
 > 올리지 않는다. 실제 Finder/Explorer 드래그는 사람이 [verification.md](verification.md)의
 > 절차로 확인해야 하며, 그 전까지 해당 칸은 **GUI 미검증**이다.
 
@@ -64,24 +64,24 @@
 | 드롭 → 작업 정확히 1회, Copy만, 원본 이동 없음 | 자동 검증됨(헬퍼·main) · **VM GUI 검증됨**(연속 5회 → 작업 5개, 원본 해시 그대로) | GUI 미검증 | 미검증 | core `DragSessionTracker` 테스트, Swift drop-target 테스트, E2E `helper-drop` "one job per session" |
 | PDF → JPG/PNG(여러 쪽, 150/300 DPI, 회전, 암호·손상·과대 오류) | 자동 검증됨 · VM GUI 검증됨(3쪽·90° 회전 쪽 포함) | 자동 검증됨(패키지 smoke: 1쪽 PDF→PNG만) | 미검증 | `convert-pdf-image.test.ts`(손상 PDF 포함), E2E PDF→JPG 2550×3300, 패키지 smoke |
 | JPG/PNG/WebP 상호 변환(+ EXIF 회전, 투명 PNG→JPEG) | 자동 검증됨 | 자동 검증됨(smoke PNG→JPG만) | 미검증 | `convert-image.test.ts` |
-| Crop 편집기(비율, W/H, EXIF 회전) | 자동 검증됨 · VM GUI 검증됨(1:1 → 2550×2550) | 미검증 | 미검증 | `tools-crop`, `cropMath.test.ts`, E2E `pipeline` 1:1 → 2550×2550(정확한 크기), `ui-flow`(정사각형) |
-| Add Background(패딩·모서리·그림자·비율, 미리보기=최종) | 자동 검증됨 · VM GUI 검증됨 | 미검증 | 미검증 | `tools-add-background`, `composition-layout`(무작위 3000건, 정확한 레이아웃), E2E `pipeline`, electron-verify(16:9 비율) |
+| Crop 편집기(비율, W/H, EXIF 회전) | 자동 검증됨 · VM GUI 검증됨(1:1 → 2550×2550, EXIF 6 사진의 W/H 입력·이동) | 미검증 | 미검증 | `tools-crop`, `cropMath.test.ts`, E2E `pipeline` 1:1 → 2550×2550(정확한 크기), `ui-flow`(정사각형) |
+| Add Background(패딩·모서리·그림자·비율, 미리보기=최종) | 자동 검증됨 · VM GUI 검증됨(프리셋·배경 이미지·16:9·JPEG) | 미검증 | 미검증 | `tools-add-background`, `composition-layout`(무작위 3000건, 정확한 레이아웃), E2E `pipeline`, electron-verify(16:9 비율) |
 | 트레이, 설정, 작업 진행·취소·결과 열기 | 자동 검증됨 · VM GUI 검증됨(메뉴 막대 메뉴, 작업 창) | 미검증 | 미검증 | E2E `shell`(트레이 메뉴, 설정 전파, 기록), `job-manager.test.ts` |
-| 대체 입력(파일 열기, Drop Zone) | 부분 자동 검증 · Drop Zone은 VM GUI 검증됨(Finder에서 놓기 → 앱 안 휠 → PDF→DOCX). 파일 열기 대화상자는 단위 테스트만 | 미검증 | 미검증 | electron-verify dropzone, `file-registry.test.ts`, `flows.test.tsx` |
+| 대체 입력(파일 열기, Drop Zone) | 자동 검증됨(단위) · VM GUI 검증됨: Drop Zone(Finder에서 놓기 → 앱 안 휠 → PDF→DOCX), 메뉴 막대 파일 열기(대화상자 → 앱 안 휠 → 방향키·Enter) | 미검증 | 미검증 | electron-verify dropzone, `file-registry.test.ts`, `flows.test.tsx` |
 | 영상 흐름 재현(PDF→JPG→Crop→Add BG, 결과 4개) | 자동 검증됨 · **VM GUI 검증됨**(macOS 14.8.7, 실제 Finder 드래그로 결과 4개) · 실물 Mac GUI 미검증 | 미검증 | 미검증 | `tests/integration/video-flow.test.ts`, E2E `ui-flow` "four files side by side" |
 
 ## P1 — 일상 도구
 
 | 기능 | macOS arm64 | macOS x64 | Windows x64 | 증거 |
 |---|---|---|---|---|
-| Compress(실제 크기 예측) | 자동 검증됨 | 미검증 | 미검증 | `tools-compress`, electron-verify compress |
-| Metadata(읽기·제거, 가능하면 무손실) | 자동 검증됨 | 미검증 | 미검증 | `tools-metadata`(14) |
-| Edit(회전·반전·밝기·대비·채도, 16비트·광색역) | 자동 검증됨 | 미검증 | 미검증 | `tools-edit`, `tools-colour` |
-| Annotate(한글 텍스트, 화살표·사각형, 색·두께, Undo/Redo) | 자동 검증됨(Apple SD Gothic Neo) | 미검증 | 미검증(Malgun Gothic 필요) | `tools-annotate.test.ts`(결과에서 한글 픽셀 확인), `annotate.test.tsx`(Undo/Redo) |
-| Redact(단색·모자이크) | 자동 검증됨 | 미검증 | 미검증 | `tools-redact` |
-| TIFF / AVIF 출력 | 자동 검증됨 | 미검증 | 미검증 | `convert-image.test.ts` |
-| 이미지 → PDF(여러 장, 순서) | 자동 검증됨 | 미검증 | 미검증 | `convert-images-pdf.test.ts`(진행형·CMYK·EXIF 회전 포함 6쪽), electron-verify 3쪽 |
-| 텍스트 PDF → TXT | 자동 검증됨 | 미검증 | 미검증 | `convert-pdf-text.test.ts`(한글 PDF 포함) |
+| Compress(실제 크기 예측) | 자동 검증됨 · VM GUI 검증됨(WEBP·긴 변 1920) | 미검증 | 미검증 | `tools-compress`, electron-verify compress |
+| Metadata(읽기·제거, 가능하면 무손실) | 자동 검증됨 · VM GUI 검증됨(카메라 정보·GPS 표시 → 제거본에 EXIF 없음) | 미검증 | 미검증 | `tools-metadata`(14) |
+| Edit(회전·반전·밝기·대비·채도, 16비트·광색역) | 자동 검증됨 · VM GUI 검증됨(회전+반전+밝기, HEIC 저장) | 미검증 | 미검증 | `tools-edit`, `tools-colour` |
+| Annotate(한글 텍스트, 화살표·사각형, 색·두께, Undo/Redo) | 자동 검증됨(Apple SD Gothic Neo) · VM GUI 검증됨(한글 텍스트 붙여 넣기·실행 취소/다시 실행·⌘W 확인) | 미검증 | 미검증(Malgun Gothic 필요) | `tools-annotate.test.ts`(결과에서 한글 픽셀 확인), `annotate.test.tsx`(Undo/Redo) |
+| Redact(단색·모자이크) | 자동 검증됨 · VM GUI 검증됨(두 영역, 단색 픽셀 [0,0,0]) | 미검증 | 미검증 | `tools-redact` |
+| TIFF / AVIF 출력 | 자동 검증됨 · VM GUI 검증됨 | 미검증 | 미검증 | `convert-image.test.ts` |
+| 이미지 → PDF(여러 장, 순서) | 자동 검증됨 · VM GUI 검증됨(3장, 순서 바꾸기·A4·여백) | 미검증 | 미검증 | `convert-images-pdf.test.ts`(진행형·CMYK·EXIF 회전 포함 6쪽), electron-verify 3쪽 |
+| 텍스트 PDF → TXT | 자동 검증됨 · VM GUI 검증됨(한글 CMap, 스캔 PDF는 `PDF_NO_TEXT`) | 미검증 | 미검증 | `convert-pdf-text.test.ts`(한글 PDF 포함) |
 | 여러 파일 제한 병렬, 부분 실패 | 자동 검증됨 | 미검증 | 미검증 | core `queue.test.ts`, `convert-pipeline.test.ts`(실제 결과 파일로 부분 실패) |
 | 취소·시간 초과·worker 크래시 후 재시도 | 자동 검증됨(가짜 worker 기반 단위 테스트) | 미검증 | 미검증 | `pool.test.ts`, `job-manager.test.ts` |
 | 설정: PDF DPI 150/300, 배경 최대 변, 보조키 조합, 언어 | 자동 검증됨 | 미검증 | 미검증 | `settings.test.tsx`, `convert-pdf-image.test.ts`, E2E `shell`(설정 전파) |
@@ -90,9 +90,9 @@
 
 | 기능 | macOS arm64 | macOS x64 | Windows x64 | 증거 |
 |---|---|---|---|---|
-| HEIC 읽기/쓰기 | 자동 검증됨(헬퍼 ImageIO: 실제 HEVC 파일 생성, HEIC→PNG 바로 선 방향) | 구현됨(probe만, Rosetta) | 미지원(번들 sharp의 libheif에 HEVC 없음 — darwin 빌드로 실측, Windows 빌드는 같은 구성으로 예상) | `codecs-imageio.test.ts`, 패키지 probe |
-| BMP 읽기/쓰기 | 자동 검증됨(자체 코덱, macOS ImageIO와 상호 확인) | 미검증 | 미검증 | `codecs-bmp.test.ts` |
-| PDF → DOCX(텍스트 중심) / 이미지 → DOCX(그림 삽입, OCR 없음) | 자동 검증됨(경고 `DOCX_TEXT_ONLY` / `DOCX_IMAGE_ONLY`) | 미검증 | 미검증 | `convert-docx.test.ts` |
+| HEIC 읽기/쓰기 | 자동 검증됨(헬퍼 ImageIO: 실제 HEVC 파일 생성, HEIC→PNG 바로 선 방향) · VM GUI 검증됨(설치본: JPG→HEIC, HEIC→JPG, HEIC 편집→HEIC) | 구현됨(probe만, Rosetta) | 미지원(번들 sharp의 libheif에 HEVC 없음 — darwin 빌드로 실측, Windows 빌드는 같은 구성으로 예상) | `codecs-imageio.test.ts`, 패키지 probe |
+| BMP 읽기/쓰기 | 자동 검증됨(자체 코덱, macOS ImageIO와 상호 확인) · VM GUI 검증됨 | 미검증 | 미검증 | `codecs-bmp.test.ts` |
+| PDF → DOCX(텍스트 중심) / 이미지 → DOCX(그림 삽입, OCR 없음) | 자동 검증됨(경고 `DOCX_TEXT_ONLY` / `DOCX_IMAGE_ONLY`) · VM GUI 검증됨 | 미검증 | 미검증 | `convert-docx.test.ts` |
 | OCR, 영상·음성, AI, 클라우드, 계정 | 미지원(범위 밖) | 미지원 | 미지원 | [requirements.md](requirements.md) |
 | Windows ARM64, Linux | — | — | 미지원(범위 밖) | [decisions.md](decisions.md) |
 

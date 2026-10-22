@@ -130,6 +130,38 @@ Virtualization.framework의 VNC 서버(tart `--vnc-experimental`)로 넣었다 �
    캡션의 "파일이 아님"이 보임을 확인했다(`vm-macos14-18`). Windows helper에는 이 보조 캡션 자체가 없어 따로 추가 중이다.
 3. **VNC 입력 한계.** Ctrl+⌘+Q(잠금)는 동작하지 않았고, 포인터 모양(Copy의 초록 +)은 VNC 캡처에 찍히지 않는다.
 
+### 가상 머신 전 기능 점검 — macOS 14.8.7 (2026-10-23)
+
+같은 게스트에서 **모든 입력 형식과 모든 도구**를 실제 Finder 드래그(일부는 메뉴 막대의 파일 열기·Drop Zone)로 써 봤다. 시험 파일은
+`node scripts/gen-fixtures.mjs`의 22개 + 정적 픽스처(암호·소유자 암호 PDF, JPX·CCITT PDF, BMP) + 카메라처럼 만든 사진(4032×3024,
+EXIF 방향 6, GPS), CMYK JPEG, 3프레임 GIF. 결과 파일은 SSH로 꺼내 다시 디코딩해 확인했다(크기·색 평균·EXIF·PDF 쪽 수·텍스트).
+
+| 영역 | 결과 |
+|---|---|
+| PDF → JPG/PNG/TXT/DOCX (14건) | 모두 기대대로: 12쪽 → `many-pages-p001…p012.jpg` 2550×3300 · 크기가 다른 3쪽(Letter·A4·A5) · 90° 회전 쪽 3300×2550 · 한글 CMap PDF → TXT "한글 CMap", PNG에 글자 · JPX·CCITT 이미지 렌더링 · 소유자 암호만 있는 PDF는 변환 · **암호 PDF → `PDF_ENCRYPTED`, 손상 PDF → `PDF_CORRUPT`, 스캔 PDF → TXT `PDF_NO_TEXT`(빈 파일 없음)** · 일부 쪽만 글자 있는 PDF → 빈 쪽도 쪽 구분 유지 · 150 DPI 설정 → 1275×1650 |
+| 이미지 변환 (24건) | JPG → PNG/WEBP/HEIC/TIFF/AVIF/BMP/PDF/DOCX 전부 · 투명 PNG → JPG(흰 배경) · GIF·애니메이션 GIF(첫 프레임)·TIFF·WEBP·AVIF·BMP·CMYK·진행형 JPEG 입력 · 한글·이모지 이름 · 손상 JPEG → `IMAGE_CORRUPT` · 카메라 사진 → HEIC 3024×4032(방향 적용) · HEIC 입력 → JPG, HEIC 편집 → HEIC 저장(macOS ImageIO 헬퍼) |
+| 도구 7개 | 메타데이터: 카메라 정보·GPS 표시 → 제거본에 EXIF·GPS 없음 · 압축: WEBP·긴 변 1920 → 1440×1920, 2.7 MB → 24 KB, 추정 크기 표시 · 편집: 오른쪽 회전 + 좌우 반전 + 밝기 → 픽셀이 전치 + 밝아짐 · 주석: 한글 텍스트("한글 주석 테스트 ✓")·사각형·화살표·실행 취소/다시 실행 → 결과에 합성 · 가리기: 단색·모자이크 영역 → 단색 영역 [0,0,0], 바깥은 그대로 · 자르기: 방향 6 사진에서 W/H 1000×1500 입력 후 이동 → 결과가 화면에 보이던 위치와 일치(원본에서 찾은 위치 오차 rms 2.6) · 배경 추가: 배경 이미지·16:9·JPEG → 519×292, 모서리 둥글게 |
+| 여러 파일 | 이미지 3개 → PDF: 순서 편집기(썸네일·위/아래 이동)·A4·여백 → 3쪽, 이미지별 가로/세로 · JPG 2개 → WEBP 동시 처리 |
+| 설정 | 영어 전환(모든 창 즉시) · 로그인 시 실행(macOS "로그인 항목 추가" 알림) · PDF 150/300 DPI · 저장 위치 "매번 묻기"(폴더 대화상자 → 문서 폴더) · 변환 키를 Option만으로 바꾸면 Shift로는 휠이 안 뜨고 Option으로 뜸 · 휠 크기 · 전역 드래그 끄기(드래그해도 휠 없음)/켜기 |
+| 작업 창·메뉴 막대 | 열기(미리 보기)·Finder에서 보기·끝난 작업 지우기·알림 · 메뉴 막대 메뉴 전 항목 · 파일 열기 → 앱 안 휠 → 방향키·Enter로 실행 |
+| 오류·저장 위치 | 읽기 전용 폴더 → 작업 창이 포커스 없이 열리고 "다른 폴더에 저장…" → 다운로드에 저장 · APFS 외장 볼륨(한글 이름)·exFAT 볼륨에서 변환, exFAT에 같은 이름 있으면 `photo (2).png`(원본 해시 그대로) |
+| 수명 주기 | 메뉴 막대 "종료" → 프로세스 0개 · 다시 실행 → 이전 작업 기록 표시 · 휠을 띄운 채 화면 잠금(디스플레이 잠자기) → 휠 사라짐, 로그 `system suspended or locked` / `resumed or unlocked` |
+| 다크 모드 | 휠·편집기·Finder 모두 다크 팔레트 |
+
+**이 점검에서 찾아 고친 것** (각각 고친 설치본을 다시 설치해 확인):
+1. **이름과 실제 형식이 다른 파일**(`png-named.jpg`, 실제로는 PNG)을 휠의 PNG에 놓으면 "지원하지 않는 형식" 알림만 뜨고 아무 일도 없었다
+   → 실제 형식으로 다시 인코딩해 올바른 이름(`png-named.png`)으로 저장, 이름까지 맞는 파일은 "건너뜀(이미 같은 형식)"으로 기록(45c6990).
+2. **편집기가 화면보다 길어짐**: 배경 추가에서 배경 이미지를 고르면 한 줄이 늘어 "배경과 함께 저장" 버튼이 화면 아래로 밀렸다(1440×900, Dock 표시)
+   → 편집기 패널을 재서 미리보기 높이를 줄이고(4b5375d, 8379e89 — 처음 수정은 편집기에 연결되지 않아 VM 재시험에서 드러나 다시 고침),
+   맨 아래 버튼 줄은 화면에 고정(049d644).
+3. **포커스 없이 열린 작업 창의 첫 클릭이 버튼에 닿지 않음**: "다른 폴더에 저장…"을 두 번 눌러야 했다 → 작업 창·Drop Zone은 비활성 상태에서도
+   첫 클릭을 받음(86c309b).
+4. **다시 실행한 뒤의 이전 작업**에 "다른 폴더에 저장…"이 보였지만 누르면 "다시 시도할 수 없습니다"만 나왔다(입력·옵션은 일부러 저장하지 않음)
+   → 이전 실행의 작업에는 다시 시도 버튼을 보이지 않음, 이번 실행에서 이미 다시 시도한 작업은 창을 다시 열어도 "다시 시도했습니다" 유지(d1ce089).
+
+최종 설치본(소스 `d1ce089`): arm64 DMG sha256 `cabde306267b1f7490b3f3490aadd59e91e5e4f309af8e1381c3e6f5bb6008d6`,
+x64 DMG `5d67e2f438de1f3b0e1bf805b381614a2a04895e21381993152317142ef5c5ad` — 패키지 smoke(숨긴 창 렌더링 포함) 통과, 이 arm64 DMG로 위 1번 재확인.
+
 **재현.** 도구와 절차: [scripts/vm/README.md](../scripts/vm/README.md). 요약: `tart clone ghcr.io/cirruslabs/macos-sonoma-vanilla:latest od-sonoma` → `tart run od-sonoma --no-graphics
 --vnc-experimental --dir=xfer:<폴더>:ro` → 게스트(admin/admin)에서 DMG 설치 → VNC 클라이언트로 드래그(버튼 누름 → 몇 픽셀씩
 이동 → Shift(또는 Meta+Shift) 누름 → 조각으로 이동 → 놓기). 회선이 느리면 tart가 연결 하나로 받아 매우 느릴 수 있어(이 Mac에서
@@ -143,7 +175,7 @@ Virtualization.framework의 VNC 서버(tart `--vnc-experimental`)로 넣었다 �
 
 환경: macOS 26.6 (25G72) arm64, Xcode 27.1, Node 24.7.0, pnpm 11.27.1, electron-builder 26.15.3, Electron 44.9.0.
 
-명령: `node scripts/package.mjs mac --arch all` (2026-10-23 02:40 CST, 소스 커밋 `7951bd3` — 미커밋 변경 없음, 건너뛴 단계 없음: 라이선스 목록 재생성 → 아이콘 검증 →
+명령: `node scripts/package.mjs mac --arch all` (2026-10-23 07:05 CST, 소스 커밋 `d1ce089` — 미커밋 변경 없음, 건너뛴 단계 없음: 라이선스 목록 재생성 → 아이콘 검증 →
 `scripts/build-native.mjs mac`로 helper 빌드·서명·stdio smoke → `electron-vite build`(현재 소스) → before-pack(의존성 수집기 보정) → arm64·x64 electron-builder →
 after-pack 검사(의존성 트리 포함) → DMG 안의 앱으로 smoke test(숨긴 창 렌더링 포함) → 네이티브 모듈 검사). 종료 코드 0, 미완료 항목 없음. 산출물은 **미서명(ad-hoc)** 이며
 이름에 `-unsigned`가 붙는다.
@@ -156,9 +188,9 @@ after-pack 검사(의존성 트리 포함) → DMG 안의 앱으로 smoke test(�
 
 | 항목 | macOS arm64 | macOS x64 |
 |---|---|---|
-| DMG | `apps/desktop/release/OrbitDrop-0.1.0-mac-arm64-unsigned.dmg` 135.4 MB, sha256 `632818a7a60b4016b7551419b3327177008c5fab87a969e4ae471f556cdcbd41` | `apps/desktop/release/OrbitDrop-0.1.0-mac-x64-unsigned.dmg` 144.2 MB, sha256 `9ba2ecc566b93f2bf45684c78a6a6b6616a76e73cfb2b7983c338dbad6e98e6a` |
-| ZIP | `…-mac-arm64-unsigned.zip` 135.1 MB, sha256 `245967af5307f9362d886183e72760d0e652194f7f7ba4923eaf4348615ae87d` | `…-mac-x64-unsigned.zip` 144.0 MB, sha256 `011b7c484661edf0765680c83e178421fe2cb20f0b73749aad1d9e161a7a636f` |
-| 빌드 보고서 | `build-report-darwin-arm64.json` (`source.commit` 7951bd3…, `dirty: false`) | `build-report-darwin-x64.json` |
+| DMG | `apps/desktop/release/OrbitDrop-0.1.0-mac-arm64-unsigned.dmg` 135.4 MB, sha256 `cabde306267b1f7490b3f3490aadd59e91e5e4f309af8e1381c3e6f5bb6008d6` | `apps/desktop/release/OrbitDrop-0.1.0-mac-x64-unsigned.dmg` 144.2 MB, sha256 `5d67e2f438de1f3b0e1bf805b381614a2a04895e21381993152317142ef5c5ad` |
+| ZIP | `…-mac-arm64-unsigned.zip` 135.1 MB, sha256 `675d3be2ac7e3f37749963ce542994116f4868be6323327fc75b2660cf71d5e1` | `…-mac-x64-unsigned.zip` 144.0 MB, sha256 `ab6f8d20b69e5ac6d82655eeb952ede3e0999635de1c0c9cf8b818ab6c31f7b4` |
+| 빌드 보고서 | `build-report-darwin-arm64.json` (`source.commit` d1ce089…, `dirty: false`) | `build-report-darwin-x64.json` |
 | 앱 크기(설치 시) | 320.2 MB | 333.9 MB |
 | `app.asar` / `app.asar.unpacked` | 14.2 MB (1,041 항목 — 브라우저·ESM 중복 빌드 제외) / 45 MB | 14.2 MB (1,041 항목) / 52 MB |
 | Info.plist | `CFBundleIdentifier=app.orbitdrop.desktop`, `LSUIElement=true`, `LSMinimumSystemVersion=14.0`, `ElectronAsarIntegrity` 있음, 개인정보 사용 설명 키 없음(`usageDescriptions: []`) | 동일 |
