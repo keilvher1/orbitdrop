@@ -181,3 +181,26 @@ Verification after the pass (dev Mac, macOS 26.6 arm64):
 Next: real Finder drags in a macOS 14 VM (tart, input through the VM's own
 VNC server — the host's input is never touched), recorded separately from a
 human check on physical hardware.
+
+## Stage 5 — real Finder drags in a macOS 14 VM (2026-10-22, done)
+
+The user approved a VM test. tart 2.41.1 (Cirrus Labs Developer ID,
+notarized) ran `ghcr.io/cirruslabs/macos-sonoma-vanilla` = macOS 14.8.7
+(23J520) headless; input went through Virtualization.framework's VNC server
+(virtual HID devices inside the guest — the host's input was never touched);
+results were read over SSH with a VM-only key. tart pulled at 0.5 MB/s over
+one connection, so the 20.8 GB image was fetched with parallel, hash-checked
+range requests and served to tart from a local registry.
+
+Result: the whole video flow and spec §12 steps 1–9 pass with the real
+Finder and the installed DMG (record + 17 screenshots in verification.md);
+the support matrix marks these rows "VM GUI 검증됨" (not human/physical).
+Not verified in the VM: second display/negative coordinates, screen lock
+(VNC could not send Ctrl+⌘+Q), VoiceOver audio, Intel.
+
+Found and fixed: the first output into Desktop/Documents/Downloads showed a
+TCC folder-access prompt because the commit used a hard link (isolated with
+five one-line AppleScript apps in the guest); macOS now reserves the name
+and renames (78c83b0), verified in the VM on a never-used Downloads folder.
+Open improvement: show the unsupported reason in the caption below the ring
+too (the drag image can cover the centre capsule).

@@ -11,17 +11,19 @@
 | **구현됨** | 코드가 있고 빌드된다 | 소스 위치 |
 | **자동 검증됨** | 자동 테스트가 실제 결과물을 다시 읽어 확인했다(단위·통합·E2E·패키지 smoke) | 테스트 이름/명령, 실행 환경 |
 | **실제 OS GUI 검증됨** | 사람이 설치본에서 실제 Finder/Explorer 파일로 확인했다 | [verification.md](verification.md) 기록(OS 버전·빌드·아키텍처·날짜·스크린샷) |
+| **VM GUI 검증됨** | 가상 머신의 실제 OS(실제 Finder)에서 설치본으로 확인했다. 입력은 VM의 가상 키보드·마우스로 스크립트가 넣었다 — 실물 기기·사람의 확인은 아니다 | [verification.md](verification.md#가상-머신-gui-검증--macos-1487-2026-10-22) 기록(게스트 OS·이미지·설치본 해시·스크린샷) |
 | **미검증** | 구현 여부와 무관하게 해당 환경에서 확인하지 않았다 | — |
 | **미지원** | 해당 환경에서 제공하지 않는다(메뉴에서 비활성 + 사유 표시) | capability probe 결과 |
 
-현재 **실제 OS GUI 검증됨** 칸은 하나도 없다. 아래 "자동 검증됨"은 모두 개발 Mac(macOS 26.6)에서 실행한 결과다.
-최소 지원 버전인 macOS 14는 실행해 보지 않았다.
+현재 **실제 OS GUI 검증됨**(사람·실물 기기) 칸은 하나도 없다. macOS arm64의 핵심 경로는 2026-10-22 macOS **14.8.7** 가상 머신에서
+**VM GUI 검증됨**이다(최소 지원 버전 계열에서 처음 실행). 그 밖의 "자동 검증됨"은 개발 Mac(macOS 26.6)에서 실행한 결과다.
 
 ## 검증 환경
 
 | 환경 | OS / 빌드 | 아키텍처 | 사용 가능 여부 |
 |---|---|---|---|
 | 개발 Mac | macOS 26.6 (25G72), Xcode 27.1, Node 24.7.0, Electron 44.9.0 | arm64 (Rosetta 2로 x64 실행) | 있음 |
+| macOS 14 가상 머신 | macOS 14.8.7 (23J520) 게스트, tart 2.41.1(Virtualization.framework), 화면 1개(1×·2×), VNC 입력 | arm64 | 있음(2026-10-22) — [기록](verification.md#가상-머신-gui-검증--macos-1487-2026-10-22) |
 | Intel Mac | — | x64 | **없음** — x64 패키지·헬퍼는 Rosetta 2에서만 실행 확인 |
 | Windows 10/11 | — | x64 | **없음** — Windows 헬퍼는 mingw-w64 교차 컴파일과 호스트 테스트(macOS clang)까지만. CI 워크플로(`windows-latest`)는 구성만 되어 있고 실행 전 |
 
@@ -51,22 +53,22 @@
 | 코드 서명 | 미지원(자격 증명 없음, ad-hoc만, 파일명에 `-unsigned`) | 미지원(동일) | 미지원(미서명) | `build-report-*.json` |
 | 공증 / SmartScreen 평판 | 미지원 | 미지원 | 미지원 | [packaging.md](packaging.md) |
 | 사용자별 설치·제거(관리자 권한 없음) | 해당 없음(드래그 설치) | 해당 없음 | 구현됨(미실행) | `build/installer.nsh` |
-| 설치본 첫 실행·권한 안내 | 미검증 | 미검증 | 미검증 | verification.md 1단계 |
+| 설치본 첫 실행·권한 안내 | VM GUI 검증됨(macOS 14.8.7: 실행 시 대화상자 없음, 첫 알림 때 알림 허용 배너) | 미검증 | 미검증 | verification.md 1단계, 가상 머신 기록 |
 
 ## P0 — 핵심 경로
 
 | 기능 | macOS arm64 | macOS x64 | Windows x64 | 증거 |
 |---|---|---|---|---|
-| 전역 드래그 + Shift → 휠(실제 Finder/Explorer) | 구현됨 · 드롭 대상과 세션 상태 기계만 자동 검증(가짜 `NSDraggingInfo`, 합성 이벤트 순서) · 실제 전역 이벤트 소스와 Finder 드래그는 **GUI 미검증** | 구현됨(Rosetta에서 stdio만) · GUI 미검증 | 구현됨 · 미검증(포터블 코어만 macOS 호스트에서 실행) | Swift `DropTargetGlueTests`, `SessionControllerTests`; C++ `test_session.cpp`(23개 시나리오); E2E `helper-drop`(stub)·`helper-real`(실제 헬퍼 configure·종료) |
+| 전역 드래그 + Shift → 휠(실제 Finder/Explorer) | **VM GUI 검증됨**(macOS 14.8.7, 1×·Retina 2×: 실제 Finder 드래그 중 Shift·Option+Shift로 휠, 포커스 유지, 휠 옆 투명 영역 드롭이 Finder로 감, Esc·이탈/재진입·비파일·반복 드롭, helper 강제 종료) · 실물 Mac **GUI 미검증** | 구현됨(Rosetta에서 stdio만) · GUI 미검증 | 구현됨 · 미검증(포터블 코어만 macOS 호스트에서 실행) | Swift `DropTargetGlueTests`, `SessionControllerTests`; C++ `test_session.cpp`(23개 시나리오); E2E `helper-drop`(stub)·`helper-real`(실제 헬퍼 configure·종료) |
 | 휠 hit-test·배치·다중 모니터 좌표 | 자동 검증됨 | 자동 검증됨(Rosetta) | 구현됨 · 미검증(포터블 코어의 골든 테스트는 macOS clang·MinGW 호스트에서 통과, MSVC·Windows 미실행) | `tests/fixtures/wheel-golden.json` — TS·Swift·C++ 모두 0 불일치; C++ `test_coords.cpp` |
-| 드롭 → 작업 정확히 1회, Copy만, 원본 이동 없음 | 자동 검증됨(헬퍼·main) · GUI 미검증 | GUI 미검증 | 미검증 | core `DragSessionTracker` 테스트, Swift drop-target 테스트, E2E `helper-drop` "one job per session" |
-| PDF → JPG/PNG(여러 쪽, 150/300 DPI, 회전, 암호·손상·과대 오류) | 자동 검증됨 | 자동 검증됨(패키지 smoke: 1쪽 PDF→PNG만) | 미검증 | `convert-pdf-image.test.ts`(손상 PDF 포함), E2E PDF→JPG 2550×3300, 패키지 smoke |
+| 드롭 → 작업 정확히 1회, Copy만, 원본 이동 없음 | 자동 검증됨(헬퍼·main) · **VM GUI 검증됨**(연속 5회 → 작업 5개, 원본 해시 그대로) | GUI 미검증 | 미검증 | core `DragSessionTracker` 테스트, Swift drop-target 테스트, E2E `helper-drop` "one job per session" |
+| PDF → JPG/PNG(여러 쪽, 150/300 DPI, 회전, 암호·손상·과대 오류) | 자동 검증됨 · VM GUI 검증됨(3쪽·90° 회전 쪽 포함) | 자동 검증됨(패키지 smoke: 1쪽 PDF→PNG만) | 미검증 | `convert-pdf-image.test.ts`(손상 PDF 포함), E2E PDF→JPG 2550×3300, 패키지 smoke |
 | JPG/PNG/WebP 상호 변환(+ EXIF 회전, 투명 PNG→JPEG) | 자동 검증됨 | 자동 검증됨(smoke PNG→JPG만) | 미검증 | `convert-image.test.ts` |
-| Crop 편집기(비율, W/H, EXIF 회전) | 자동 검증됨 | 미검증 | 미검증 | `tools-crop`, `cropMath.test.ts`, E2E `pipeline` 1:1 → 2550×2550(정확한 크기), `ui-flow`(정사각형) |
-| Add Background(패딩·모서리·그림자·비율, 미리보기=최종) | 자동 검증됨 | 미검증 | 미검증 | `tools-add-background`, `composition-layout`(무작위 3000건, 정확한 레이아웃), E2E `pipeline`, electron-verify(16:9 비율) |
-| 트레이, 설정, 작업 진행·취소·결과 열기 | 자동 검증됨 | 미검증 | 미검증 | E2E `shell`(트레이 메뉴, 설정 전파, 기록), `job-manager.test.ts` |
-| 대체 입력(파일 열기, Drop Zone) | 부분 자동 검증: 실제 앱에서는 Drop Zone 오류 경로만, 정상 등록과 파일 열기 대화상자는 단위 테스트 | 미검증 | 미검증 | electron-verify dropzone, `file-registry.test.ts`, `flows.test.tsx` |
-| 영상 흐름 재현(PDF→JPG→Crop→Add BG, 결과 4개) | 자동 검증됨 · **GUI 미검증** | 미검증 | 미검증 | `tests/integration/video-flow.test.ts`, E2E `ui-flow` "four files side by side" |
+| Crop 편집기(비율, W/H, EXIF 회전) | 자동 검증됨 · VM GUI 검증됨(1:1 → 2550×2550) | 미검증 | 미검증 | `tools-crop`, `cropMath.test.ts`, E2E `pipeline` 1:1 → 2550×2550(정확한 크기), `ui-flow`(정사각형) |
+| Add Background(패딩·모서리·그림자·비율, 미리보기=최종) | 자동 검증됨 · VM GUI 검증됨 | 미검증 | 미검증 | `tools-add-background`, `composition-layout`(무작위 3000건, 정확한 레이아웃), E2E `pipeline`, electron-verify(16:9 비율) |
+| 트레이, 설정, 작업 진행·취소·결과 열기 | 자동 검증됨 · VM GUI 검증됨(메뉴 막대 메뉴, 작업 창) | 미검증 | 미검증 | E2E `shell`(트레이 메뉴, 설정 전파, 기록), `job-manager.test.ts` |
+| 대체 입력(파일 열기, Drop Zone) | 부분 자동 검증 · Drop Zone은 VM GUI 검증됨(Finder에서 놓기 → 앱 안 휠 → PDF→DOCX). 파일 열기 대화상자는 단위 테스트만 | 미검증 | 미검증 | electron-verify dropzone, `file-registry.test.ts`, `flows.test.tsx` |
+| 영상 흐름 재현(PDF→JPG→Crop→Add BG, 결과 4개) | 자동 검증됨 · **VM GUI 검증됨**(macOS 14.8.7, 실제 Finder 드래그로 결과 4개) · 실물 Mac GUI 미검증 | 미검증 | 미검증 | `tests/integration/video-flow.test.ts`, E2E `ui-flow` "four files side by side" |
 
 ## P1 — 일상 도구
 

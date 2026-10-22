@@ -83,11 +83,55 @@
 | 구현 | Swift/AppKit helper: 전역 마우스 모니터 + 보조키 폴링 + 드래그 페이스트보드 changeCount로 후보 감지, 포커스를 빼앗지 않는 NSPanel이 휠이자 드롭 대상, Copy만 수락, 세션당 drop 1회 | C++/Win32: 폴링 관찰(훅·주입 없음), 레이어드 비활성 창(디스크 밖 알파 0), OLE `IDropTarget`(CF_HDROP), Copy 또는 None만 반환 |
 | 권한 실측 | 필요 권한 없음(손쉬운 사용·입력 모니터링 요청 안 함). Esc는 입력 모니터링이 이미 허용된 경우에만 전역 감지 | 해당 없음(권한 대화상자 없음). 관리자 권한 실행 시 UIPI로 일반 탐색기 드래그 불가 |
 | 자동 확인 | 드롭 대상(가짜 `NSDraggingInfo`), 실제 이벤트 순서를 재생하는 관찰자 테스트, 세션 상태 기계, 휠 기준값 전 구간, 패키지 안 helper `ready`·`globalDrag.available: true` | 포터블 코어(세션·좌표·프로토콜) 86개 테스트와 골든 기준값을 macOS 호스트에서 실행. OLE 드롭 테스트는 컴파일만 |
-| **실제 Finder/탐색기 드래그** | **미실시** — 사용자가 `node --import tsx native/macos/scripts/poc-harness.mjs`(`--guided`면 단계별 안내와 자동 판정, 끝에 `RESULT: PASS/FAIL`)로 [macos-helper.md §8](workstreams/macos-helper.md) 24단계를 수행하고 아래 표에 기록(1–20 기존, 21–24는 2차 점검에서 추가: 드래그 중 화면 잠금, 보안 키보드 입력, 배율이 다른 보조 모니터, iCloud 클라우드 전용 파일) | **미실시** — Windows 기기 없음. [windows-helper.md](workstreams/windows-helper.md) 점검표 33항목 |
+| **실제 Finder/탐색기 드래그** | **가상 머신에서 통과**(macOS 14.8.7, 아래 [가상 머신 GUI 검증](#가상-머신-gui-검증--macos-1487-2026-10-22)) · 실물 Mac에서 사람이 하는 확인은 **미실시** — 사용자가 `node --import tsx native/macos/scripts/poc-harness.mjs`(`--guided`면 단계별 안내와 자동 판정, 끝에 `RESULT: PASS/FAIL`)로 [macos-helper.md §8](workstreams/macos-helper.md) 24단계를 수행하고 아래 표에 기록(1–20 기존, 21–24는 2차 점검에서 추가: 드래그 중 화면 잠금, 보안 키보드 입력, 배율이 다른 보조 모니터, iCloud 클라우드 전용 파일) | **미실시** — Windows 기기 없음. [windows-helper.md](workstreams/windows-helper.md) 점검표 33항목 |
 
 자동 확인으로 대신할 수 없는 핵심 질문은 셋이다. 실제 드래그 중에 전역 마우스 이벤트가 오는지, 드래그 도중 나타난
-패널이 drag-enter를 받는지, 휠 바깥 투명 영역에 놓은 드롭이 아래 Finder 창으로 가는지(§8 9단계). 사용자 실측 전까지
-지원표의 전역 드래그 칸은 **GUI 미검증**이다.
+패널이 drag-enter를 받는지, 휠 바깥 투명 영역에 놓은 드롭이 아래 Finder 창으로 가는지(§8 9단계). **세 가지 모두 아래 가상
+머신 검증에서 확인됐다.** 실물 Mac에서 사람이 확인하기 전까지 지원표에는 "실제 OS GUI 검증됨"이 아니라 "VM GUI 검증됨"으로 적는다.
+
+### 가상 머신 GUI 검증 — macOS 14.8.7 (2026-10-22)
+
+**방법.** 개발 Mac(macOS 26.6 arm64) 위의 macOS 게스트에서 **실제 Finder**와 **설치본**으로 시험했다. 입력은 Apple
+Virtualization.framework의 VNC 서버(tart `--vnc-experimental`)로 넣었다 — 게스트 안에서는 가상 USB 키보드·마우스의 하드웨어
+입력으로 보이며, 호스트의 입력은 건드리지 않는다. 화면은 VNC 프레임버퍼를 캡처했다(포인터는 찍히지 않음). 파일 결과와 로그는
+게스트에 SSH로 들어가 확인했다. 사람이 아니라 스크립트가 조작했으므로 **실물 Mac에서 사람이 하는 GUI 검증을 대신하지 않는다.**
+
+| 항목 | 값 |
+|---|---|
+| 게스트 | macOS 14.8.7 (23J520) arm64 — 최소 지원 버전인 macOS 14 계열에서 처음 실행 |
+| 이미지 | `ghcr.io/cirruslabs/macos-sonoma-vanilla:latest` (manifest `sha256:7ea0d508…`), tart 2.41.1 (Cirrus Labs Developer ID, 공증됨) |
+| 자원 | CPU 4 · 메모리 6 GB · 화면 1440×900 px(1×), 이어서 1440×900 pt(2×, Retina 2880×1800) |
+| 설치본 | `OrbitDrop-0.1.0-mac-arm64-unsigned.dmg` sha256 `d725a4b4…`(7faf031) → 고친 뒤 `e14b0c74…`(78c83b0). `hdiutil` + `ditto`로 `/Applications`에 설치(격리 속성 없음), `codesign --verify --deep --strict` 통과 |
+| VNC 키 매핑(실측) | VZ VNC 서버는 **Alt → Command**, **Meta → Option**으로 보낸다(텍스트 편집기에서 Meta+b가 `∫`). 그래서 Option+Shift는 Meta+Shift로 보냈다 |
+
+| # (위 절차) | 결과 | 확인 내용 · 스크린샷 |
+|---|---|---|
+| 1 첫 실행 | 통과 | 창 없이 메뉴 막대 아이콘만, 실행 시 권한 대화상자 없음. 첫 **알림**을 보낼 때 macOS 알림 허용 배너가 한 번 뜸(예상된 동작) |
+| 2 Finder 드래그 + Shift | 통과 | 포인터 위치에 휠, DOCX·JPG·PNG·TXT 순서, 메뉴 막대는 계속 Finder(포커스 안 빼앗음) — `vm-macos14-01` |
+| 3 JPG에 드롭 | 통과(첫 빌드는 권한 대화상자 — 아래 발견 1) | 주황 강조·캡슐·아래 캡션 "JPG"(`vm-macos14-02`), 작업 1개, `Page 001.jpg` 2550×3300, PDF 해시 그대로 |
+| 4 Option+Shift → 자르기 1:1 | 통과 | 도구 휠(압축이 위, 아이콘+한글, `vm-macos14-03`), 편집 창이 그려짐, 적용 전 파일 없음, `Page 001 Cropped.jpg` 2550×2550(`vm-macos14-04`) |
+| 5 배경 추가 | 통과 | 배경·여백 431·모서리 182·그림자 95 px로 바꾸자 미리보기 즉시 반영(`vm-macos14-05`), `Page 001 Cropped With Background.png` 2400×2400, 미리보기와 같은 구성 |
+| 6 결과 4개 | 통과 | 원본 PDF + JPG + 자른 JPG + 배경 PNG(`vm-macos14-06`), 원본 5개 해시 모두 그대로 |
+| 7 보조키 해제·Esc·이탈/재진입·비파일·반복 | 통과 | Shift를 놓아도 휠 유지 → PNG 드롭 · 휠 위에서 Esc → Finder가 드래그 취소, 휠 1초 안에 사라짐, 작업 없음(입력 모니터링 없이) · 밖으로 나갔다 들어와 JPG → 작업 정확히 1개(`Page 001 (2).jpg`) · 폴더 "폴더는 처리할 수 없음", TXT "지원하지 않는 파일", 텍스트 드래그 "파일이 아님"(`vm-macos14-08/09`) · 5회 연속 드롭 → 세션 5개·작업 5개, `(3)…(7)`, 임시 파일 0 |
+| 7+ 휠 옆 투명 영역 | 통과 | 휠 창의 대각선 모서리(링 밖 약 30 pt) 아래 Finder 폴더가 드롭 대상으로 강조되고 파일이 폴더로 옮겨짐, OrbitDrop 작업 없음(`vm-macos14-07`). 오래 머물면 Finder의 스프링 로딩으로 폴더 창이 열림 — Finder가 드래그를 받았다는 또 다른 증거 |
+| 8 배율·가장자리 | 통과(가능한 구성만) | 1×와 Retina 2×에서 휠 선명, 포인터 아래 조각 정확(`vm-macos14-15`). 오른쪽 가장자리·왼쪽 위 모서리에서 휠이 화면 안으로 이동. **보조 모니터·음수 좌표는 미검증**(게스트 화면 1개) |
+| 9 helper 오류·대체 입력·보호 폴더 | 통과 | 휠이 열린 채 helper SIGKILL → 휠 즉시 사라짐, 0.55초 뒤 재시작, 새 세션 id `m1098-…`로 다음 드래그 정상(`vm-macos14-16/17`). 메뉴 막대 메뉴(파일 열기·Drop Zone·최근 작업·작업 창·전역 드래그·설정·정보·종료), Drop Zone → 앱 안 휠 → PDF→DOCX(`vm-macos14-13`), 작업 창(`vm-macos14-14`). 문서 폴더 접근 "허용 안 함"을 골라도 작업 완료(첫 빌드의 복사 대체 경로). 네트워크 끊기는 VM에서 안 함(오프라인 E2E로 확인) |
+| 10 창·수명 주기 | 일부 통과 | 주석에 화살표를 그린 뒤 ⌘W → "저장하지 않고 닫을까요?"(`vm-macos14-12`), 계속 편집 → 저장 → `rotated Annotated.jpg` 400×600(EXIF 6 한 번만 적용). **화면 잠금은 미확인** — VNC로 보낸 Ctrl+⌘+Q가 잠금 단축키로 동작하지 않음 |
+
+**발견과 조치.**
+1. **보호 폴더 첫 사용 때 권한 대화상자(수정됨, 78c83b0).** 첫 빌드는 바탕화면 결과를 쓸 때 "OrbitDrop이 데스크탑 폴더의 파일에
+   접근하려고 합니다"를 띄우고, 답할 때까지 작업이 멈췄다(`vm-macos14-10`). 같은 게스트에서 AppleScript 앱 5개로 원인을 좁혔다 —
+   새 파일·이름 바꾸기·복사는 대화상자가 없고 **하드 링크만** 대화상자를 띄운다. macOS에서는 결과 이름을 예약한 뒤 `rename`으로
+   확정하도록 바꿨고, 고친 설치본으로 한 번도 접근하지 않은 다운로드 폴더의 3쪽 PDF를 변환해 대화상자 없이 0.7초에 끝남을 확인했다
+   (`vm-macos14-11`, 2쪽 90° 회전 → 3300×2550). 자세한 내용: [permissions.md](permissions.md).
+2. **지원하지 않는 항목 안내가 드래그 이미지에 가림(개선 후보).** 이유는 가운데 캡슐에만 나오는데, 넓은 텍스트 드래그 이미지가 그
+   위에 놓인다. 활성 조각처럼 링 아래 캡션에도 이유를 보이면 가려지지 않는다.
+3. **VNC 입력 한계.** Ctrl+⌘+Q(잠금)는 동작하지 않았고, 포인터 모양(Copy의 초록 +)은 VNC 캡처에 찍히지 않는다.
+
+**재현.** `tart clone ghcr.io/cirruslabs/macos-sonoma-vanilla:latest od-sonoma` → `tart run od-sonoma --no-graphics
+--vnc-experimental --dir=xfer:<폴더>:ro` → 게스트(admin/admin)에서 DMG 설치 → VNC 클라이언트로 드래그(버튼 누름 → 몇 픽셀씩
+이동 → Shift(또는 Meta+Shift) 누름 → 조각으로 이동 → 놓기). 회선이 느리면 tart가 연결 하나로 받아 매우 느릴 수 있어(이 Mac에서
+0.5 MB/s), 이번에는 이미지 조각을 여러 연결로 받아(해시 확인) 로컬 레지스트리로 넘겼다.
 
 ---
 
