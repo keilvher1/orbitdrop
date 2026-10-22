@@ -52,8 +52,9 @@ public enum SessionEvent: Sendable, Equatable {
   /// stdin reached EOF or stdout broke: main is gone.
   case parentEOF
   case cancelRequest(sessionId: String)
-  /// Off-main stat() result for the payload (size for the capsule, directory check).
-  case fileInfo(sessionId: String, totalBytes: Int64?, containsDirectory: Bool)
+  /// Off-main stat() result for the payload: size for the capsule, a folder without a trailing
+  /// slash, an online-only cloud file (`SF_DATALESS`; nothing is read, so nothing is downloaded).
+  case fileInfo(sessionId: String, totalBytes: Int64?, containsDirectory: Bool, containsCloudPlaceholder: Bool = false)
   case timerFired(SessionTimer, token: String)
   /// The app had to abandon the session (screen configuration changed under the wheel, internal error).
   case invalidate(CancelReason)
@@ -186,8 +187,10 @@ public struct WheelViewModel: Sendable, Equatable {
     return capsule
   }
 
-  /// Text VoiceOver should announce for the current state (the armed choice), nil otherwise.
+  /// Text VoiceOver should announce for the current state: the armed choice, or why the dragged
+  /// items cannot be used at all (that reason is otherwise only visible in the capsule); nil otherwise.
   public var announcement: String? {
+    if content == .unsupported, capsule.style == .reject, !capsule.text.isEmpty { return capsule.text }
     guard let highlight, highlight.style != .hover, !capsule.text.isEmpty else { return nil }
     let sectors = content.sectors
     guard sectors.indices.contains(highlight.index) else { return capsule.text }

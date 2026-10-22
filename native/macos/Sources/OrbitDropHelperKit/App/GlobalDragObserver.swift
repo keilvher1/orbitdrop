@@ -105,6 +105,8 @@ final class GlobalDragObserver {
   private var dragBaseline = 0
   private var dragConfirmed = false
   private var lastModifiers: Set<ModifierKey> = []
+  /// Last pointer reported with mouseDown/mouseDragged (the poll reports changes too).
+  private var lastPointer: Point?
   private var escapeDown = false
 
   init(source: DragInputSource) {
@@ -137,7 +139,9 @@ final class GlobalDragObserver {
       // a combo that was already held cannot be mistaken for a press during the drag.
       let held = source.heldModifiers
       lastModifiers = held
-      emit(.mouseDown(source.pointer, held: held))
+      let point = source.pointer
+      lastPointer = point
+      emit(.mouseDown(point, held: held))
       startPolling()
     case .dragged:
       if !buttonDown {
@@ -146,8 +150,11 @@ final class GlobalDragObserver {
         startPolling()
       }
       checkDragPasteboard()
+      // The pointer before the modifiers: a combo completed by this event opens the wheel here.
+      let point = source.pointer
+      lastPointer = point
+      emit(.mouseDragged(point))
       emitModifiers()
-      emit(.mouseDragged(source.pointer))
     case .up:
       if buttonDown {
         buttonDown = false
@@ -186,8 +193,19 @@ final class GlobalDragObserver {
 
   /// One 60 Hz tick (public for tests driving a fake source).
   func poll() {
-    emitModifiers()
+    if buttonDown && source.leftButtonDown {
+      // The pointer is polled as well, so neither the start of a session (≥ 3 pt of travel) nor
+      // where the wheel opens depends on the global monitor seeing the dragged events of
+      // another app's drag loop. Reported first: the pasteboard check needs the travel, and a
+      // combo completed in this tick opens the wheel at the current pointer.
+      let point = source.pointer
+      if point != lastPointer {
+        lastPointer = point
+        emit(.mouseDragged(point))
+      }
+    }
     checkDragPasteboard()
+    emitModifiers()
     if buttonDown && !source.leftButtonDown {
       // The monitor can miss the mouse-up of another app's drag loop; the hardware state cannot lie.
       buttonDown = false

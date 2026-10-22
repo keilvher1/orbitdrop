@@ -801,6 +801,50 @@ final class SessionControllerTests: XCTestCase {
     XCTAssertNil(h.view?.caption)
   }
 
+  /// An online-only cloud file (the off-main stat saw SF_DATALESS) is refused like the Windows
+  /// helper does: built-in localized text, no Copy anywhere, `invalidPayload` on release.
+  func testCloudPlaceholderIsRefusedWithTheBuiltInText() {
+    for (locale, text) in [(HelperLocale.en, "Download it first"), (.ko, "먼저 내려받으세요")] {
+      var h = Harness(config: DefaultConfig.config(locale: locale))
+      h.beginDrag()
+      h.send(.modifiersChanged([.shift]))
+      h.send(.draggingEntered(items: pdf, point: center, sourceAllowsCopy: true))
+      XCTAssertEqual(h.view?.content.sectors.count, 4, "\(locale): offered until the stat result arrives")
+      XCTAssertEqual(h.send(.draggingUpdated(point: at(120, 0), sourceAllowsCopy: true)).operation, .copy)
+      h.send(.fileInfo(sessionId: "s1", totalBytes: 5_000_000, containsDirectory: false, containsCloudPlaceholder: true))
+      XCTAssertEqual(h.view?.content, .unsupported, "\(locale)")
+      XCTAssertEqual(h.view?.capsule, CapsuleContent(text: text, style: .reject), "\(locale)")
+      XCTAssertEqual(h.view?.announcement, text, "\(locale): VoiceOver hears it too")
+      XCTAssertEqual(h.states.last, StateMessage(sessionId: "s1", state: .wheelActive, mode: .convert, menuKey: .some(nil), fileCount: 1))
+      XCTAssertEqual(h.controller.lastOperation, .none, "\(locale): a release right now is refused")
+      XCTAssertEqual(h.send(.draggingUpdated(point: at(120, 0), sourceAllowsCopy: true)).operation, .none)
+      XCTAssertFalse(h.send(.performDrop(items: nil, point: at(120, 0), sourceAllowsCopy: true)).dropAccepted)
+      XCTAssertEqual(h.cancels, [.invalidPayload], "\(locale)")
+      XCTAssertTrue(h.drops.isEmpty)
+    }
+    // A folder found by the same stat is the more basic reason.
+    var f = Harness()
+    f.beginDrag()
+    f.send(.modifiersChanged([.shift]))
+    f.send(.draggingEntered(items: pdf, point: center, sourceAllowsCopy: true))
+    f.send(.fileInfo(sessionId: "s1", totalBytes: nil, containsDirectory: true, containsCloudPlaceholder: true))
+    XCTAssertEqual(f.view?.capsule.text, "Folders aren't supported")
+  }
+
+  func testUnsupportedPayloadIsAnnouncedButTheNeutralWheelIsNot() {
+    var h = Harness()
+    h.beginDrag()
+    h.send(.modifiersChanged([.shift]))
+    XCTAssertNil(h.view?.announcement, "neutral wheel: nothing known yet")
+    h.send(.draggingEntered(items: [.nonFile], point: center, sourceAllowsCopy: true))
+    XCTAssertEqual(h.view?.announcement, "Not a file")
+    var t = Harness()
+    t.beginDrag()
+    t.send(.modifiersChanged([.alt, .shift]))
+    t.send(.draggingEntered(items: pdf, point: center, sourceAllowsCopy: true))
+    XCTAssertEqual(t.view?.announcement, "Not supported", "a PDF has no tools: the generic text")
+  }
+
   func testReduceMotionHidesWithoutAnimation() {
     var h = Harness(config: DefaultConfig.config(locale: .en, reduceMotion: true))
     h.beginDrag()

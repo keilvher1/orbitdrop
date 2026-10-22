@@ -2,11 +2,13 @@
 
 Status (2026-10-21, after the spec-audit fixes): **implemented and auto-verified; real Finder drag NOT yet
 GUI-verified** (agents may not synthesize input — the user must run the checklist in §8). Staged binaries for
-`darwin-arm64` and `darwin-x64` pass the stdio smoke test (x64 under Rosetta 2).
+`darwin-arm64` and `darwin-x64` pass the stdio smoke test (x64 under Rosetta 2). A second, adversarial pass
+(2026-10-22) is recorded in [hardening-macos.md](hardening-macos.md): what was checked, the defects fixed and the
+items that still need real input.
 
 | Area | Implemented | Auto-verified | GUI-verified |
 |---|---|---|---|
-| NDJSON protocol v1 (strict, zod parity, optional `unsupported*` strings) | ✅ | ✅ 135-line zod-verdict corpus, limits, e2e process tests | — |
+| NDJSON protocol v1 (strict, zod parity, optional `unsupported*` strings) | ✅ | ✅ 155-line zod-verdict corpus (incl. JSON-level cases), limits, e2e process tests | — |
 | Geometry port (hit-test, placement, arming, coords) | ✅ | ✅ golden vectors: all macOS sections pass (§5) | ❌ |
 | Menu classification (`menuKeyForPaths`), multi-file rule, unsupported reasons | ✅ | ✅ golden `selection` 42/42, `fileCount` 10/10 | ❌ |
 | Drag-session state machine (incl. 40 ms settle, no-enter hide) | ✅ | ✅ 40 scenario tests + 1 500 random sequences (invariants) | ❌ |
@@ -57,16 +59,17 @@ scripts/build-native-mac.mjs   build + strip + sign + verify + stage + smoke
 | Options | `--arch arm64\|x64\|all\|universal`, `--test`, `--sign "Developer ID Application: …"`, `--no-smoke`, `--no-strip`, `--debug` |
 | Smoke test a binary | `node --import tsx native/macos/scripts/smoke-test.mjs <binary> --expect-arch arm64` |
 | Regenerate Swift fixtures | `node --import tsx native/macos/scripts/gen-fixtures.mjs` |
-| Manual PoC | `node --import tsx native/macos/scripts/poc-harness.mjs [--locale en] [--theme dark]` |
+| Manual PoC | `node --import tsx native/macos/scripts/poc-harness.mjs [--guided] [--locale en] [--theme dark]` |
 | Snapshot | `OrbitDropHelper --render-snapshot out.png --menu pdf --mode convert --highlight 1 [--locale ko] [--theme dark] [--scale 2] [--backdrop desktop]` |
 
 Golden file override: `ORBITDROP_GOLDEN=/path/wheel-golden.json swift test …`; helper override for the process
 tests: `ORBITDROP_HELPER_PATH=…`; verbose helper logs: `ORBITDROP_HELPER_DEBUG=1`.
 
-Last results (this machine: macOS 26.6 arm64, Xcode 27.1, Swift 6.4):
-`swift test` → **exit code 0, 138 tests, 0 failures, 0 skipped** (Core 86, Kit 45, Process 7). Build script
-→ exit 0; arm64 830 272 B, x64 881 968 B, `flags=0x10002(adhoc,runtime)`, `minos 14.0`, thin binaries, smoke
-**18/18** each (zod validation), x64 under Rosetta 2. Release `ready` latency ≈ 50 ms.
+Last results (this machine: macOS 26.6 arm64, Xcode 27.1, Swift 6.4), after the hardening pass (2026-10-22):
+`swift test` → **exit code 0, 167 tests, 0 failures, 0 skipped** (Core 89, Kit 69, Process 9). Build script
+`--arch arm64` → exit 0; arm64 838 304 B, `flags=0x10002(adhoc,runtime)`, `minos 14.0`, smoke **18/18** (zod).
+(Before: 138 tests; x64 881 968 B, smoke 18/18 under Rosetta 2 — not re-staged in the hardening pass.) Release
+`ready` latency ≈ 50 ms.
 
 ## 3. Design
 
@@ -78,7 +81,10 @@ Last results (this machine: macOS 26.6 arm64, Xcode 27.1, Swift 6.4):
   `cancelled parentRequest` for an open session, flush, `exit(0)`.
 * **stdout**: encode on the caller, write on a private serial queue (`write(2)`, EINTR/EAGAIN handled), so a slow
   reader never blocks the main thread or a drop callback. `SIGPIPE` ignored; EPIPE ⇒ treated as parent gone.
-* `SIGTERM`/`SIGINT`/`SIGHUP` → same clean exit. Stop message (`v:1,type:"shut…"`) → same.
+* `SIGTERM`/`SIGINT`/`SIGHUP` → same clean exit. Stop message (`v:1,type:"shut…"`) → same. Signals are handled on
+  a background queue, and an exit watchdog `_exit(0)`s the process 3 s after main is gone (EOF, EPIPE, signal) if
+  the AppKit thread is wedged and cannot run the graceful exit — a dead process's windows vanish, so no wheel can
+  be stranded.
 * App Nap: a `.userInitiatedAllowingIdleSystemSleep` activity is held only while observation is enabled
   (keeps the 60 Hz poll punctual; idle sleep stays allowed).
 
@@ -90,6 +96,9 @@ Last results (this machine: macOS 26.6 arm64, Xcode 27.1, Swift 6.4):
 * **The mouse-down carries the modifiers held at that instant** (`mouseDown(point, held:)`), atomically, as a
   baseline — not as a press. (Before the audit fix the observer emitted the mouse-down and then a forced modifier
   update, so a combo held *before* clicking looked like a press and opened the wheel.)
+* The pointer is polled with the modifiers while the button is down (hardening pass), so neither the start of a
+  session nor where the wheel opens depends on the global monitor receiving the dragged events of another app's
+  drag loop.
 * A real OS drag is confirmed by `NSPasteboard(name: .drag).changeCount` moving after the mouse-down (contents
   are never read there; reads stop once confirmed). `NSEvent.pressedMouseButtons` backs up a missed mouse-up.
 * Escape: polled with `CGEventSource.keyState` **only if Input Monitoring was already granted**. The TCC status
@@ -147,7 +156,7 @@ Last results (this machine: macOS 26.6 arm64, Xcode 27.1, Swift 6.4):
 | `draggingExited` with the pointer still over the disc | the drag ended over us (Esc in the source, or released on a rejecting spot): after 150 ms without re-entry → `escape` if the button is still down, else `disabledSector` / `outsideRing` / `invalidPayload` / `dragEnded` |
 | `draggingExited` with the pointer outside | wheel stays; re-entry allowed |
 | `draggingEnded`, Esc (when permitted) | `dragEnded` / `escape` |
-| sleep, screens asleep, user switch | `sleep` |
+| sleep, screens asleep, user switch, screen locked (`com.apple.screenIsLocked`, distributed, delivered immediately) | `sleep` |
 | display under the wheel disappears | `error` (never leave a stranded window) |
 | `cancelSession{id}` / `configure{enabled:false}` / stdin EOF / stop / SIGTERM | `parentRequest` |
 | next mouse-down while a session is open (missed mouse-up) | `dragEnded` |
@@ -202,6 +211,12 @@ semantics. Additionally unsupported, each with a reason that selects the capsule
 relative paths or > 200 items → `strings.unsupported`. Precedence when mixed: virtual, folder, non-file. Each
 optional string falls back to `unsupported` when absent or empty. Multi-file: non-batch sectors disabled with
 `strings.multiFileUnsupported` (golden `fileCount`).
+Online-only cloud files (hardening pass, parity with the Windows helper): the same off-main `stat` reads
+`st_flags`; `SF_DATALESS` (iCloud Drive / File Provider dataless file) → `cloudPlaceholder` with the built-in text
+"먼저 내려받으세요" / "Download it first" (no `configure` field yet; a later `strings.unsupportedCloud` is the lead's
+contract change), no Copy anywhere, release → `cancelled: invalidPayload`. Nothing is opened or read, so nothing is
+downloaded. A folder found by that stat wins over the cloud reason. The stat result arrives a few milliseconds after
+the drag-enter; a drop made before it is still validated by main (`CLOUD_PLACEHOLDER`).
 
 ### Geometry: bit-exactness finding
 Measured against Node 24.7 (V8, arm64) on 300 016 vectors: Darwin `hypot` differs from `Math.hypot` in 34 %,
@@ -220,6 +235,11 @@ accepts the optional `unsupportedFolder` / `unsupportedNonFile` / `unsupportedVi
 `gen-fixtures.mjs`; the configure fixtures are built with desktop-main's own `buildConfigureMessage`. Findings:
 * **zod 4.6.7 measures string `.min/.max` in Unicode code points** (a surrogate pair counts once) — the helper
   uses `unicodeScalars.count` everywhere (verified with emoji/flag/combining-mark cases).
+* JSON level (hardening pass): Foundation accepts trailing commas (`{"a":1,}`, `[1,]`) and a UTF-8 byte-order
+  mark, `JSON.parse` does not ⇒ rejected; Foundation refuses lone surrogate escapes (`"\ud800"`, which
+  `JSON.stringify` emits for a split pair and zod accepts as one code point) ⇒ read as U+FFFD instead of dropping
+  the whole `configure`. Documented, unreachable divergence: literals that underflow (`1e-400`; `JSON.stringify`
+  writes `0`).
 * Duplicate JSON keys: `JSON.parse` keeps the last, Foundation keeps the first ⇒ the helper **rejects** lines
   with duplicate keys (`JSON.stringify` never emits them) — the one intentional divergence from zod.
 * Invalid lines are ignored and reported as `log warn` (field names only — never values or paths).
@@ -245,6 +265,10 @@ via the backing scale; snapshots at `--scale 2`. A WCAG test checks every text/f
 * **VoiceOver**: when the armed choice changes, an `NSAccessibility` announcement (`announcementRequested`,
   high priority) speaks it — the sector label, or `label: reason` for a refused one — once per change, only
   while VoiceOver runs. The view's accessibility value mirrors the capsule.
+* **Unsupported drags and Reduce Transparency** (hardening pass): VoiceOver also hears why dragged items cannot
+  be used (the capsule's reject text), once per change. With System Settings ▸ Accessibility ▸ Reduce
+  transparency on, the disc is drawn opaque in the same palette (read when a wheel is shown); everything outside
+  the disc stays alpha 0.
 * **Reduce Motion at runtime (#18)**: the helper observes `NSWorkspace.accessibilityDisplayOptionsDidChange`.
   If the OS turns Reduce Motion on after main's last `configure` said `reduceMotion: false`, the helper follows
   the OS (no appear/disappear animation) **until the next `configure`**, whose value wins again (main resolves
@@ -341,9 +365,18 @@ incl. exact boundary rays, and the zod-verdict protocol corpus.
 
 ## 8. Manual GUI verification (user) — the native drag PoC
 Prerequisite: `node scripts/build-native-mac.mjs --arch arm64` then, in Terminal at the repo root:
-`node --import tsx native/macos/scripts/poc-harness.mjs` (add `--locale en` for English labels). It prints one
-line per event; nothing is converted. Keep a test folder with `Page 001.pdf`, two JPGs, a PNG, a TXT and a
+`node --import tsx native/macos/scripts/poc-harness.mjs --guided` (add `--locale en` for English labels). It prints
+one line per event; nothing is converted. Keep a test folder with `Page 001.pdf`, two JPGs, a PNG, a TXT and a
 sub-folder. Record OS version, display setup and pass/fail per step.
+
+How to read the harness (hardening pass): every helper line is validated with the real zod schema, and every
+session against the rules main relies on (AwaitingPayload first, WheelActive before a drop, exactly one `drop` or
+`cancelled`, nothing after it). Any violation is printed at once with `!!`, and so is a wheel still open after
+20 s. `--guided` walks through the steps below: it shows what to do and what to expect, waits for Enter, gives an
+automatic verdict from the helper's messages (`✔` / `✘ reason`), asks a y/n question for what only your eyes can
+judge, and prints a table of all steps. Ctrl+C ends either mode with a summary whose last line is
+**`RESULT: PASS`** or **`RESULT: FAIL`** (exit code 0 / 1). Without `--guided` the harness only watches; follow
+the steps yourself and judge the visual parts.
 
 1. **Start**: harness prints `ready … global drag available` and `permissions (none required)`. No permission
    dialog appears now or later; System Settings ▸ Privacy & Security ▸ Accessibility / Input Monitoring do not
@@ -385,10 +418,11 @@ sub-folder. Record OS version, display setup and pass/fail per step.
 10. **Disabled sector**: drag a JPG with Shift (HEIC is disabled in the harness configuration), hover HEIC →
     dashed grey highlight, capsule and caption show the reason; release there → no DROP, `cancelled: disabledSector`.
 11. **Unsupported drags, specific texts**: press Shift while dragging (expected capsule text, ko/en):
-    selected text from TextEdit/Safari → "파일이 아닌 항목"/"Not a file"; a folder → "폴더는 지원하지 않음"/"Folders aren't
-    supported"; a Photos item or Mail attachment (file promise) → "디스크에 없는 항목"/"Not a file on disk"; a `.txt`
-    file → "지원하지 않는 파일"/"Not supported". No sector highlights; release → `cancelled: invalidPayload`. (These
-    come from the harness configure; main supplies its own wording.)
+    selected text from TextEdit/Safari → "파일이 아님"/"Not a file"; a folder (or an `.app`/`.rtfd` package) →
+    "폴더는 처리할 수 없음"/"Folders aren’t supported"; a Photos item, Mail attachment or Safari image (file promise) →
+    "먼저 파일로 저장하세요"/"Save it as a file first"; a `.txt` file → "지원하지 않는 파일"/"Unsupported file". No
+    sector highlights; release → `cancelled: invalidPayload`. (The harness sends main's wording from the generated
+    configure fixture — `node --import tsx native/macos/scripts/gen-fixtures.mjs` refreshes it.)
 12. **Neutral wheel without a drop target**: drag a Safari tab (or a window tab) and press Shift → if the drag
     carries nothing the wheel accepts, the neutral wheel disappears ~0.4 s after you move over it
     (`cancelled: invalidPayload`); with a file drag it never disappears on its own.
@@ -405,16 +439,37 @@ sub-folder. Record OS version, display setup and pass/fail per step.
     coordinates). Expected: the wheel stays fully inside the visible area (shifted away from edges); near the bottom
     edge the caption moves **above** the disc; when shifted, a sector only selects after a small (≥ 6 pt) move;
     the highlighted sector always matches the drawn one.
-17. **Spaces / full screen**: repeat over a full-screen app and on another Space → the wheel appears above it.
+17. **Spaces / full screen / Mission Control / Stage Manager**: repeat over a full-screen app and on another Space
+    → the wheel appears above it and the full-screen app keeps focus. Start Mission Control during a drag (F3, or
+    drag to the top of the screen) → the wheel hides while it is up and comes back after; with Stage Manager on, the
+    wheel is never put into a stage.
 18. **Accessibility**: (a) Reduce Motion: with the harness running (no `--reduce-motion`), turn on System Settings
     ▸ Accessibility ▸ Display ▸ Reduce motion *while the harness runs* → the next wheel appears/disappears without
     fading (the helper follows the OS until main's next configure); restart the harness → it fades again until the
     OS setting is toggled. (b) VoiceOver (⌘F5): open the wheel and hover JPG, then HEIC → VoiceOver speaks "JPG",
-    then "HEIC: …reason"; note whether a background helper's announcements are spoken. (c) `--theme highContrast`
-    and `--theme dark` → palettes as in the screenshots.
+    then "HEIC: …reason"; drag a folder with Shift → it speaks the folder text once; note whether a background
+    helper's announcements are spoken. (c) `--theme highContrast` and `--theme dark` → palettes as in the
+    screenshots; in high contrast the caption pill's outline stays inside the pill. (d) Reduce transparency (same
+    pane) → the next wheel has an opaque disc (no desktop showing through); the corners of its square stay
+    see-through and a drop there still reaches Finder (as in step 9).
 19. **Parent exit**: open the wheel and press Ctrl+C in the harness (or kill it) → the wheel disappears at once
     and the helper exits; no window remains (also try closing the Terminal window).
 20. **Intel Mac (if available)**: repeat 2–3 with `--arch x64` on Intel hardware (only Rosetta-tested so far).
+21. **Screen lock during a drag** (hardening): open the wheel, keep the button down and lock the screen
+    (Ctrl+Cmd+Q or the Touch ID key); unlock → no wheel on screen, harness `cancelled: sleep`. Same for closing the
+    lid / Apple menu ▸ Sleep with the wheel open (`sleep`), and — with a second display — unplugging the display the
+    wheel is on (`cancelled: error`, or the wheel stays usable if macOS moved it to the remaining display).
+22. **Secure keyboard entry** (needs your eyes; cannot be measured without real input): turn on Terminal ▸ Secure
+    Keyboard Entry, keep Terminal frontmost and drag the folder proxy icon from its title bar with Shift → note
+    whether the wheel opens (modifier polling under Secure Event Input; it will say "folders aren’t supported", that
+    is fine) and whether Esc over the wheel is seen. Turn the option off afterwards.
+23. **Second display with a different scale** (if available): open the wheel on a 1× display after using it on the
+    Retina display (and back) → labels and the ring are crisp on both, and the highlighted sector matches the pointer
+    exactly (hit-testing is in points).
+24. **Online-only iCloud file** (hardening, parity with Windows): in iCloud Drive pick a PDF or JPG that shows the
+    cloud icon (not downloaded; Finder ▸ Remove Download makes one), drag it with Shift and hover the wheel → after a
+    moment the capsule says "먼저 내려받으세요"/"Download it first", no sector turns orange; release on a sector →
+    `cancelled: invalidPayload`, no DROP, and the file **still shows the cloud icon** (nothing was downloaded).
 
 ## 9. Known limitations / open issues
 * Real Finder drags are unverified until §8 is run (the whole AppKit path up to `NSDraggingInfo` is tested
@@ -429,5 +484,14 @@ sub-folder. Record OS version, display setup and pass/fail per step.
 * Modifier combos with Control/Command cannot work on macOS (AppKit operation masks).
 * Runtime on macOS 14 itself not tested here (deployment target 14.0 verified with `vtool`; Swift libraries newer
   than 12 are weak-linked); x64 verified under Rosetta 2 only.
-* File promises (Photos, Mail attachments) are unsupported by design (no file exists before the drop).
-* Sleep / screen-change / user-switch paths are verified through the state machine only.
+* File promises (Photos, Mail attachments) are unsupported by design (no file exists before the drop). An item
+  that offers a real file URL *and* promise types is taken as the file (the source states it exists; main still
+  validates it) — pinned by a test so a change of this rule is deliberate.
+* Sleep, screens asleep, user switch, screen lock and display removal are verified with the real notification
+  wiring in-process (posted to the helper's own centres; the lock with a uniquely named distributed notification),
+  not with a real lock/sleep/unplug (§8 step 21).
+* Secure Event Input (a password field or Terminal's Secure Keyboard Entry active during the drag): whether
+  `NSEvent.modifierFlags` still reports Shift/Option and whether Esc is seen cannot be measured without real input
+  (§8 step 22). Mouse monitoring is unaffected (it is not keyboard input).
+* Finder aliases named like a supported file get a menu; main's header check refuses them after the drop with the
+  alias hint (the helper never reads file contents).

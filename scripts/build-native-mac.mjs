@@ -12,11 +12,13 @@
 // --sign with a Developer ID Application identity for distribution), verification
 // (codesign --verify, lipo -info, file, vtool), then the stdio smoke test
 // (native/macos/scripts/smoke-test.mjs) against each staged binary — the x64 one runs
-// under Rosetta 2. Node-only, no shell syntax; it refuses to run on other platforms.
+// under Rosetta 2. Each binary is finished under a temporary name and renamed into place,
+// so a helper running from the staged path is never rewritten under its feet.
+// Node-only, no shell syntax; it refuses to run on other platforms.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, chmodSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { copyFileSync, chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync } from 'node:fs';
+import { basename, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -89,6 +91,25 @@ const tsxAvailable = existsSync(join(root, 'node_modules', 'tsx'));
 
 if (options.test) run('swift', ['test', '--package-path', packagePath]);
 
+// Each binary is prepared (copied, stripped, signed, verified) under a temporary name next to
+// its final path and then renamed into place. A helper still running from the staged path (the
+// dev app, an E2E run, the PoC harness) keeps its own, untouched file, and the next launch never
+// meets a signed binary rewritten in place (macOS caches code signatures per file: such a binary
+// can be killed with a code-signature fault).
+const pendingStaging = new Set();
+process.on('exit', () => {
+  for (const file of pendingStaging) if (existsSync(file)) unlinkSync(file);
+});
+function stagingPath(target) {
+  const file = join(dirname(target), `.${basename(target)}.staging-${process.pid}`);
+  pendingStaging.add(file);
+  return file;
+}
+function commit(staging, target) {
+  renameSync(staging, target);
+  pendingStaging.delete(staging);
+}
+
 const staged = [];
 for (const arch of options.arches) {
   const { triple, lipo, dir } = ARCHES[arch];
@@ -104,11 +125,13 @@ for (const arch of options.arches) {
   const outDir = join(stageRoot, dir);
   mkdirSync(outDir, { recursive: true });
   const target = join(outDir, 'OrbitDropHelper');
-  copyFileSync(built, target);
-  chmodSync(target, 0o755);
-  if (options.strip) run('xcrun', ['strip', '-S', '-x', target]);
-  sign(target);
-  verify(target, lipo);
+  const staging = stagingPath(target);
+  copyFileSync(built, staging);
+  chmodSync(staging, 0o755);
+  if (options.strip) run('xcrun', ['strip', '-S', '-x', staging]);
+  sign(staging);
+  verify(staging, lipo);
+  commit(staging, target);
   staged.push({ arch, path: target });
 }
 
@@ -117,9 +140,11 @@ if (options.universal) {
   const outDir = join(stageRoot, 'darwin-universal');
   mkdirSync(outDir, { recursive: true });
   const target = join(outDir, 'OrbitDropHelper');
-  run('xcrun', ['lipo', '-create', '-output', target, ...staged.map((s) => s.path)]);
-  sign(target);
-  verify(target, null);
+  const staging = stagingPath(target);
+  run('xcrun', ['lipo', '-create', '-output', staging, ...staged.map((s) => s.path)]);
+  sign(staging);
+  verify(staging, null);
+  commit(staging, target);
   staged.push({ arch: 'universal', path: target });
 }
 

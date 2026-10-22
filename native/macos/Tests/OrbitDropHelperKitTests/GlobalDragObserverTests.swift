@@ -21,8 +21,10 @@ final class FakeDragInputSource: DragInputSource {
   private(set) var monitor: (@MainActor (GlobalMouseEvent) -> Void)?
   private(set) var tick: (@MainActor () -> Void)?
   private(set) var changeCountReads = 0
+  private(set) var installs = 0
 
   func installMouseMonitor(_ handler: @escaping @MainActor (GlobalMouseEvent) -> Void) -> Bool {
+    installs += 1
     monitor = handler
     return true
   }
@@ -39,10 +41,11 @@ final class FakeDragInputSource: DragInputSource {
     monitor?(.down)
   }
 
-  func drag(to p: Point, startsOSDrag: Bool = false) {
+  /// `deliverEvent: false` models a dragged event that never reaches the global monitor.
+  func drag(to p: Point, startsOSDrag: Bool = false, deliverEvent: Bool = true) {
     pointer = p
     if startsOSDrag { changeCount += 1 }
-    monitor?(.dragged)
+    if deliverEvent { monitor?(.dragged) }
   }
 
   func releaseButton(deliverEvent: Bool = true) {
@@ -150,6 +153,29 @@ final class GlobalDragObserverTests: XCTestCase {
     source.runTick()
     XCTAssertEqual(events.filter { $0 == .escape }.count, 1, "edge-triggered")
     XCTAssertFalse(controller.isWheelShown)
+  }
+
+  /// Hardening: if another app's drag loop kept the dragged events from the global monitor, the
+  /// 60 Hz poll still reports the pointer — the session starts and the wheel opens at the current
+  /// pointer, not at the mouse-down point.
+  func testPointerIsPolledWhenTheMonitorMissesDraggedEvents() {
+    source.pressButton(at: Point(x: 690, y: 500))
+    source.drag(to: Point(x: 702, y: 500), startsOSDrag: true, deliverEvent: false)
+    source.runTick()
+    XCTAssertEqual(Array(events.suffix(2)), [.mouseDragged(Point(x: 702, y: 500)), .dragPasteboardChanged], "travel first, then the pasteboard check")
+    XCTAssertEqual(controller.phase, .potentialDrag)
+    source.drag(to: Point(x: 760, y: 530), deliverEvent: false)
+    source.heldModifiers = [.shift]
+    source.runTick()
+    XCTAssertEqual(controller.phase, .awaitingPayload)
+    XCTAssertEqual(controller.placement?.center, Point(x: 760, y: 530), "centered on the current pointer")
+    let count = events.count
+    source.runTick()
+    XCTAssertEqual(events.count, count, "an unchanged pointer is not reported again")
+    source.releaseButton(deliverEvent: false)
+    source.drag(to: Point(x: 800, y: 530), deliverEvent: false)
+    source.runTick()
+    XCTAssertEqual(events.last, .mouseUp(Point(x: 800, y: 530)), "no pointer report once the button is up")
   }
 
   func testChangeCountIsNotReadAfterTheDragIsConfirmed() {

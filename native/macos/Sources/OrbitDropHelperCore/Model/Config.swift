@@ -259,6 +259,9 @@ public enum UnsupportedReason: String, Sendable, Equatable, CaseIterable {
   case unknownType
   /// More than HelperProtocol.maxFiles items.
   case tooMany
+  /// An online-only cloud file (iCloud Drive / File Provider dataless file, `SF_DATALESS`):
+  /// its contents are not on this Mac, and reading them would start a download.
+  case cloudPlaceholder
 }
 
 /// `configure.strings`.
@@ -292,10 +295,19 @@ public struct HelperStrings: Sendable, Equatable {
     case .folder?: specific = unsupportedFolder
     case .nonFile?: specific = unsupportedNonFile
     case .virtual?: specific = unsupportedVirtual
-    case .unknownType?, .tooMany?, nil: specific = nil
+    case .unknownType?, .tooMany?, .cloudPlaceholder?, nil: specific = nil
     }
     if let specific, !specific.isEmpty { return specific }
     return unsupported
+  }
+
+  /// Built-in text for an online-only cloud file, as the Windows helper shows it, until
+  /// `configure` can carry its own string.
+  public static func cloudPlaceholderText(_ locale: HelperLocale) -> String {
+    switch locale {
+    case .ko: return "먼저 내려받으세요"
+    case .en: return "Download it first"
+    }
   }
 
   /// "{n} files" with every `{n}` replaced by the count.
@@ -352,6 +364,13 @@ public struct HelperConfig: Sendable, Equatable {
 
   public func menu(for key: MenuKey) -> HelperMenu? {
     menus.first { $0.key == key }
+  }
+
+  /// Center text for an unsupported drag: `strings`, plus the built-in, localized text for an
+  /// online-only cloud file (no configure field for it yet).
+  public func unsupportedText(_ reason: UnsupportedReason?) -> String {
+    if reason == .cloudPlaceholder { return HelperStrings.cloudPlaceholderText(locale) }
+    return strings.unsupportedText(reason)
   }
 
   /// The wheel mode whose combo exactly equals the held modifiers (convert wins if both are equal).

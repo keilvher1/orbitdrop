@@ -23,6 +23,39 @@ final class SessionIdGenerator: @unchecked Sendable {
   }
 }
 
+/// Ends the process when main is gone even if the AppKit thread is wedged (e.g. blocked in a
+/// pasteboard read from a hung drag source). The graceful exit runs on main — hide the wheel,
+/// report an open session, flush, `exit(0)` — and normally finishes well within a second; if it
+/// has not after `deadline`, `exitNow` (`_exit(0)`) ends the process and the window server
+/// removes its windows, so no wheel can be left on screen.
+final class ExitWatchdog: @unchecked Sendable {
+  let deadline: TimeInterval
+  private let exitNow: @Sendable () -> Void
+  private let lock = NSLock()
+  private var armed = false
+
+  init(deadline: TimeInterval, exitNow: @escaping @Sendable () -> Void) {
+    self.deadline = deadline
+    self.exitNow = exitNow
+  }
+
+  var isArmed: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return armed
+  }
+
+  /// Starts the countdown once; later calls do nothing. Safe from any thread.
+  func arm() {
+    lock.lock()
+    let first = !armed
+    armed = true
+    lock.unlock()
+    guard first else { return }
+    DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + deadline) { [exitNow] in exitNow() }
+  }
+}
+
 /// The running helper: stdio protocol ⇄ DragSessionController ⇄ AppKit (observer,
 /// wheel panel, drop target, timers, system notifications).
 @MainActor
@@ -30,6 +63,8 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
   public struct Options {
     /// File descriptor for NDJSON output (stdout in production, a pipe in tests).
     public var outputFD: Int32 = STDOUT_FILENO
+    /// File descriptor main writes to (stdin in production, a pipe in tests).
+    public var inputFD: Int32 = STDIN_FILENO
     /// Start the stdin reader (false in tests, which inject lines directly).
     public var readStdin = true
     /// Order the panel front when a wheel is shown (false in tests: nothing appears on screen).
@@ -45,6 +80,23 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
     public var reduceMotionProvider: @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     /// Input Monitoring status (TCC). Queried off the main thread and cached, never in an event callback.
     public var inputMonitoringProvider: @Sendable () -> Bool = { SystemInfo.inputMonitoringGranted }
+    /// The `permissions` reply (TCC reads), also computed off the main thread.
+    public var permissionsProvider: @Sendable () -> [PermissionItem] = { SystemInfo.permissions() }
+    /// OS "Reduce transparency", read when a wheel is shown: the disc is drawn opaque then.
+    public var reduceTransparencyProvider: @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency }
+    /// Distributed notifications that end a session like sleep does (the screen was locked).
+    public var screenLockNotifications = ["com.apple.screenIsLocked"]
+    /// Screen frames (AppKit coordinates) checked after a screen-parameter change.
+    public var screenFramesProvider: @MainActor () -> [NSRect] = { NSScreen.screens.map(\.frame) }
+    /// Off-main stat of the dragged paths (size, folder, online-only cloud file).
+    public var fileInfoResolver: @Sendable ([String], @escaping @Sendable (FileInfoResolver.Info) -> Void) -> Void = { paths, completion in
+      FileInfoResolver.resolve(paths: paths, completion: completion)
+    }
+    /// Ends the process when the graceful exit cannot run (main thread wedged); nil = `_exit(0)`
+    /// when `exitProcess` is true, no watchdog otherwise. Tests inject a recorder.
+    public var forceExit: (@Sendable () -> Void)?
+    /// How long the graceful exit may take before `forceExit` runs.
+    public var forceExitDeadline: TimeInterval = 3
     /// Posts a VoiceOver announcement (nil = NSAccessibility announcement when VoiceOver runs).
     public var announcer: (@MainActor (String) -> Void)?
     public init() {}
@@ -57,6 +109,8 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
   private let options: Options
   private var writer: StdoutWriter!
   private var reader: StdinReader?
+  /// Armed when main is gone (see `parentGone`); nil when nothing may end the process.
+  nonisolated let watchdog: ExitWatchdog?
   private var controller: DragSessionController
   private let observer: GlobalDragObserver
   private var panel: WheelPanel?
@@ -82,13 +136,22 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
     let ids = SessionIdGenerator()
     controller = DragSessionController(makeSessionId: { ids.next() })
     observer = GlobalDragObserver(source: options.inputSource ?? SystemDragInputSource())
-    super.init()
-    writer = StdoutWriter(fd: options.outputFD) { [weak self] in
-      DispatchQueue.main.async { MainActor.assumeIsolated { self?.terminate(reason: "stdout closed") } }
+    var forceExit = options.forceExit
+    if forceExit == nil && options.exitProcess { forceExit = { HelperApp.exitImmediately() } }
+    if let forceExit {
+      watchdog = ExitWatchdog(deadline: options.forceExitDeadline, exitNow: forceExit)
+    } else {
+      watchdog = nil
     }
+    super.init()
+    writer = StdoutWriter(fd: options.outputFD) { [weak self] in self?.parentGone(reason: "stdout closed") }
     observer.onEvent = { [weak self] event in self?.handleObserved(event) }
     observer.sessionNeedsPolling = { [weak self] in self?.controller.needsPolling ?? false }
     observer.wheelVisible = { [weak self] in self?.controller.isWheelShown ?? false }
+  }
+
+  deinit {
+    DistributedNotificationCenter.default().removeObserver(self)
   }
 
   // MARK: Lifecycle
@@ -105,9 +168,10 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
     refreshPermissionCache()
     if options.readStdin {
       let reader = StdinReader(
+        fd: options.inputFD,
         onLine: { [weak self] line in DispatchQueue.main.async { MainActor.assumeIsolated { self?.handleLine(line) } } },
         onOversized: { [weak self] bytes in DispatchQueue.main.async { MainActor.assumeIsolated { self?.log(.warn, "ignored line longer than \(HelperProtocol.maxLineBytes) bytes (\(bytes) bytes)") } } },
-        onEOF: { [weak self] in DispatchQueue.main.async { MainActor.assumeIsolated { self?.terminate(reason: "stdin closed") } } }
+        onEOF: { [weak self] in self?.parentGone(reason: "stdin closed") }
       )
       self.reader = reader
       reader.start()
@@ -121,10 +185,23 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
     if SystemInfo.isTranslated { log(.info, "x64 helper running under Rosetta 2") }
   }
 
+  /// `_exit(0)`: no atexit handlers, no flushing — the watchdog's last resort.
+  nonisolated static func exitImmediately() {
+    _exit(0)
+  }
+
+  /// Main is gone: stdin EOF, broken stdout, SIGTERM/SIGINT/SIGHUP. Runs on any thread. The
+  /// graceful exit is queued on main; the watchdog ends the process if main cannot run it.
+  nonisolated func parentGone(reason: String) {
+    watchdog?.arm()
+    DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.terminate(reason: reason) } }
+  }
+
   /// Hide everything, tell main about an open session, flush stdout and exit.
   public func terminate(reason: String) {
     guard !terminating else { return }
     terminating = true
+    watchdog?.arm()  // a stop message lands here directly; the flush below waits at most 1.5 s
     debug("terminating: \(reason)")
     apply(controller.handle(.parentEOF))
     observer.stop()
@@ -162,9 +239,18 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
     case .shutdown:
       terminate(reason: "stop requested")
     case .queryPermissions:
-      let items = SystemInfo.permissions()
-      inputMonitoringGranted = items.first { $0.name == .inputMonitoring }?.granted ?? false
-      writer.send(.permissions(items))
+      // TCC reads are IPC to tccd: never on the AppKit thread, which serves the drag callbacks.
+      let provider = options.permissionsProvider
+      DispatchQueue.global(qos: .utility).async { [weak self] in
+        let items = provider()
+        DispatchQueue.main.async {
+          MainActor.assumeIsolated {
+            guard let self, !self.terminating else { return }
+            self.inputMonitoringGranted = items.first { $0.name == .inputMonitoring }?.granted ?? false
+            self.writer.send(.permissions(items))
+          }
+        }
+      }
     }
   }
 
@@ -282,9 +368,13 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
       timers[timer]?.invalidate()
       timers[timer] = nil
     case .resolveFileInfo(let sessionId, let paths):
-      FileInfoResolver.resolve(paths: paths) { [weak self] total, directory in
+      options.fileInfoResolver(paths) { [weak self] info in
         DispatchQueue.main.async {
-          MainActor.assumeIsolated { self?.apply(self?.controller.handle(.fileInfo(sessionId: sessionId, totalBytes: total, containsDirectory: directory)) ?? SessionOutput()) }
+          MainActor.assumeIsolated {
+            guard let self else { return }
+            let event = SessionEvent.fileInfo(sessionId: sessionId, totalBytes: info.totalBytes, containsDirectory: info.containsDirectory, containsCloudPlaceholder: info.containsCloudPlaceholder)
+            self.apply(self.controller.handle(event))
+          }
         }
       }
     }
@@ -302,6 +392,9 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
     RunLoop.main.add(timer, forMode: .common)
     timers[kind] = timer
   }
+
+  /// Test hook: session timers still scheduled.
+  var pendingTimerCountForTests: Int { timers.count }
 
   /// Test hook: fire a pending session timer now.
   func fireTimerForTests(_ kind: SessionTimer) -> Bool {
@@ -348,6 +441,10 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
 
   private func show(_ presentation: WheelPresentation) {
     let (panel, view) = ensurePanel()
+    var presentation = presentation
+    // Reduce Transparency: the same palette on an opaque disc (spec §8). Everything else is drawn
+    // over the disc, so the whole wheel is opaque; pixels outside the disc stay transparent.
+    if options.reduceTransparencyProvider() { presentation.tokens.wheelDisc.a = 1 }
     visibilityGeneration += 1
     appearTimer?.invalidate()
     appearTimer = nil
@@ -490,6 +587,15 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
       MainActor.assumeIsolated { self?.screensChanged() }
     }
     notificationTokens.append((NotificationCenter.default, token))
+    // Screen lock is only announced as a distributed notification. AppKit suspends distributed
+    // delivery for inactive apps and this accessory helper is never active: deliver immediately.
+    for name in options.screenLockNotifications {
+      DistributedNotificationCenter.default().addObserver(self, selector: #selector(screenLocked(_:)), name: Notification.Name(name), object: nil, suspensionBehavior: .deliverImmediately)
+    }
+  }
+
+  @objc nonisolated private func screenLocked(_ notification: Notification) {
+    DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.handleObserved(.sleep) } }
   }
 
   /// The OS Reduce Motion setting changed. If it is on now, follow it until main sends the next
@@ -502,7 +608,7 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
     controller.displays = SystemInfo.displays()
     guard controller.isWheelShown, let panel else { return }
     let center = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
-    if !NSScreen.screens.contains(where: { $0.frame.contains(center) }) {
+    if !options.screenFramesProvider().contains(where: { $0.contains(center) }) {
       // The display under the wheel went away: never leave a stranded window.
       apply(controller.handle(.invalidate(.error)))
     }
@@ -512,8 +618,9 @@ public final class HelperApp: NSObject, NSApplicationDelegate, WheelDropHost {
     guard options.exitProcess else { return }
     for sig in [SIGTERM, SIGINT, SIGHUP] {
       signal(sig, SIG_IGN)
-      let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
-      source.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.terminate(reason: "signal \(sig)") } }
+      // Not on the main queue: a wedged AppKit thread must not keep a SIGTERM from ending us.
+      let source = DispatchSource.makeSignalSource(signal: sig, queue: .global(qos: .userInitiated))
+      source.setEventHandler { [weak self] in self?.parentGone(reason: "signal \(sig)") }
       source.resume()
       signalSources.append(source)
     }

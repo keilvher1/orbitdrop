@@ -80,12 +80,25 @@ public enum NDJSON {
     if bytes.count > HelperProtocol.maxLineBytes { return .invalid(.lineTooLong(bytes: bytes.count)) }
     if bytes.allSatisfy({ $0 == 0x20 || $0 == 0x09 || $0 == 0x0D || $0 == 0x0A }) { return .blank }
     guard String(bytes: bytes, encoding: .utf8) != nil else { return .invalid(.invalidUTF8) }
+    // zod's verdict starts with JSON.parse, which refuses a byte-order mark and trailing
+    // commas ({"a":1,} / [1,]); Foundation accepts both, so they are refused here.
+    if bytes.starts(with: [0xEF, 0xBB, 0xBF]) { return .invalid(.invalidJSON) }
+    let scan = JSONKeyScanner.scan(bytes)
+    if scan.trailingComma { return .invalid(.invalidJSON) }
     // JSON.parse (main) keeps the last of duplicated keys, Foundation keeps the first.
     // JSON.stringify never produces duplicates, so such a line is malformed: reject it
     // instead of guessing which value main meant.
-    if JSONKeyScanner.hasDuplicateKeys(bytes) { return .invalid(.duplicateKey) }
+    if scan.duplicateKey { return .invalid(.duplicateKey) }
+    // A lone UTF-16 surrogate escape ("\ud800") is a valid JS string — JSON.stringify emits it
+    // for a split surrogate pair — so zod accepts the line, but Foundation refuses the whole
+    // document. A Swift String cannot hold a lone surrogate: read it as U+FFFD, which zod's
+    // length limits count the same way (one code point). Same length, so no offset shifts.
+    var input = bytes
+    for offset in scan.loneSurrogateEscapes {
+      input.replaceSubrange(offset..<offset + 6, with: JSONKeyScanner.replacementEscape)
+    }
     do {
-      let envelope = try JSONDecoder().decode(MainToHelperEnvelope.self, from: Data(bytes))
+      let envelope = try JSONDecoder().decode(MainToHelperEnvelope.self, from: Data(input))
       return .message(envelope.message)
     } catch let error as ProtocolError {
       return .invalid(error)
@@ -117,16 +130,38 @@ public enum NDJSON {
   }
 }
 
-/// Finds objects that repeat a member name (after unescaping, so "a" and "\u0061"
-/// collide). Only meaningful for valid JSON; invalid JSON is rejected by the decoder anyway.
+/// One pass over a line before Foundation decodes it, for the cases where Foundation and
+/// JSON.parse disagree: repeated member names (after unescaping, so "a" and "\u0061"
+/// collide), trailing commas, and escapes of lone UTF-16 surrogates. Only meaningful for
+/// valid JSON; anything else is rejected by the decoder anyway.
 enum JSONKeyScanner {
-  static func hasDuplicateKeys(_ bytes: [UInt8]) -> Bool {
+  struct Report: Equatable {
+    /// An object repeats a member name.
+    var duplicateKey = false
+    /// A "," directly (whitespace aside) before "}" or "]".
+    var trailingComma = false
+    /// Byte offsets of the backslashes of "\uXXXX" escapes that encode a lone surrogate.
+    var loneSurrogateEscapes: [Int] = []
+  }
+
+  /// What a lone surrogate escape is read as (6 bytes, like the escape it replaces).
+  static let replacementEscape = Array(#"\uFFFD"#.utf8)
+
+  static func hasDuplicateKeys(_ bytes: [UInt8]) -> Bool { scan(bytes).duplicateKey }
+
+  static func scan(_ bytes: [UInt8]) -> Report {
+    var report = Report()
     var frames: [(isObject: Bool, keys: Set<String>, expectKey: Bool)] = []
+    // Last byte outside strings that is not JSON whitespace (a string counts as its quote).
+    var lastToken: UInt8 = 0
     var i = 0
     let n = bytes.count
     while i < n {
       let b = bytes[i]
       switch b {
+      case 0x20, 0x09, 0x0A, 0x0D:
+        i += 1
+        continue
       case UInt8(ascii: "{"):
         frames.append((true, [], true))
         i += 1
@@ -134,15 +169,19 @@ enum JSONKeyScanner {
         frames.append((false, [], false))
         i += 1
       case UInt8(ascii: "}"), UInt8(ascii: "]"):
+        if lastToken == UInt8(ascii: ",") {
+          report.trailingComma = true
+          return report
+        }
         if !frames.isEmpty { frames.removeLast() }
         i += 1
       case UInt8(ascii: ","):
         if let last = frames.indices.last, frames[last].isObject { frames[last].expectKey = true }
         i += 1
       case UInt8(ascii: "\""):
-        guard let (string, next) = readString(bytes, from: i) else { return false }
+        guard let (string, next) = readString(bytes, from: i, loneSurrogates: &report.loneSurrogateEscapes) else { return report }
         if let last = frames.indices.last, frames[last].isObject, frames[last].expectKey {
-          if frames[last].keys.contains(string) { return true }
+          if frames[last].keys.contains(string) { report.duplicateKey = true }
           frames[last].keys.insert(string)
           frames[last].expectKey = false
         }
@@ -150,12 +189,14 @@ enum JSONKeyScanner {
       default:
         i += 1
       }
+      lastToken = b
     }
-    return false
+    return report
   }
 
-  /// Decodes the JSON string starting at `start` (a quote); returns the value and the index after the closing quote.
-  private static func readString(_ bytes: [UInt8], from start: Int) -> (String, Int)? {
+  /// Decodes the JSON string starting at `start` (a quote); returns the value and the index after
+  /// the closing quote, and appends the offsets of escapes that encode a lone surrogate.
+  private static func readString(_ bytes: [UInt8], from start: Int, loneSurrogates: inout [Int]) -> (String, Int)? {
     var scalars = String.UnicodeScalarView()
     var raw: [UInt8] = []
     var i = start + 1
@@ -193,12 +234,15 @@ enum JSONKeyScanner {
         switch e {
         case UInt8(ascii: "u"):
           guard var code = hex4(i + 2) else { return nil }
+          let escapeStart = i
           i += 6
           if (0xD800...0xDBFF).contains(code), i + 1 < bytes.count, bytes[i] == UInt8(ascii: "\\"), bytes[i + 1] == UInt8(ascii: "u"),
             let low = hex4(i + 2), (0xDC00...0xDFFF).contains(low)
           {
             code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00)
             i += 6
+          } else if (0xD800...0xDFFF).contains(code) {
+            loneSurrogates.append(escapeStart)
           }
           scalars.append(Unicode.Scalar(code) ?? "\u{FFFD}")
           continue

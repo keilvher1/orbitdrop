@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -154,6 +155,33 @@ final class HelperProcessTests: XCTestCase {
     XCTAssertEqual(helper.waitExit(), 0, "parent gone → clean exit")
   }
 
+  /// Main closed its end of stdout (crashed reader): the next write hits EPIPE. SIGPIPE is ignored,
+  /// so the helper exits cleanly (status 0) instead of being killed by the signal.
+  func testClosedStdoutEndsTheHelperCleanly() throws {
+    let helper = try Helper()
+    XCTAssertNotNil(helper.waitFor { $0["type"] as? String == "ready" })
+    helper.send(configure(enabled: true))
+    helper.stdout.fileHandleForReading.readabilityHandler = nil
+    try helper.stdout.fileHandleForReading.close()
+    for nonce in 1...3 { helper.send(["v": 1, "type": "ping", "nonce": nonce]) }  // replies hit EPIPE
+    XCTAssertEqual(helper.waitExit(), 0)
+    XCTAssertEqual(helper.process.terminationReason, .exit, "not killed by SIGPIPE")
+  }
+
+  /// SIGTERM (main's kill on quit/restart) is handled off the AppKit thread and exits 0.
+  func testSigtermExitsCleanly() throws {
+    let helper = try Helper()
+    XCTAssertNotNil(helper.waitFor { $0["type"] as? String == "ready" })
+    helper.send(configure(enabled: true))
+    helper.send(["v": 1, "type": "ping", "nonce": 9])
+    XCTAssertNotNil(helper.waitFor { $0["type"] as? String == "pong" })
+    let sent = Date()
+    helper.process.terminate()
+    XCTAssertEqual(helper.waitExit(), 0)
+    XCTAssertEqual(helper.process.terminationReason, .exit)
+    XCTAssertLessThan(Date().timeIntervalSince(sent), 2)
+  }
+
   func testEnabledObservationNeedsNoPrompt() throws {
     // Installs the passive global mouse monitor for a moment. Nothing is shown unless the user
     // happens to perform a real file drag with Shift during this second.
@@ -163,6 +191,13 @@ final class HelperProcessTests: XCTestCase {
     helper.send(["v": 1, "type": "ping", "nonce": 5])
     XCTAssertNotNil(helper.waitFor { $0["type"] as? String == "pong" })
     XCTAssertFalse(helper.messages.contains { $0["type"] as? String == "error" }, "global monitor installed")
+    // Never a focus thief: an accessory app (no Dock icon, no menu bar) that is not frontmost.
+    let pid = helper.process.processIdentifier
+    let running = try XCTUnwrap(NSRunningApplication(processIdentifier: pid))
+    XCTAssertEqual(running.activationPolicy, .accessory)
+    XCTAssertFalse(running.isActive)
+    XCTAssertNotEqual(NSWorkspace.shared.frontmostApplication?.processIdentifier, pid)
+    XCTAssertEqual(helper.onScreenWindowCount(), 0, "the panel exists but stays ordered out")
     try helper.stdin.fileHandleForWriting.close()
     XCTAssertEqual(helper.waitExit(), 0)
   }

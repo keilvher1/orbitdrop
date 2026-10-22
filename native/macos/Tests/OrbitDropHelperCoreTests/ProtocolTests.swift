@@ -5,16 +5,27 @@ import XCTest
 final class ProtocolTests: XCTestCase {
   // MARK: zod parity
 
+  struct Corpus: Decodable {
+    struct Case: Decodable {
+      let name: String
+      let line: String
+      let valid: Bool
+    }
+    let cases: [Case]
+  }
+
   /// Every line in protocol-cases.json carries zod's verdict; the Swift decoder must agree.
   func testDecoderAgreesWithZodOnEveryCase() throws {
-    let root = try TestPaths.json(TestPaths.fixture("protocol-cases.json")) as! [String: Any]
-    let cases = root["cases"] as! [[String: Any]]
-    XCTAssertGreaterThan(cases.count, 100)
+    // JSONDecoder, not JSONSerialization: the latter drops a leading U+FEFF from string values,
+    // which would silently turn the byte-order-mark case into a plain line.
+    let cases = try JSONDecoder().decode(Corpus.self, from: Data(contentsOf: TestPaths.fixture("protocol-cases.json"))).cases
+    XCTAssertGreaterThan(cases.count, 150)
+    XCTAssertTrue(cases.contains { $0.name == "byte order mark" && $0.line.utf8.starts(with: [0xEF, 0xBB, 0xBF]) }, "the BOM survived reading the corpus")
     var disagreements: [String] = []
     for c in cases {
-      let name = c["name"] as! String
-      let line = c["line"] as! String
-      let zodValid = c["valid"] as! Bool
+      let name = c.name
+      let line = c.line
+      let zodValid = c.valid
       let parsed = NDJSON.parseMainLine(line)
       let swiftValid: Bool
       switch parsed {
@@ -26,6 +37,12 @@ final class ProtocolTests: XCTestCase {
         // Intentional, safer divergence: JSON.parse keeps the last duplicate, Foundation the first;
         // JSON.stringify never emits duplicates, so the helper rejects such lines outright.
         XCTAssertEqual(parsed, .invalid(.duplicateKey), name)
+        continue
+      }
+      if name.hasPrefix("number underflow") {
+        // Documented divergence: JSON.parse reads 1e-400 as 0, Foundation refuses a literal that
+        // underflows. JSON.stringify never writes one (it writes 0), so main cannot send it.
+        XCTAssertEqual(parsed, .invalid(.wrongType("nonce")), name)
         continue
       }
       if swiftValid != zodValid { disagreements.append("\(name): zod \(zodValid), swift \(parsed)") }
@@ -89,6 +106,41 @@ final class ProtocolTests: XCTestCase {
 
     let errors: [ProtocolError] = [.unknownField("geometry.extra"), .wrongType("menus[0].convert[1].label")]
     for e in errors { XCTAssertFalse(e.description.contains("/"), "descriptions never contain paths") }
+  }
+
+  /// Hardening: Foundation accepts trailing commas and a byte-order mark (JSON.parse does not)
+  /// and refuses lone surrogate escapes (JSON.parse keeps them; zod counts each as one code point).
+  func testJSONParseParityForCommasBOMAndLoneSurrogates() throws {
+    XCTAssertEqual(NDJSON.parseMainLine(#"{"v":1,"type":"ping","nonce":1,}"#), .invalid(.invalidJSON))
+    XCTAssertEqual(NDJSON.parseMainLine("{\"v\":1,\"type\":\"ping\",\"nonce\":1 ,\t\r }"), .invalid(.invalidJSON))
+    XCTAssertEqual(NDJSON.parseMainLine(#"{"v":1,"type":"ping","nonce":1 }"#), .message(.ping(nonce: 1)), "whitespace alone is fine")
+    XCTAssertEqual(NDJSON.parseMainLine([0xEF, 0xBB, 0xBF] + Array(#"{"v":1,"type":"shutdown"}"#.utf8)), .invalid(.invalidJSON))
+    XCTAssertEqual(NDJSON.parseMainLine(#"{"v":1,"type":"cancelSession","sessionId":"a,}b,]"}"#), .invalid(.invalidValue("sessionId")), "commas inside strings are not syntax")
+
+    let esc = { (hex: String) in "\\" + "u" + hex }
+    let fixture = try String(contentsOf: TestPaths.fixture("configure-en.json"), encoding: .utf8)
+    let dropHint = try NSRegularExpression(pattern: #""dropHint":"[^"]*""#)
+    func line(dropHint raw: String) -> String {
+      dropHint.stringByReplacingMatches(in: fixture, range: NSRange(fixture.startIndex..., in: fixture), withTemplate: NSRegularExpression.escapedTemplate(for: "\"dropHint\":\"\(raw)\""))
+    }
+    func scalars(dropHint raw: String) -> [UInt32]? {
+      guard case .message(.configure(let config)) = NDJSON.parseMainLine(line(dropHint: raw)) else { return nil }
+      return config.strings.dropHint.unicodeScalars.map(\.value)
+    }
+    XCTAssertEqual(scalars(dropHint: "a" + esc("d800") + "b"), [0x61, 0xFFFD, 0x62], "lone high surrogate")
+    XCTAssertEqual(scalars(dropHint: esc("dc00") + esc("d800")), [0xFFFD, 0xFFFD], "reversed halves")
+    XCTAssertEqual(scalars(dropHint: esc("dbff") + "A"), [0xFFFD, 0x41])
+    XCTAssertEqual(scalars(dropHint: "x" + esc("d83d")), [0x78, 0xFFFD], "dangling at the end")
+    XCTAssertEqual(scalars(dropHint: esc("d83d") + esc("de00")), [0x1F600], "a real pair stays one character")
+    XCTAssertEqual(scalars(dropHint: esc("0041")), [0x41])
+    // zod counts a lone surrogate as one code point: 60 fit dropHint's limit, 61 do not.
+    XCTAssertEqual(scalars(dropHint: String(repeating: esc("d800"), count: 60))?.count, 60)
+    XCTAssertEqual(NDJSON.parseMainLine(line(dropHint: String(repeating: esc("dfff"), count: 61))), .invalid(.outOfRange("strings.dropHint")))
+
+    let scan = JSONKeyScanner.scan(Array(("{\"a\":\"x" + esc("d800") + "\",\"b\":\"" + esc("d83d") + esc("de00") + esc("dc01") + "\"}").utf8))
+    XCTAssertEqual(scan.loneSurrogateEscapes, [7, 32], "offsets of the backslashes of the lone escapes only")
+    XCTAssertFalse(scan.duplicateKey)
+    XCTAssertFalse(scan.trailingComma)
   }
 
   func testUnknownActionIdIsRejectedWithItsPath() throws {

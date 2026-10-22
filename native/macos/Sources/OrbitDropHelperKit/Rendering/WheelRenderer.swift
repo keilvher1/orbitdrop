@@ -217,9 +217,13 @@ public enum WheelRenderer {
     ctx.fillPath()
     ctx.restoreGState()
     if hc {
-      ctx.addPath(path)
+      // Stroked inside the pill: a stroke centred on its edge would put a 0.75 pt line of
+      // opaque pixels into the transparent gap next to the disc — outside the hit shape.
+      let lineWidth = 1.5
+      let inner = rect.insetBy(dx: lineWidth / 2, dy: lineWidth / 2)
+      ctx.addPath(CGPath(roundedRect: inner, cornerWidth: inner.height / 2, cornerHeight: inner.height / 2, transform: nil))
       ctx.setStrokeColor(cg(t.sectorText))
-      ctx.setLineWidth(1.5)
+      ctx.setLineWidth(lineWidth)
       ctx.strokePath()
     }
     drawLine(ctx, line, centerX: Double(rect.midX), top: Double(rect.midY) - metrics.height / 2, metrics: metrics)

@@ -131,6 +131,8 @@ public final class StdinReader: @unchecked Sendable {
 /// Free-form diagnostics on stderr (main logs them at debug level). Never paths or contents.
 public enum StderrLog {
   public static func write(_ message: String) {
-    FileHandle.standardError.write(Data("[OrbitDropHelper] \(message)\n".utf8))
+    // The throwing API: `write(_: Data)` raises an Objective-C exception (a crash) on EPIPE
+    // once main has closed its end of the pipe.
+    try? FileHandle.standardError.write(contentsOf: Data("[OrbitDropHelper] \(message)\n".utf8))
   }
 }

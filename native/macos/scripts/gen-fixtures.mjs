@@ -498,6 +498,38 @@ for (const locale of ['ko', 'en']) {
   add('duplicate key, last wins in JSON.parse', '{"v":1,"type":"ping","nonce":-1,"nonce":5}');
   add('unknown nested array field', '{"v":1,"type":"queryPermissions","x":' + '['.repeat(50) + ']'.repeat(50) + '}');
   add('unicode escape in id', '{"v":1,"type":"cancelSession","sessionId":"\\u0061bc"}');
+  // JSON-level parity (hardening pass): lines JSON.parse refuses that Foundation accepts (trailing
+  // commas, a byte-order mark), and lone UTF-16 surrogate escapes, which JSON.stringify emits for a
+  // split surrogate pair and zod accepts (counted as one code point each).
+  const ch = (...codes) => String.fromCharCode(...codes);
+  const backslash = ch(92);
+  const swap = (line, from, to) => {
+    if (!line.includes(from)) throw new Error(`gen-fixtures: '${from}' not found`);
+    return line.replace(from, to);
+  };
+  const baseLine = JSON.stringify(base);
+  add('trailing comma in object', '{"v":1,"type":"ping","nonce":1,}');
+  add('trailing comma before whitespace', '{"v":1,"type":"ping","nonce":1 , \t}');
+  add('whitespace before closing brace', '{"v":1,"type":"ping","nonce":1 \t}');
+  add('trailing comma in array', swap(baseLine, '"modifiers":{"convert":["shift"]', '"modifiers":{"convert":["shift",]'));
+  add('trailing comma in nested object', swap(baseLine, '"armDistance":6}', '"armDistance":6,}'));
+  add('empty array with whitespace', swap(baseLine, '"tools":[]', '"tools":[ ]'));
+  add('byte order mark', ch(0xfeff) + '{"v":1,"type":"shutdown"}');
+  add('escaped member name', '{"' + backslash + 'u0076":1,"type":"ping","nonce":1}');
+  add('raw tab inside a string', swap(baseLine, '"dropHint":"', '"dropHint":"' + ch(9)));
+  mutate('configure: NUL escape inside a string', (m) => (m.strings.dropHint = ch(0) + 'x'));
+  mutate('configure: lone high surrogate in dropHint', (m) => (m.strings.dropHint = 'a' + ch(0xd800) + 'b'));
+  mutate('configure: lone low surrogate in sector label', (m) => (m.menus[0].convert[0].label = ch(0xdc00) + 'X'));
+  mutate('configure: reversed surrogates in sector reason', (m) => (m.menus[0].convert[0].reason = ch(0xdc00, 0xd800)));
+  mutate('configure: high surrogate before a BMP escape', (m) => (m.strings.unsupported = ch(0xdbff, 0x41)));
+  mutate('configure: sector label 32 lone surrogates', (m) => (m.menus[0].convert[0].label = ch(0xd800).repeat(32)));
+  mutate('configure: sector label 33 lone surrogates', (m) => (m.menus[0].convert[0].label = ch(0xd800).repeat(33)));
+  add('configure: escaped surrogate pair in label', swap(baseLine, '"label":"DOCX"', '"label":"' + backslash + 'ud83d' + backslash + 'ude00DOCX"'));
+  add('ping: negative zero nonce', '{"v":1,"type":"ping","nonce":-0}');
+  add('ping: overflowing exponent', '{"v":1,"type":"ping","nonce":1e400}');
+  // JSON.parse turns 1e-400 into 0; Foundation refuses literals that underflow. JSON.stringify
+  // never emits such a literal (it writes 0), so the Swift test pins this one documented divergence.
+  add('number underflow: nonce 1e-400', '{"v":1,"type":"ping","nonce":1e-400}');
   // (Oversized lines are built by the Swift tests themselves to keep this file small.)
   write('protocol-cases.json', { $comment: 'Lines main could send; valid = MainToHelperSchema.safeParse(JSON.parse(line)).success (and within HELPER_MAX_LINE_BYTES).', cases });
 }

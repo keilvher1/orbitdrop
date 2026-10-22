@@ -17,7 +17,7 @@
 
 public struct DragSessionController {
   /// Displays in global DIP (NSScreen.screens converted). The glue refreshes this on
-  /// every mouse-down and screen change; the wheel is placed with the current value.
+  /// `configure` and on screen-parameter changes; the wheel is placed with the current value.
   public var displays: [Display]
   /// Session ids must be unique across helper processes (main's tracker relies on it).
   public var makeSessionId: () -> String
@@ -241,10 +241,12 @@ public struct DragSessionController {
     case .cancelRequest(let id):
       if session?.id == id { end(.parentRequest, &out) }
 
-    case .fileInfo(let id, let totalBytes, let containsDirectory):
+    case .fileInfo(let id, let totalBytes, let containsDirectory, let containsCloudPlaceholder):
       guard var s = session, s.id == id, case .files = s.payload else { break }
-      if containsDirectory {
-        s.payload = .unsupported(fileCount: s.payload?.fileCount ?? 0, reason: .folder)
+      if containsDirectory || containsCloudPlaceholder {
+        // Nothing on this Mac to convert: a folder after all, or an online-only cloud file (the
+        // Windows helper refuses those the same way). A folder is the more basic reason.
+        s.payload = .unsupported(fileCount: s.payload?.fileCount ?? 0, reason: containsDirectory ? .folder : .cloudPlaceholder)
         s.menuCache = [:]
         session = s
         applyContentForMode(&out)
@@ -488,9 +490,10 @@ public struct DragSessionController {
     case .neutral:
       return CapsuleContent(text: s.config.strings.dropHint, style: .hint)
     case .unsupported:
-      // Folder / non-file data / virtual item get their specific text when main provided one;
-      // a supported payload with nothing to offer in this mode (PDF in tools) uses the generic text.
-      return CapsuleContent(text: s.config.strings.unsupportedText(s.payload?.unsupportedReason), style: .reject)
+      // Folder / non-file data / virtual item get their specific text when main provided one, an
+      // online-only cloud file the built-in one; a supported payload with nothing to offer in this
+      // mode (PDF in tools) uses the generic text.
+      return CapsuleContent(text: s.config.unsupportedText(s.payload?.unsupportedReason), style: .reject)
     case .sectors:
       guard case .files(let key, let paths)? = s.payload else { return CapsuleContent(text: s.config.strings.dropHint, style: .hint) }
       if paths.count > 1 { return CapsuleContent(text: s.config.strings.fileCountText(paths.count), style: .info) }

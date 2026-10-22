@@ -73,8 +73,9 @@ final class DropTargetGlueTests: XCTestCase {
   var announcements: [String] = []
   var osReduceMotion = false
   nonisolated(unsafe) static var permissionQueriedOnMain: Bool?
+  nonisolated(unsafe) static var permissionsReplyBuiltOnMain: Bool?
 
-  func makeApp(observeWith source: DragInputSource? = nil) -> HelperApp {
+  func makeApp(observeWith source: DragInputSource? = nil, customize: (inout HelperApp.Options) -> Void = { _ in }) -> HelperApp {
     output = OutputPipe()
     var options = HelperApp.Options()
     options.outputFD = output.writeFD
@@ -89,6 +90,12 @@ final class DropTargetGlueTests: XCTestCase {
       DropTargetGlueTests.permissionQueriedOnMain = Thread.isMainThread
       return true
     }
+    options.permissionsProvider = {
+      DropTargetGlueTests.permissionsReplyBuiltOnMain = Thread.isMainThread
+      return [PermissionItem(name: .accessibility, required: false, granted: false), PermissionItem(name: .inputMonitoring, required: false, granted: true)]
+    }
+    options.reduceTransparencyProvider = { false }
+    customize(&options)
     let app = HelperApp(options: options)
     app.start()
     return app
@@ -261,6 +268,14 @@ final class DropTargetGlueTests: XCTestCase {
     XCTAssertFalse(panel.isOpaque)
     XCTAssertEqual(panel.backgroundColor, .clear)
     XCTAssertTrue(panel.hasShadow, "window-server shadow: never hit-testable")
+    // Hardening: shown on the active Space and above full-screen apps, hidden by Mission Control,
+    // never in the window cycle, never hidden when another app is active.
+    XCTAssertTrue(panel.collectionBehavior.isSuperset(of: [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]))
+    XCTAssertFalse(panel.collectionBehavior.contains(.moveToActiveSpace), "exclusive with canJoinAllSpaces")
+    XCTAssertGreaterThanOrEqual(panel.level.rawValue, NSWindow.Level.popUpMenu.rawValue)
+    XCTAssertFalse(panel.hidesOnDeactivate)
+    XCTAssertTrue(panel.isFloatingPanel)
+    XCTAssertFalse(panel.isVisible)
     var off = DefaultConfig.config(locale: .en)
     off.enabled = false
     app.handle(.configure(off))
@@ -357,14 +372,22 @@ final class DropTargetGlueTests: XCTestCase {
     XCTAssertTrue(app.observerForTests.escapePollingAllowed)
   }
 
-  func testPingAndPermissions() {
+  func testPingAndPermissions() throws {
+    DropTargetGlueTests.permissionsReplyBuiltOnMain = nil
     app.handle(.ping(nonce: 99))
     app.handle(.queryPermissions)
-    let all = messages()
-    XCTAssertEqual(all.first?["type"] as? String, "ready")
+    var all = messages()
+    for _ in 0..<100 where !all.contains(where: { $0["type"] as? String == "permissions" }) {
+      spin(0.02)
+      all = messages()
+    }
+    XCTAssertEqual(all.map { $0["type"] as? String }, ["ready", "pong", "permissions"])
     XCTAssertEqual(all[1]["nonce"] as? Int, 99)
-    let items = all[2]["items"] as! [[String: Any]]
+    let items = try XCTUnwrap(all.last?["items"] as? [[String: Any]])
     XCTAssertEqual(items.compactMap { $0["required"] as? Bool }, [false, false])
+    // Hardening: the TCC reads behind the reply never run on the AppKit thread (drag callbacks).
+    XCTAssertEqual(DropTargetGlueTests.permissionsReplyBuiltOnMain, false)
+    XCTAssertTrue(app.cachedInputMonitoringGranted, "the reply refreshes the cached Escape permission")
   }
 
   // MARK: The real observer, end to end
