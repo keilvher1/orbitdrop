@@ -3,11 +3,13 @@
 //   OrbitDropHelper.exe --render-snapshot out.png [--menu pdf|image/jpeg|images|mixed|…]
 //       [--mode convert|tools] [--highlight N] [--state neutral|active|unsupported|folder|cloud|virtual|nonfile]
 //       [--files N] [--scale 1.5 | --dpi 144] [--theme light|dark|high-contrast]
-//       [--locale ko|en] [--disable N[,M…]] [--config configure.json]
+//       [--locale ko|en] [--disable N[,M…]] [--config configure.json] [--near-bottom]
 //
 // The wheel state is produced by the real session controller (scripted press,
 // drag, modifier, DragEnter and DragOver), so snapshots show exactly what a
-// drag would show; rendering is the same Direct2D path as the live window.
+// drag would show; rendering is the same Direct2D path as the live window,
+// the window's caption strip included (--near-bottom opens the wheel at the
+// bottom edge of the virtual monitor, so the caption goes above the disc).
 // Prints one JSON line with the result to stdout. Exit code 0 on success.
 #include "win/snapshot.h"
 
@@ -113,6 +115,15 @@ std::string sampleFile(const proto::Configure& cfg, proto::MenuKey key, size_t i
     return "C:\\OrbitDrop snapshot\\file" + std::to_string(index + 1) + ".bin";
 }
 
+const char* placementName(coords::CaptionPlacement p) {
+    switch (p) {
+        case coords::CaptionPlacement::Below: return "below";
+        case coords::CaptionPlacement::Above: return "above";
+        case coords::CaptionPlacement::None: return "none";
+    }
+    return "none";
+}
+
 }  // namespace
 
 int runSnapshot(const std::vector<std::wstring>& args) {
@@ -127,6 +138,7 @@ int runSnapshot(const std::vector<std::wstring>& args) {
     int highlight = -1;
     long files = 1;
     double scale = 1.0;
+    bool nearBottom = false;
     for (size_t i = 0; i < args.size(); ++i) {
         const std::string a = wideToUtf8(args[i]);
         const auto next = [&](std::string& dst) {
@@ -141,6 +153,7 @@ int runSnapshot(const std::vector<std::wstring>& args) {
         else if (a == "--locale") next(locale);
         else if (a == "--config") next(configPath);
         else if (a == "--disable") next(disable);
+        else if (a == "--near-bottom") nearBottom = true;
         else if (a == "--highlight") { next(v); highlight = std::atoi(v.c_str()); }
         else if (a == "--files") { next(v); files = std::strtol(v.c_str(), nullptr, 10); }
         else if (a == "--scale") { next(v); scale = std::atof(v.c_str()); }
@@ -206,15 +219,17 @@ int runSnapshot(const std::vector<std::wstring>& args) {
     host.monitors = {mon};
     session::Controller ctl(host);
     ctl.configure(cfg);
-    const coords::PointI center{2000, 1500};
+    // Where the wheel opens and the drag enters: the middle of the monitor, or 20 px
+    // above its bottom edge (the wheel is pushed up and the caption goes above).
+    const coords::PointI activation = nearBottom ? coords::PointI{2000, 2980} : coords::PointI{2000, 1500};
     session::Observation o;
     o.timeMs = 1000;
     o.pointerValid = true;
     o.primaryDown = true;
-    o.pointer = coords::PointI{center.x - 20, center.y};
+    o.pointer = coords::PointI{activation.x - 20, activation.y};
     ctl.tick(o);
     o.timeMs += 16;
-    o.pointer = center;
+    o.pointer = activation;
     ctl.tick(o);
     o.modifiers = *wheelMode == proto::WheelMode::Convert ? cfg->convertModifiers : cfg->toolsModifiers;
     for (int k = 0; k < 8; ++k) {
@@ -247,7 +262,7 @@ int runSnapshot(const std::vector<std::wstring>& args) {
             }
         }
         payload.totalCount = payload.paths.size();
-        ctl.dragEnter(payload, center, true, o.timeMs);
+        ctl.dragEnter(payload, activation, true, o.timeMs);
         if (state == "folder" || state == "cloud") {
             selection::PathFacts facts;  // what the worker thread would report
             facts.containsDirectory = state == "folder";
@@ -295,6 +310,12 @@ int runSnapshot(const std::vector<std::wstring>& args) {
             w.integer(host.model.highlight);
             w.key("capsule");
             w.str(host.model.capsuleText);
+            w.key("caption");
+            w.str(host.model.captionText);
+            w.key("captionPlacement");
+            w.str(placementName(host.frame.panel.captionPlacement));
+            w.key("captionDrawn");
+            w.boolean(renderer.caption().has_value());
             w.key("textFont");
             w.str(wideToUtf8(renderer.textFamily()));
             w.key("iconFont");

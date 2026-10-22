@@ -118,8 +118,10 @@ bool WheelWindow::show(const coords::WheelFrame& frame, const session::RenderMod
         // Never leave a previous (possibly fading) wheel on screen with a stale frame.
         ShowWindow(hwnd_, SW_HIDE);
         visible_ = false;
+        caption_.reset();
         return false;
     }
+    caption_ = renderer.caption();
     ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
     SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
     // Best effort, unverified (see checklist item 17): keep the shell's drag
@@ -137,9 +139,15 @@ bool WheelWindow::show(const coords::WheelFrame& frame, const session::RenderMod
 bool WheelWindow::update(const session::RenderModel& model, Renderer& renderer) {
     if (hwnd_ == nullptr || !visible_ || !frame_.valid) return false;
     if (!renderer.render(model, frame_)) return false;
+    // Same window rectangle: a caption appearing or disappearing only changes the alpha shape.
     const bool ok = push(renderer, alpha_, false);
+    if (ok) caption_ = renderer.caption();
     announce(model, false);
     return ok;
+}
+
+bool WheelWindow::captionContains(coords::PointI p) const {
+    return visible_ && frame_.valid && caption_.has_value() && coords::screenPixelInsidePill(p, frame_, *caption_);
 }
 
 void WheelWindow::announce(const session::RenderModel& model, bool opening) {
@@ -149,7 +157,8 @@ void WheelWindow::announce(const session::RenderModel& model, bool opening) {
         accessible_->setNames(ko ? L"OrbitDrop \uD720" : L"OrbitDrop wheel", ko ? L"\uC6D0\uD615 \uBA54\uB274" : L"radial menu");
     }
     // The armed, selectable sector under the pointer; otherwise the centre text
-    // (drop hint, disabled reason, unsupported text, file count).
+    // (drop hint, disabled reason, unsupported text, file count). The caption
+    // only repeats the centre text, so it adds nothing to announce.
     std::wstring text;
     if (model.highlight >= 0 && static_cast<size_t>(model.highlight) < model.sectors.size()) {
         text = utf8ToWide(model.sectors[static_cast<size_t>(model.highlight)].label);
@@ -174,6 +183,7 @@ void WheelWindow::hide(bool animate) {
     fading_ = false;
     ShowWindow(hwnd_, SW_HIDE);
     visible_ = false;
+    caption_.reset();
 }
 
 void WheelWindow::startFade(BYTE from, BYTE to, double durationMs, bool hideAtEnd) {
@@ -201,6 +211,7 @@ void WheelWindow::onFadeTimer() {
         if (hideAtEnd_) {
             ShowWindow(hwnd_, SW_HIDE);
             visible_ = false;
+            caption_.reset();
         }
     }
 }

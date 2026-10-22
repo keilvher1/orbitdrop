@@ -10,12 +10,15 @@
 //
 // Pixel convention (same as the golden vectors, tests/fixtures/wheel-golden.json
 // coords.win): an integer physical position p (cursor, pixel) is converted with
-// the per-display affine map as is. The wheel window is the enclosing pixel
-// rectangle of the DIP window frame. A pointer is hit-tested by converting it
+// the per-display affine map as is. A pointer is hit-tested by converting it
 // with the wheel display's map and comparing it with the DIP wheel center.
-// The window's alpha mask evaluates exactly that function for every window
-// pixel, so "a pixel is hit-testable by OLE (alpha >= 1)" and
-// "hitTestWheel(...) is not outside" are the same predicate.
+//
+// The wheel window is laid out like the macOS panel: the disc's bounding square
+// plus a strip for the secondary caption (PanelLayout), not the reference
+// placeWheel windowFrame (still computed for golden parity). The window's
+// alpha mask evaluates the hit-test function for every window pixel, so "a
+// pixel is hit-testable by OLE (alpha >= 1)" and "hitTestWheel(...) is not
+// outside, or the pixel is on the visible caption pill" are the same predicate.
 #pragma once
 
 #include <cstdint>
@@ -117,6 +120,32 @@ struct RectI {
     int32_t height = 0;
 };
 
+/** Where the secondary caption goes (same rule as the macOS helper's WheelPanelLayout). */
+enum class CaptionPlacement { Below, Above, None };
+
+constexpr double kCaptionHeight = 26;    // DIP, height of the caption strip (macOS: the same)
+constexpr double kCaptionGap = 6;        // DIP between the disc and the strip
+constexpr double kCaptionPadding = 12;   // DIP left and right of the caption text inside the pill
+constexpr double kCaptionMinWidth = 56;  // DIP, narrowest pill
+
+/**
+ * The wheel window's content in global DIP, as on macOS: the disc's bounding
+ * square plus a strip for the secondary caption, below the disc, above it when
+ * there is no room below in the work area (wheel pushed against the bottom
+ * edge or the taskbar), none when neither fits (the capsule alone then shows
+ * the choice). Only the disc and the visible caption pill get non-zero alpha:
+ * the strip beside the pill and the square's corners let drags through.
+ */
+struct PanelLayout {
+    Rect frame;
+    CaptionPlacement captionPlacement = CaptionPlacement::None;
+    Rect caption;  // the strip; zero size when captionPlacement is None
+};
+
+/** Lays the window out around a placed wheel, keeping the caption strip inside `workArea`. */
+PanelLayout computePanelLayout(const geo::WheelPlacement& placement, const Rect& workArea, double captionHeight = kCaptionHeight,
+                               double gap = kCaptionGap);
+
 /** Where the wheel window goes and how screen pixels map to wheel-local DIP. */
 struct WheelFrame {
     bool valid = false;
@@ -124,10 +153,19 @@ struct WheelFrame {
     Win32Display display;           // the wheel's display (its map converts every pointer)
     double scale = 1;
     geo::WheelPlacement placement;  // global DIP
+    PanelLayout panel;              // window content: disc square + caption strip, global DIP
     Point activationDip;            // global DIP of the activation point
     Point centerPhysical;           // wheel center in physical px (unrounded)
-    RectI windowPx;                 // window = enclosing pixel rect of placement.windowFrame
-    double diameter = 0;            // = placement.diameter
+    RectI windowFramePx;            // enclosing pixel rect of placement.windowFrame (golden coords.win parity; not the window)
+    /**
+     * The window: enclosing pixel rect of panel.frame, one pixel larger on each
+     * side. The mask samples a pixel at its integer corner and drawing is offset
+     * by half a pixel, so a disc pixel exactly on the right or bottom edge (an
+     * integer center plus an integer radius, e.g. at 100 %) lies one pixel past
+     * the enclosing rectangle. The left and top border only keep it symmetric.
+     */
+    RectI windowPx;
+    double diameter = 0;  // = placement.diameter
 };
 
 /** Places the wheel for an activation at `activation` (physical px) on the given displays. */
@@ -147,5 +185,32 @@ bool windowPixelInsideDisc(int32_t i, int32_t j, const WheelFrame& f);
  * coverage (centred at i + 0.5) lines up with that sample.
  */
 Point drawCenterPx(const WheelFrame& f);
+
+// ------------------------------------------------------------------ caption pill and hit shape
+
+/** The caption strip in wheel-local DIP (offset from the disc centre, like the sector outlines). */
+Rect captionStripLocal(const WheelFrame& f);
+/**
+ * The caption pill for a line of text `textWidth` DIP wide, centred in `strip`:
+ * the text plus kCaptionPadding on each side, at least kCaptionMinWidth, at most
+ * the strip (the macOS pill). Same coordinate space as `strip`.
+ */
+Rect captionPillRect(const Rect& strip, double textWidth);
+/** Inside the pill, a rounded rectangle with radius min(width, height) / 2 (closed, like the disc test). */
+bool pillContains(const Rect& pill, Point p);
+/** True when screen pixel p is on the caption pill (`pill` in wheel-local DIP), converted with the wheel display's map. */
+bool screenPixelInsidePill(PointI p, const WheelFrame& f, const Rect& pill);
+/** screenPixelInsidePill of window pixel (i, j): such pixels get alpha >= 1. */
+bool windowPixelInsidePill(int32_t i, int32_t j, const WheelFrame& f, const Rect& pill);
+
+/**
+ * The window's hit shape, applied after drawing: every pixel on the disc (dead
+ * zone and gaps included) or on the visible caption pill gets alpha >= 1, every
+ * other pixel alpha 0, so layered-window hit-testing hands drags everywhere
+ * else to the window below. `bgra` is premultiplied, top-down, `width` ×
+ * `height` pixels with a stride of width * 4 (f.windowPx's size); `pill` is in
+ * wheel-local DIP, null when no caption is drawn.
+ */
+void applyHitShape(uint8_t* bgra, int32_t width, int32_t height, const WheelFrame& f, const Rect* pill);
 
 }  // namespace od::coords

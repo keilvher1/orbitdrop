@@ -193,6 +193,7 @@ void Renderer::drawText(const std::wstring& text, const D2D1_RECT_F& box, float 
 }
 
 bool Renderer::render(const session::RenderModel& m, const coords::WheelFrame& f) {
+    caption_.reset();  // a render that fails before drawing leaves no pill from the previous frame
     if (!d2d_ || !f.valid) return false;
     if (!ensureSurface(f.windowPx.width, f.windowPx.height)) return false;
     for (int attempt = 0; attempt < 2; ++attempt) {
@@ -223,7 +224,8 @@ bool Renderer::render(const session::RenderModel& m, const coords::WheelFrame& f
             return false;
         }
         GdiFlush();
-        applyDiscMask(f);
+        // Hit shape: alpha >= 1 exactly on the disc and the drawn caption pill, 0 elsewhere.
+        coords::applyHitShape(static_cast<uint8_t*>(bits_), width_, height_, f, caption_ ? &*caption_ : nullptr);
         return true;
     }
     return false;
@@ -233,6 +235,8 @@ bool Renderer::draw(const session::RenderModel& m, const coords::WheelFrame& f) 
     const proto::WheelTokens& t = m.tokens;
     const geo::Point center = coords::drawCenterPx(f);
     const float s = static_cast<float>(f.scale);
+    caption_.reset();
+    // Wheel-local DIP (origin at the disc centre, y down) for everything below, the caption included.
     target_->SetTransform(D2D1::Matrix3x2F::Scale(s, s) * D2D1::Matrix3x2F::Translation(static_cast<float>(center.x), static_cast<float>(center.y)));
     target_->Clear(D2D1::ColorF(0, 0, 0, 0));
 
@@ -342,34 +346,78 @@ bool Renderer::draw(const session::RenderModel& m, const coords::WheelFrame& f) 
         drawText(utf8ToWide(m.capsuleText), tb, static_cast<float>(t.capsuleTextSize), m.tokens.labelWeight, t.capsuleText, true,
                  textFamily_, m.locale, 0.55f);
     }
+
+    drawCaption(m, f);
     return true;
 }
 
-void Renderer::applyDiscMask(const coords::WheelFrame& f) {
-    // Exact predicate near the edge, quick radius test elsewhere (the band of
-    // ±2 px dwarfs any floating-point difference between the two).
-    const double cx = f.centerPhysical.x - f.windowPx.left;
-    const double cy = f.centerPhysical.y - f.windowPx.top;
-    const double rpx = geo::outerRadius(f.diameter) * f.scale;
-    const double inner2 = std::max(0.0, rpx - 2) * std::max(0.0, rpx - 2);
-    const double outer2 = (rpx + 2) * (rpx + 2);
-    auto* px = static_cast<uint8_t*>(bits_);
-    for (int j = 0; j < height_; ++j) {
-        const double dy = j - cy;
-        uint8_t* row = px + static_cast<size_t>(j) * width_ * 4;
-        for (int i = 0; i < width_; ++i) {
-            const double dx = i - cx;
-            const double d2 = dx * dx + dy * dy;
-            const bool inside = d2 < inner2 ? true : d2 > outer2 ? false : coords::windowPixelInsideDisc(i, j, f);
-            uint8_t* p = row + static_cast<size_t>(i) * 4;
-            if (!inside) {
-                p[0] = p[1] = p[2] = p[3] = 0;
-            } else if (p[3] == 0) {
-                p[0] = p[1] = p[2] = 0;  // premultiplied: colour <= alpha
-                p[3] = 1;
+void Renderer::drawCaption(const session::RenderModel& m, const coords::WheelFrame& f) {
+    // Secondary caption (spec §8): one line in a pill in the caption strip outside
+    // the ring, so the choice stays readable when the shell's drag image covers the
+    // sector and the capsule. Same metrics as the macOS pill: 13 DIP text for the
+    // default 16 DIP capsule text, shrunk down to 10 DIP to fit, then an ellipsis;
+    // 12 DIP padding; at least 56 DIP wide.
+    if (m.captionText.empty() || f.panel.captionPlacement == coords::CaptionPlacement::None) return;
+    const proto::WheelTokens& t = m.tokens;
+    const geo::Rect strip = coords::captionStripLocal(f);
+    const float size = static_cast<float>(std::min(13.0, std::max(10.0, t.capsuleTextSize - 3)));
+    const float minSize = 10.0f;
+    const int weight = std::max(t.labelWeight, 600);
+    const float maxW = static_cast<float>(std::max(1.0, strip.width - 2 * coords::kCaptionPadding));
+    const float h = static_cast<float>(std::max(1.0, strip.height));
+    std::wstring text = utf8ToWide(m.captionText);
+    // One line: a line or paragraph separator (or another control character) in a
+    // configured reason would start a second line despite NO_WRAP.
+    for (wchar_t& c : text) {
+        if (c < 0x20 || (c >= 0x7F && c <= 0x9F) || c == 0x2028 || c == 0x2029) c = L' ';
+    }
+    IDWriteTextFormat* fmt = format(textFamily_, size, weight, m.locale);
+    if (text.empty() || fmt == nullptr) return;  // no pill drawn, none in the hit shape
+    ComPtr<IDWriteTextLayout> layout;
+    if (FAILED(dwrite_->CreateTextLayout(text.c_str(), static_cast<UINT32>(text.size()), fmt, maxW, h, layout.put()))) return;
+    layout->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+    DWRITE_TEXT_METRICS tm{};
+    if (FAILED(layout->GetMetrics(&tm))) return;
+    float textW = tm.widthIncludingTrailingWhitespace;
+    if (textW > maxW) {
+        const DWRITE_TEXT_RANGE all{0, static_cast<UINT32>(text.size())};
+        const float shrunk = std::max(minSize, size * maxW / textW * 0.98f);
+        layout->SetFontSize(shrunk, all);
+        if (SUCCEEDED(layout->GetMetrics(&tm))) textW = tm.widthIncludingTrailingWhitespace;
+        if (textW > maxW) {
+            // The ellipsis at the shrunk size (one made from the 13 DIP format would be larger than the text).
+            IDWriteTextFormat* small = format(textFamily_, shrunk, weight, m.locale);
+            DWRITE_TRIMMING trimming{DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0};
+            ComPtr<IDWriteInlineObject> ellipsis;
+            if (SUCCEEDED(dwrite_->CreateEllipsisTrimmingSign(small != nullptr ? small : fmt, ellipsis.put()))) {
+                layout->SetTrimming(&trimming, ellipsis.get());
             }
+            textW = maxW;
         }
     }
+    const geo::Rect pill = coords::captionPillRect(strip, textW);
+    const D2D1_RECT_F pr = D2D1::RectF(static_cast<float>(pill.x), static_cast<float>(pill.y), static_cast<float>(pill.x + pill.width),
+                                       static_cast<float>(pill.y + pill.height));
+    const float radius = static_cast<float>(std::min(pill.width, pill.height) / 2);
+    // Opaque like the macOS pill: readable over anything, and wholly inside the
+    // hit shape (a release on it is our cancel by design).
+    proto::Color fill = m.captionStyle == session::CapsuleStyle::Reject ? t.capsuleReject : t.capsule;
+    fill.a = 255;
+    if (ID2D1SolidColorBrush* b = brush(fill)) target_->FillRoundedRectangle(D2D1::RoundedRect(pr, radius, radius), b);
+    if (m.highContrast) {
+        // Stroked inside the pill: the hit-shape mask would cut off the outer half of a centred stroke.
+        const float lw = 1.5f;
+        const D2D1_RECT_F inner = D2D1::RectF(pr.left + lw / 2, pr.top + lw / 2, pr.right - lw / 2, pr.bottom - lw / 2);
+        if (ID2D1SolidColorBrush* b = brush(t.wheelRing)) {
+            target_->DrawRoundedRectangle(D2D1::RoundedRect(inner, radius - lw / 2, radius - lw / 2), b, lw);
+        }
+    }
+    // The layout box is centred on the strip, like the pill; the format centres the line in it.
+    if (ID2D1SolidColorBrush* b = brush(t.capsuleText)) {
+        const D2D1_POINT_2F origin = D2D1::Point2F(static_cast<float>(strip.x + strip.width / 2) - maxW / 2, static_cast<float>(strip.y));
+        target_->DrawTextLayout(origin, layout.get(), b, D2D1_DRAW_TEXT_OPTIONS_CLIP);
+    }
+    caption_ = pill;
 }
 
 }  // namespace od::win

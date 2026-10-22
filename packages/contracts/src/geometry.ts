@@ -54,11 +54,12 @@ export interface WheelGeometry {
   readonly startAngleDeg: number;
   /**
    * Margin around the disc in core's reference `placeWheel().windowFrame`
-   * (kept for golden-vector parity). Native windows may size themselves
-   * differently: the macOS panel is the disc's bounding square plus a caption
-   * strip, with a window-server shadow; the Windows window keeps alpha 0
-   * outside the disc. What matters for drops is that pixels outside the disc
-   * are not hit-testable, so a release beside the ring reaches the app below.
+   * (kept for golden-vector parity). Native windows size themselves
+   * differently: both helpers use the disc's bounding square plus a caption
+   * strip (6 + 26 DIP, below the disc, or above it near the bottom of the work
+   * area), and keep alpha 0 outside the disc and the visible caption pill.
+   * What matters for drops is that those pixels are not hit-testable, so a
+   * release beside the ring reaches the app below.
    */
   readonly windowMargin: number;
   /** Minimum distance between the disc edge and the display work-area edge. */

@@ -1,10 +1,12 @@
 // Developer tool: rasterises the wheel layout (sector outlines, gaps, rounded
-// corners, ring, capsule, highlight and the hit-test alpha mask) to a PNG with
-// a tiny software rasteriser. No fonts: label positions are drawn as dots.
-// It exists to eyeball src/core/wheel_layout.cpp on machines without Windows;
-// the real renderer is Direct2D (src/win/renderer.cpp).
+// corners, ring, capsule, highlight, the caption strip with its pill, and the
+// hit-test alpha mask) to a PNG with a tiny software rasteriser. No fonts:
+// label positions are drawn as dots, and the caption pill is sized for a short
+// label ("JPG"). It exists to eyeball src/core/wheel_layout.cpp and the window
+// layout on machines without Windows; the real renderer is Direct2D
+// (src/win/renderer.cpp).
 //
-//   orbitdrop-layout-preview out.png [sectors=4] [scale=2] [highlight=-1] [theme=light|dark|hc]
+//   orbitdrop-layout-preview out.png [sectors=4] [scale=2] [highlight=-1] [theme=light|dark|hc] [at=middle|bottom]
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -114,13 +116,14 @@ void blend(RGBA& dst, const RGBA& src, double coverage) {
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::fprintf(stderr, "usage: %s out.png [sectors=4] [scale=2] [highlight=-1] [theme=light|dark|hc]\n", argv[0]);
+        std::fprintf(stderr, "usage: %s out.png [sectors=4] [scale=2] [highlight=-1] [theme=light|dark|hc] [at=middle|bottom]\n", argv[0]);
         return 2;
     }
     const int sectors = argc > 2 ? std::atoi(argv[2]) : 4;
     const double scale = argc > 3 ? std::atof(argv[3]) : 2.0;
     const int highlight = argc > 4 ? std::atoi(argv[4]) : -1;
     const std::string themeName = argc > 5 ? argv[5] : "light";
+    const bool atBottom = argc > 6 && std::strcmp(argv[6], "bottom") == 0;  // wheel pushed up: caption above
     const defaults::Theme theme = themeName == "dark" ? defaults::Theme::Dark : themeName == "hc" ? defaults::Theme::HighContrast : defaults::Theme::Light;
     const proto::WheelTokens t = defaults::tokens(theme);
     const geo::WheelGeometry g = geo::kDefaultGeometry;
@@ -131,8 +134,11 @@ int main(int argc, char** argv) {
     m.dpi = 96 * scale;
     m.primary = true;
     const auto displays = coords::displaysFromWin32Monitors({m});
-    const coords::WheelFrame f = coords::computeWheelFrame({2000, 1500}, displays, g);
+    const coords::WheelFrame f = coords::computeWheelFrame(atBottom ? coords::PointI{2000, 2980} : coords::PointI{2000, 1500}, displays, g);
     const layout::Layout L = layout::computeLayout(sectors, f.diameter, g);
+    // A highlighted sector shows the caption; its pill is sized for a short label.
+    const bool caption = highlight >= 0 && f.panel.captionPlacement != coords::CaptionPlacement::None;
+    const geo::Rect pill = coords::captionPillRect(coords::captionStripLocal(f), 27);
     std::vector<std::vector<std::vector<layout::Vec2>>> polys;
     for (const auto& s : L.sectors) {
         std::vector<std::vector<layout::Vec2>> p;
@@ -150,7 +156,7 @@ int main(int argc, char** argv) {
     for (int j = 0; j < h; ++j) {
         for (int i = 0; i < w; ++i) {
             RGBA px{0, 0, 0, 0};
-            double cover[6] = {0, 0, 0, 0, 0, 0};  // disc, ring, sector, capsule, active, label
+            double cover[7] = {0, 0, 0, 0, 0, 0, 0};  // disc, ring, sector, capsule, active, label, caption pill
             int sectorIndex = -1;
             for (int sy = 0; sy < ss; ++sy) {
                 for (int sx = 0; sx < ss; ++sx) {
@@ -175,6 +181,8 @@ int main(int argc, char** argv) {
                     for (const auto& s : L.sectors) {
                         if (std::hypot(lx - s.labelCenter.x, ly - s.labelCenter.y) <= 3) cover[5] += 1;
                     }
+                    if (caption && coords::pillContains(pill, geo::Point{lx, ly})) cover[6] += 1;
+                    if (caption && std::hypot(lx - (pill.x + pill.width / 2), ly - (pill.y + pill.height / 2)) <= 3) cover[5] += 1;
                 }
             }
             for (double& c : cover) c /= ss * ss;
@@ -183,9 +191,13 @@ int main(int argc, char** argv) {
             blend(px, rgba(t.sectorActive), cover[4]);
             blend(px, rgba(t.wheelRing), cover[1]);
             blend(px, rgba(t.capsule), cover[3]);
+            proto::Color opaque = t.capsule;  // the pill is opaque, like the renderer's
+            opaque.a = 255;
+            blend(px, rgba(opaque), cover[6]);
             blend(px, rgba(t.sectorText), cover[5]);
-            // Same alpha floor as the Windows renderer: alpha >= 1/255 on the disc, 0 outside.
-            const bool inside = coords::windowPixelInsideDisc(i, j, f);
+            // Same alpha floor as the Windows renderer (coords::applyHitShape): alpha >= 1/255
+            // on the disc and the caption pill, 0 everywhere else.
+            const bool inside = coords::windowPixelInsideDisc(i, j, f) || (caption && coords::windowPixelInsidePill(i, j, f, pill));
             if (inside && px.a < 1.0 / 255) px = RGBA{0, 0, 0, 1.0 / 255};
             if (!inside) px = RGBA{0, 0, 0, 0};
             (void)sectorIndex;
@@ -208,7 +220,10 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "cannot write %s\n", argv[1]);
         return 1;
     }
-    std::printf("%s: %dx%d px, scale %.2f, %d sectors, corner radius %.2f, mask errors %d\n", argv[1], w, h, f.scale, sectors,
-                L.cornerRadius, maskErrors);
+    const char* placement = f.panel.captionPlacement == coords::CaptionPlacement::Below   ? "below"
+                            : f.panel.captionPlacement == coords::CaptionPlacement::Above ? "above"
+                                                                                          : "none";
+    std::printf("%s: %dx%d px, scale %.2f, %d sectors, corner radius %.2f, caption strip %s%s, mask errors %d\n", argv[1], w, h,
+                f.scale, sectors, L.cornerRadius, placement, caption ? " (pill shown)" : "", maskErrors);
     return maskErrors == 0 ? 0 : 1;
 }

@@ -22,7 +22,8 @@ const char* toString(Phase p) {
 bool RenderModel::sameContent(const RenderModel& o) const {
     if (mode != o.mode || neutral != o.neutral || unsupported != o.unsupported || highlight != o.highlight ||
         hover != o.hover || capsuleText != o.capsuleText || capsuleStyle != o.capsuleStyle ||
-        sectors.size() != o.sectors.size() || diameter != o.diameter) {
+        captionText != o.captionText || captionStyle != o.captionStyle || sectors.size() != o.sectors.size() ||
+        diameter != o.diameter) {
         return false;
     }
     for (size_t i = 0; i < sectors.size(); ++i) {
@@ -233,7 +234,7 @@ void Controller::wheelTick(const Observation& o) {
             return;
         }
         proto::CancelReason reason = proto::CancelReason::DragEnded;
-        if (phase_ == Phase::WheelActive && session_.leftOnDisc && o.timeMs - session_.leftAt <= tuning_.leaveReasonWindowMs) {
+        if (phase_ == Phase::WheelActive && session_.leftOnWheel && o.timeMs - session_.leftAt <= tuning_.leaveReasonWindowMs) {
             reason = zoneReason(session_.leaveHit, session_.leaveArmed, session_.leaveCopyAllowed);
         }
         endWheel(reason, true);
@@ -418,7 +419,7 @@ Effect Controller::dragEnter(const selection::DragPayload& payload, coords::Poin
         return Effect::None;
     }
     session_.inside = true;
-    session_.leftOnDisc = false;
+    session_.leftOnWheel = false;
     return evaluate(pointer, copyAllowed);
 }
 
@@ -441,20 +442,21 @@ Effect Controller::evaluate(coords::PointI pointer, bool copyAllowed) {
     return (s.enabled && session_.armed && copyAllowed) ? Effect::Copy : Effect::None;
 }
 
-void Controller::dragLeave(bool pointerValid, coords::PointI pointer, int64_t nowMs) {
+void Controller::dragLeave(bool pointerValid, coords::PointI pointer, int64_t nowMs, bool onCaption) {
     lastTime_ = nowMs;
     if (phase_ != Phase::WheelActive) return;
     session_.inside = false;
     session_.hasHit = false;
-    session_.leftOnDisc = false;
+    session_.leftOnWheel = false;
     if (pointerValid) {
         updateArming(pointer);
         const geo::WheelHit hit = hitAt(pointer);
         const geo::Point local = coords::localDipOfScreenPixel(pointer, session_.frame);
-        if (jsmath::hypot(local.x, local.y) <= geo::outerRadius(session_.frame.diameter)) {
-            // Still on the disc: OLE left us because the drag ended (refused
-            // release or Esc), not because the pointer moved away.
-            session_.leftOnDisc = true;
+        if (onCaption || jsmath::hypot(local.x, local.y) <= geo::outerRadius(session_.frame.diameter)) {
+            // Still on the window's hit shape (the disc, or the caption pill,
+            // which counts as outside the ring): OLE left us because the drag
+            // ended (refused release or Esc), not because the pointer moved away.
+            session_.leftOnWheel = true;
             session_.leftAt = nowMs;
             session_.leaveHit = hit;
             session_.leaveArmed = session_.armed;
@@ -462,7 +464,7 @@ void Controller::dragLeave(bool pointerValid, coords::PointI pointer, int64_t no
         }
     }
     if (session_.ending) {
-        const proto::CancelReason reason = session_.leftOnDisc
+        const proto::CancelReason reason = session_.leftOnWheel
                                                ? zoneReason(session_.leaveHit, session_.leaveArmed, session_.leaveCopyAllowed)
                                                : proto::CancelReason::DragEnded;
         endWheel(reason, true);
@@ -656,6 +658,16 @@ void Controller::refreshModel(bool push) {
             m.capsuleText = defaultCapsuleText();
             m.capsuleStyle = CapsuleStyle::Normal;
         }
+    }
+    // Secondary caption: the capsule's text whenever it names the current
+    // choice or a refusal (Active or Reject), as on macOS, where the caption
+    // shows exactly while the capsule is in the action or reject style. Windows
+    // already shows a disabled or Copy-refused sector's reason before arming, so
+    // the caption follows the capsule there too. Nothing without a caption strip.
+    if (!m.neutral && m.capsuleStyle != CapsuleStyle::Normal && !m.capsuleText.empty() &&
+        session_.frame.panel.captionPlacement != coords::CaptionPlacement::None) {
+        m.captionText = m.capsuleText;
+        m.captionStyle = m.capsuleStyle;
     }
     const bool changed = !m.sameContent(model_);
     model_ = std::move(m);

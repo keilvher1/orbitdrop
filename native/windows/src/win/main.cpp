@@ -42,7 +42,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
                 "  --version               print the version\n"
                 "  --render-snapshot OUT.png [--menu KEY] [--mode convert|tools] [--highlight N]\n"
                 "        [--state neutral|active|unsupported|folder|cloud|virtual|nonfile] [--files N] [--scale S | --dpi N]\n"
-                "        [--theme light|dark|high-contrast] [--locale ko|en] [--disable N,..] [--config FILE]\n");
+                "        [--theme light|dark|high-contrast] [--locale ko|en] [--disable N,..] [--config FILE] [--near-bottom]\n");
             return 0;
         }
         if (a == L"--render-snapshot") return od::win::runSnapshot(args);

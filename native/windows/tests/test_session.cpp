@@ -900,3 +900,219 @@ TEST_CASE("session: display changes cancel a wheel whose monitor changed") {
     e.ctl.displaysChanged({});  // no session: nothing happens
     CHECK_EQ(e.host.ofType("cancelled").size(), size_t{1});
 }
+
+TEST_CASE("session: the caption repeats the armed choice or its refusal, never an unarmed hover or the info text") {
+    // The cases of the macOS helper's testCaptionAndAnnouncementFollowTheArmedChoice.
+    Driver d;
+    auto cfg = std::make_shared<proto::Configure>(*d.cfg);
+    for (auto& m : cfg->menus) {
+        if (m.key == proto::MenuKey::ImagePng) {
+            m.convert[2].enabled = false;  // HEIC, straight right of 8 sectors
+            m.convert[2].reason = "No HEIC encoder in this build";
+        }
+    }
+    d.ctl.configure(cfg);
+    const selection::DragPayload png = files({"C:\\Users\\me\\Pictures\\photo.png"});
+    d.startWheel(800, 500);
+    CHECK(d.host.model.captionText.empty());  // neutral wheel: nothing known yet
+    d.enter(png, 800, 500);
+    CHECK_EQ(d.host.model.capsuleText, std::string("PNG"));
+    CHECK(d.host.model.captionText.empty());  // dead zone: the input type is information, not a choice
+    CHECK(d.over(800, 380) == Effect::Copy);  // JPG (top)
+    CHECK_EQ(d.host.model.captionText, std::string("JPG"));
+    CHECK(d.host.model.captionStyle == CapsuleStyle::Active);
+    CHECK(d.over(920, 500) == Effect::None);  // HEIC, disabled
+    CHECK_EQ(d.host.model.captionText, std::string("No HEIC encoder in this build"));
+    CHECK(d.host.model.captionStyle == CapsuleStyle::Reject);
+    CHECK(d.over(800, 380, /*copy=*/false) == Effect::None);  // the source forbids Copy
+    CHECK_EQ(d.host.model.captionText, std::string("Not supported"));
+    CHECK(d.host.model.captionStyle == CapsuleStyle::Reject);
+    d.over(800, 500);
+    CHECK(d.host.model.captionText.empty());
+    d.over(800 + 200, 500);  // outside the ring
+    CHECK(d.host.model.captionText.empty());
+    d.over(800, 380);
+    CHECK_EQ(d.host.model.captionText, std::string("JPG"));
+    d.ctl.dragLeave(true, {800, 100}, d.t);  // the pointer left the wheel
+    CHECK(d.host.model.captionText.empty());
+
+    Driver e;  // an enabled sector hovered before arming (the wheel was shifted under the pointer): no caption
+    e.startWheel(1905, 500);
+    e.enter(kPdf, 1905, 500);
+    CHECK_EQ(e.host.model.hover, 1);
+    CHECK(e.host.model.captionText.empty());
+    CHECK(e.over(1898, 500) == Effect::Copy);  // 7 DIP: armed
+    CHECK_EQ(e.host.model.captionText, std::string("JPG"));
+
+    // Unlike macOS, this controller shows a disabled or Copy-refused sector's reason
+    // before arming (in the capsule), so the caption repeats it before arming too.
+    Driver r;
+    auto disabled = std::make_shared<proto::Configure>(*r.cfg);
+    for (auto& m : disabled->menus) {
+        if (m.key == proto::MenuKey::Pdf) {
+            m.convert[1].enabled = false;  // JPG, under the pointer after the shift
+            m.convert[1].reason = "No JPEG encoder in this build";
+        }
+    }
+    r.ctl.configure(disabled);
+    r.startWheel(1905, 500);
+    CHECK(r.enter(kPdf, 1905, 500) == Effect::None);  // not armed
+    CHECK_EQ(r.host.model.hover, 1);
+    CHECK_EQ(r.host.model.capsuleText, std::string("No JPEG encoder in this build"));
+    CHECK_EQ(r.host.model.captionText, std::string("No JPEG encoder in this build"));
+    CHECK(r.host.model.captionStyle == CapsuleStyle::Reject);
+    Driver n;  // the source forbids Copy: the refusal shows before arming as well
+    n.startWheel(1905, 500);
+    CHECK(n.enter(kPdf, 1905, 500, /*copy=*/false) == Effect::None);
+    CHECK_EQ(n.host.model.hover, 1);
+    CHECK_EQ(n.host.model.captionText, std::string("Not supported"));
+    CHECK(n.host.model.captionStyle == CapsuleStyle::Reject);
+
+    Driver m;  // the file count is information, not a choice
+    m.startWheel(800, 500, proto::kModShift | proto::kModAlt);
+    m.enter(files({"C:\\a.jpg", "C:\\b.jpg"}), 800, 500);
+    CHECK_EQ(m.host.model.capsuleText, std::string("2 files"));
+    CHECK(m.host.model.captionText.empty());
+}
+
+TEST_CASE("session: the caption repeats why the dragged items cannot be used at all") {
+    Driver t;  // text from a browser: the reason stays under the ring wherever the pointer is
+    t.startWheel(800, 500);
+    t.enter(selection::DragPayload(), 800, 500);
+    CHECK_EQ(t.host.model.captionText, std::string("Not a file"));
+    CHECK(t.host.model.captionStyle == CapsuleStyle::Reject);
+    t.over(920, 500);
+    CHECK_EQ(t.host.model.captionText, std::string("Not a file"));
+    t.ctl.dragLeave(true, {1200, 500}, t.t);
+    CHECK_EQ(t.host.model.captionText, std::string("Not a file"));
+
+    Driver f;  // a folder found by the worker after DragEnter
+    f.startWheel(800, 500);
+    f.enter(kPdf, 800, 500);
+    CHECK(f.host.model.captionText.empty());
+    f.ctl.fileInfo(f.ctl.sessionId(), facts(true));
+    CHECK_EQ(f.host.model.captionText, std::string("Folders aren't supported"));
+    CHECK(f.host.model.captionStyle == CapsuleStyle::Reject);
+
+    Driver c;  // an online-only cloud file, reported while JPG is armed
+    c.startWheel(800, 500);
+    c.enter(kPdf, 920, 500);
+    CHECK_EQ(c.host.model.captionText, std::string("JPG"));
+    c.ctl.fileInfo(c.ctl.sessionId(), facts(false, /*cloudPlaceholder=*/true));
+    CHECK_EQ(c.host.model.captionText, std::string("Download it first"));
+
+    Driver p;  // a PDF has no tools: the generic text
+    p.startWheel(800, 500, proto::kModShift | proto::kModAlt);
+    p.enter(kPdf, 800, 500);
+    CHECK_EQ(p.host.model.captionText, std::string("Not supported"));
+}
+
+TEST_CASE("session: the caption goes above near the taskbar; a shifted wheel still arms only after a move") {
+    Driver d;  // the work area ends at y = 1040 (taskbar): the wheel is pushed up, the strip goes above
+    d.startWheel(800, 1000);
+    REQUIRE(d.ctl.phase() == Phase::AwaitingPayload);
+    const coords::WheelFrame& f = d.host.frame;
+    CHECK(f.placement.shifted);
+    CHECK_EQ(f.centerPhysical.y, 1040.0 - 188);  // the disc keeps its clamped place, the strip moves
+    CHECK(f.panel.captionPlacement == coords::CaptionPlacement::Above);
+    CHECK_EQ(f.panel.caption.y, 852.0 - 180 - 32);
+    CHECK(f.windowPx.top + f.windowPx.height <= 1040);
+    // The activation point now lies on PNG (bottom): not armed, a hover without a caption.
+    CHECK(d.enter(kPdf, 800, 1000) == Effect::None);
+    CHECK_EQ(d.host.model.hover, 2);
+    CHECK(d.host.model.captionText.empty());
+    CHECK(d.over(800, 995) == Effect::None);  // 5 DIP < armDistance 6
+    CHECK(d.host.model.captionText.empty());
+    CHECK(d.over(800, 993) == Effect::Copy);  // 7 DIP: armed
+    CHECK_EQ(d.host.model.captionText, std::string("PNG"));
+    CHECK(d.host.model.captionStyle == CapsuleStyle::Active);
+    CHECK(d.over(800, 1000) == Effect::None);  // back on the activation point (isArmed is per pointer)
+    CHECK(d.host.model.captionText.empty());
+    CHECK(d.over(800, 992) == Effect::Copy);
+    CHECK(d.drop(kPdf, 800, 992) == Effect::Copy);
+    REQUIRE(d.host.ofType("drop").size() == 1);
+    CHECK_EQ(str(d.host.ofType("drop")[0], "actionId"), std::string("convert.png"));
+
+    Driver s;  // a monitor too short for a strip: the capsule alone shows the choice
+    s.host.monitors = {monitor(0, 0, 800, 300, 96)};  // work area 260 high
+    s.startWheel(400, 150);
+    REQUIRE(s.ctl.phase() == Phase::AwaitingPayload);
+    CHECK(s.host.frame.panel.captionPlacement == coords::CaptionPlacement::None);
+    s.enter(kPdf, 400, 150);
+    const int x = static_cast<int>(s.host.frame.centerPhysical.x);
+    const int y = static_cast<int>(s.host.frame.centerPhysical.y);
+    CHECK(s.over(x + 90, y) == Effect::Copy);  // JPG
+    CHECK_EQ(s.host.model.capsuleText, std::string("JPG"));
+    CHECK(s.host.model.captionText.empty());
+}
+
+TEST_CASE("session: a refused release on the caption pill is our cancel; beside the pill the drop is not ours") {
+    // The visible pill is part of the window's hit shape, as on macOS: OLE hands a
+    // release there to us, refused (DragLeave instead of Drop), and the session ends
+    // with the zone reason; the pill counts as outside the ring. The rest of the strip
+    // is alpha 0, so a release there belongs to the window below.
+    const selection::DragPayload text;  // text from a browser: its reason stays visible under the ring
+    for (int order = 0; order < 2; ++order) {
+        Driver d;
+        d.startWheel(800, 500);
+        d.enter(text, 800, 500);
+        CHECK_EQ(d.host.model.captionText, std::string("Not a file"));
+        d.ctl.dragLeave(true, {800, 683}, d.t);  // off the disc, through the gap above the strip
+        CHECK(d.host.visible);
+        d.moveTo(800, 699);
+        CHECK(d.enter(text, 800, 699) == Effect::None);  // onto the pill (strip 686…712)
+        if (order == 0) {
+            d.ctl.dragLeave(true, {800, 699}, d.t, /*onCaption=*/true);  // the refused release …
+            d.up();                                                      // … then the poll sees it
+        } else {
+            d.up();  // the poll first: wait for OLE …
+            CHECK(d.host.ofType("cancelled").empty());
+            d.ctl.dragLeave(true, {800, 699}, d.t, /*onCaption=*/true);  // … then the DragLeave
+        }
+        REQUIRE(d.host.ofType("cancelled").size() == 1);
+        CHECK_EQ(str(d.host.ofType("cancelled")[0], "reason"), std::string("invalidPayload"));
+        CHECK(!d.host.visible);
+    }
+
+    // A supported drag: the pill vanishes as soon as the pointer reaches it (the
+    // DragOver there clears the caption, and the redraw runs before OLE's next call),
+    // so a later release no longer lands on a drawn pill and ends as `dragEnded`.
+    Driver s;
+    s.startWheel(800, 500);
+    s.enter(kPdf, 920, 500);
+    CHECK_EQ(s.host.model.captionText, std::string("JPG"));
+    CHECK(s.over(800, 699) == Effect::None);  // on the pill: outside the ring
+    CHECK(s.host.model.captionText.empty());  // the window redraws without it
+    s.ctl.dragLeave(true, {800, 699}, s.t, /*onCaption=*/false);
+    s.up();
+    REQUIRE(s.host.ofType("cancelled").size() == 1);
+    CHECK_EQ(str(s.host.ofType("cancelled")[0], "reason"), std::string("dragEnded"));
+    CHECK(s.host.ofType("drop").empty());
+
+    Driver race;  // … unless the release beats that redraw: the pill was still on screen
+    race.startWheel(800, 500);
+    race.enter(kPdf, 920, 500);
+    CHECK(race.over(800, 699) == Effect::None);
+    race.ctl.dragLeave(true, {800, 699}, race.t, /*onCaption=*/true);
+    race.up();
+    REQUIRE(race.host.ofType("cancelled").size() == 1);
+    CHECK_EQ(str(race.host.ofType("cancelled")[0], "reason"), std::string("outsideRing"));
+    CHECK(race.host.ofType("drop").empty());
+
+    Driver b;  // beside the pill: transparent, the window below gets the drop
+    b.startWheel(800, 500);
+    b.enter(text, 800, 500);
+    b.ctl.dragLeave(true, {650, 699}, b.t, /*onCaption=*/false);
+    CHECK(b.host.visible);  // the pointer only left us
+    b.moveTo(650, 699);
+    b.up();
+    REQUIRE(b.host.ofType("cancelled").size() == 1);
+    CHECK_EQ(str(b.host.ofType("cancelled")[0], "reason"), std::string("dragEnded"));
+
+    Driver p;  // a source that calls Drop on the pill anyway: refused like outside the ring
+    p.startWheel(800, 500);
+    p.enter(kPdf, 920, 500);
+    CHECK(p.drop(kPdf, 800, 699) == Effect::None);
+    REQUIRE(p.host.ofType("cancelled").size() == 1);
+    CHECK_EQ(str(p.host.ofType("cancelled")[0], "reason"), std::string("outsideRing"));
+}

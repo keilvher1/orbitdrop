@@ -363,8 +363,9 @@ TEST_CASE("golden: coords.win (display layout, conversions, wheel placement and 
             const geo::Point a = pt(at(w, "activationPhysical"));
             const coords::PointI ap{static_cast<int32_t>(a.x), static_cast<int32_t>(a.y)};
             const coords::WheelFrame f = coords::computeWheelFrame(ap, displays, g);
-            const geo::Rect framePx{static_cast<double>(f.windowPx.left), static_cast<double>(f.windowPx.top),
-                                    static_cast<double>(f.windowPx.width), static_cast<double>(f.windowPx.height)};
+            // The reference windowFrame in pixels (the helper's own window is the panel layout, see test_coords).
+            const geo::Rect framePx{static_cast<double>(f.windowFramePx.left), static_cast<double>(f.windowFramePx.top),
+                                    static_cast<double>(f.windowFramePx.width), static_cast<double>(f.windowFramePx.height)};
             const bool frameOk = f.valid && a.x == ap.x && a.y == ap.y && f.displayIndex == num(w, "displayIndex") &&
                                  nearPt(f.activationDip, pt(at(w, "activation")), tol) && nearPt(f.placement.center, pt(at(w, "center")), tol) &&
                                  near(f.diameter, num(w, "placementDiameter"), tol) &&

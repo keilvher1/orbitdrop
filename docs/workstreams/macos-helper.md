@@ -414,7 +414,7 @@ the steps yourself and judge the visual parts.
    move/copy the file into it as usual; the harness prints `cancelled: dragEnded` (**not** `outsideRing`). (b) Same
    in a **diagonal corner** of the wheel's square (~30–60 pt outside the ring at 45°). (c) Same just *below* the
    ring beside the caption pill (when no sector is armed, no pill is shown). Expected for all: the folder under the
-   pointer receives the drop. Releasing **on** the visible caption pill is our cancel by design (`outsideRing`).
+   pointer receives the drop. Releasing **on** a visible caption pill is our cancel by design (`outsideRing`; `invalidPayload` for an unsupported drag, whose reason the pill now repeats). For a supported drag the pill disappears as soon as the pointer leaves the armed sector, so a release there normally goes to the window below.
    If (a)/(b) instead print `outsideRing` and Finder does nothing, report it: the transparent-area pass-through
    does not apply to drags on this macOS version.
 10. **Disabled sector**: drag a JPG with Shift (HEIC is disabled in the harness configuration), hover HEIC →

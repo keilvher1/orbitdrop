@@ -226,3 +226,42 @@ Also on the first CI run: the MSVC compile itself (never done), the `/W4` warnin
 * **macos-helper**: for parity with the Windows decision, consider refusing iCloud
   "dataless" files (`SF_DATALESS`) in the wheel. FYI: Windows now reads escaped lone
   surrogates as U+FFFD like your parser; Windows accepts `1e-400` as 0 like JSON.parse.
+
+## Follow-up: secondary caption (2026-10-23)
+
+The macOS VM run found that a wide drag image can cover the centre capsule
+([verification.md](../verification.md), finding 2). The macOS helper repeats the choice in a
+caption pill outside the ring. The Windows helper had no such caption; it now has the same one.
+Design and checklist item 34 are in [windows-helper.md](windows-helper.md). Effect on the checks
+above:
+
+| # | Change | Where | Verified by |
+|---|---|---|---|
+| C1 | The window is the disc's bounding square plus a caption strip, with the macOS rule and numbers: 6 + 26 DIP below the disc, above it near the bottom of the work area, none if neither fits. In pixels it is the enclosing rectangle plus a one-pixel border, instead of placeWheel's 408 DIP `windowFrame` (still computed for the golden `coords.win` vectors). | `src/core/coords.cpp` (`computePanelLayout`, `computeWheelFrame`) | test (work-area edges, 150 % negative coordinates, the exact-edge pixel; golden coords.win 302/302 unchanged) |
+| C2 | Hit shape (5.2, 5.3): alpha ≥ 1 on the disc **and the visible caption pill**, 0 everywhere else. The mask moved from the renderer into the portable core (`coords::applyHitShape`), so the code the renderer runs is the code under test. | `src/core/coords.cpp`, `src/win/renderer.cpp` | test (per pixel against `hitTestWheel` + the pill at 100/125/150/175/200 %, both placements, painted and blank buffers); layered-window behaviour on the pill: reviewed only |
+| C3 | Caption rule: the capsule's text while it is in the Active or Reject style (armed choice, refused sector, unsupported drag). Never for the neutral wheel, the info text or an enabled sector hovered before arming, and never without a strip (the macOS rule; a disabled or Copy-refused sector's reason shows before arming, as the Windows capsule already did). | `src/core/session.cpp` (`refreshModel`) | test (scenario tests incl. arming on a shifted wheel and the pre-arming refusal) |
+| C4 | OLE (2.x): a refused release on the visible pill reaches our `DragLeave` and is reported like one on the disc (`outsideRing`; `invalidPayload` for an unsupported drag). Anywhere else in the strip the window below gets the drop (`dragEnded`). In practice only an unsupported drag keeps a pill under the pointer: a supported drag's pill vanishes when the pointer reaches it, and a release there reports `dragEnded`. | `src/core/session.cpp` (`dragLeave(…, onCaption)`), `src/win/app.cpp`, `src/win/wheel_window.cpp` | controller: test; glue: MinGW `-Werror`, reviewed |
+| C5 | Rendering: pill measured with DirectWrite (one line: separators become spaces; the ellipsis at the shrunk size), opaque `capsule`/`capsuleReject` fill, `capsuleText`, high-contrast outline inside the pill, no shadow. UI Automation unchanged: the caption repeats the centre text, which is already announced. | `src/win/renderer.cpp` (`drawCaption`) | MinGW `-Werror`, reviewed; CI snapshots assert caption text, placement and that the pill was drawn |
+
+An independent review read the diff and ran scratch experiments (nothing on Windows). It
+mutated the new core code 26 ways and the tests caught 24; the two survivors change no
+behaviour. It fuzzed the layout and the hit shape over 20,000 random frames (12 DPIs from 100
+to 400 %, negative monitor origins, the taskbar on every edge): no shape pixel fell outside the
+window, and the pill never overlapped the disc or left its strip. Its findings were fixed: a
+comment that called the caption rule identical to macOS (Windows shows a refused sector's
+reason before arming), the missing test for that, a race-only test case, and three renderer
+details (stale pill after a failed render, ellipsis size, line breaks in a reason).
+
+No protocol or contract change.
+
+Verification (macOS 26.6 arm64, 2026-10-23):
+
+| Command | Exit | Result |
+|---|---|---|
+| `node scripts/build-native-win.mjs --core-tests --parity` | 0 | host Release **99 run, 0 failed** (92 before; 7 new caption tests); ASan + UBSan **99 run, 0 failed**, no sanitizer reports; parity unchanged: 56 helper→main samples, 5,061 main→helper lines (370 accepted, 4,691 rejected), 2 intentional differences, macOS corpus 162 lines |
+| `node scripts/build-native-win.mjs --cross` | 0 | MinGW `-Werror`, DLL imports within the allowlist, staged exe labelled CROSS-COMPILED / NOT VERIFIED (sha256 in `windows-helper.md`) |
+| `node scripts/gen-golden.mjs --check` | 0 | `wheel-golden.json is up to date` |
+| Clean builds in fresh directories (MinGW `-Werror` incl. helper + OLE tests; host Release `-Werror`) | 0 / 0 | 40 and 26 compile units, 0 warnings; host 99/99 |
+
+Not run anywhere: the pill on screen, the layered window's hit-testing on it, and the new CI snapshot
+assertions (`stdio-smoke.mjs`, 15 snapshots). A person checks checklist item 34 on Windows.

@@ -330,6 +330,44 @@ int dipToPhysicalRect(const Rect& r, const std::vector<Win32Display>& displays, 
 
 // ------------------------------------------------------------------ wheel frame
 
+PanelLayout computePanelLayout(const geo::WheelPlacement& placement, const Rect& workArea, double captionHeight, double gap) {
+    // Same rule and numbers as the macOS helper (WheelPanelLayout.make): the
+    // strip goes below the disc when it fits inside the work area, else above,
+    // else there is none. The disc itself never moves for the caption.
+    const double r = placement.diameter / 2;
+    const Point c = placement.center;
+    const double strip = gap + captionHeight;
+    PanelLayout l;
+    if (c.y + r + strip <= workArea.y + workArea.height) {
+        l.frame = Rect{c.x - r, c.y - r, 2 * r, 2 * r + strip};
+        l.captionPlacement = CaptionPlacement::Below;
+        l.caption = Rect{c.x - r, c.y + r + gap, 2 * r, captionHeight};
+    } else if (c.y - r - strip >= workArea.y) {
+        l.frame = Rect{c.x - r, c.y - r - strip, 2 * r, 2 * r + strip};
+        l.captionPlacement = CaptionPlacement::Above;
+        l.caption = Rect{c.x - r, c.y - r - strip, 2 * r, captionHeight};
+    } else {
+        l.frame = Rect{c.x - r, c.y - r, 2 * r, 2 * r};
+        l.captionPlacement = CaptionPlacement::None;
+    }
+    return l;
+}
+
+namespace {
+
+/** An enclosing physical rectangle as integer pixels; false for non-finite or absurd values. */
+bool toPixelRect(const Rect& r, RectI& out) {
+    const double limit = 1e9;
+    if (!std::isfinite(r.x) || !std::isfinite(r.y) || std::fabs(r.x) > limit || std::fabs(r.y) > limit ||
+        !(r.width >= 1 && r.width <= 1e5) || !(r.height >= 1 && r.height <= 1e5)) {
+        return false;
+    }
+    out = RectI{static_cast<int32_t>(r.x), static_cast<int32_t>(r.y), static_cast<int32_t>(r.width), static_cast<int32_t>(r.height)};
+    return true;
+}
+
+}  // namespace
+
 WheelFrame computeWheelFrame(PointI activation, const std::vector<Win32Display>& displays, const geo::WheelGeometry& g) {
     WheelFrame f;
     Point activationDip;
@@ -341,16 +379,15 @@ WheelFrame computeWheelFrame(PointI activation, const std::vector<Win32Display>&
     f.scale = f.display.scaleFactor;
     f.activationDip = activationDip;
     f.placement = geo::placeWheel(activationDip, f.display.workArea, g);
+    f.panel = computePanelLayout(f.placement, f.display.workArea);
     f.diameter = f.placement.diameter;
     f.centerPhysical = dipPointToPhysicalOn(f.display, f.placement.center);
-    const Rect frame = dipRectToPhysicalOn(f.display, f.placement.windowFrame, PixelRounding::Enclosing);
-    const double limit = 1e9;
-    if (!std::isfinite(frame.x) || !std::isfinite(frame.y) || std::fabs(frame.x) > limit || std::fabs(frame.y) > limit ||
-        !(frame.width >= 1 && frame.width <= 1e5) || !(frame.height >= 1 && frame.height <= 1e5)) {
+    RectI window;
+    if (!toPixelRect(dipRectToPhysicalOn(f.display, f.placement.windowFrame, PixelRounding::Enclosing), f.windowFramePx) ||
+        !toPixelRect(dipRectToPhysicalOn(f.display, f.panel.frame, PixelRounding::Enclosing), window)) {
         return f;
     }
-    f.windowPx = RectI{static_cast<int32_t>(frame.x), static_cast<int32_t>(frame.y), static_cast<int32_t>(frame.width),
-                       static_cast<int32_t>(frame.height)};
+    f.windowPx = RectI{window.left - 1, window.top - 1, window.width + 2, window.height + 2};
     f.valid = true;
     return f;
 }
@@ -375,6 +412,70 @@ bool windowPixelInsideDisc(int32_t i, int32_t j, const WheelFrame& f) {
 
 Point drawCenterPx(const WheelFrame& f) {
     return Point{f.centerPhysical.x - f.windowPx.left + 0.5, f.centerPhysical.y - f.windowPx.top + 0.5};
+}
+
+// ------------------------------------------------------------------ caption pill and hit shape
+
+Rect captionStripLocal(const WheelFrame& f) {
+    const Rect& s = f.panel.caption;
+    return Rect{s.x - f.placement.center.x, s.y - f.placement.center.y, s.width, s.height};
+}
+
+Rect captionPillRect(const Rect& strip, double textWidth) {
+    const double text = std::isfinite(textWidth) && textWidth > 0 ? textWidth : 0;
+    const double width = std::min(strip.width, std::max(kCaptionMinWidth, text + 2 * kCaptionPadding));
+    return Rect{strip.x + (strip.width - width) / 2, strip.y, width, strip.height};
+}
+
+bool pillContains(const Rect& pill, Point p) {
+    if (!(pill.width > 0 && pill.height > 0) || !std::isfinite(p.x) || !std::isfinite(p.y)) return false;
+    const double r = std::min(pill.width, pill.height) / 2;
+    // Distance from the straight middle segment of the pill, compared with the cap radius.
+    const double dx = std::max(0.0, std::fabs(p.x - (pill.x + pill.width / 2)) - (pill.width / 2 - r));
+    const double dy = std::max(0.0, std::fabs(p.y - (pill.y + pill.height / 2)) - (pill.height / 2 - r));
+    return dx * dx + dy * dy <= r * r;
+}
+
+bool screenPixelInsidePill(PointI p, const WheelFrame& f, const Rect& pill) { return pillContains(pill, localDipOfScreenPixel(p, f)); }
+
+bool windowPixelInsidePill(int32_t i, int32_t j, const WheelFrame& f, const Rect& pill) {
+    return screenPixelInsidePill(PointI{f.windowPx.left + i, f.windowPx.top + j}, f, pill);
+}
+
+void applyHitShape(uint8_t* bgra, int32_t width, int32_t height, const WheelFrame& f, const Rect* pill) {
+    if (bgra == nullptr || width <= 0 || height <= 0) return;
+    // Exact predicate near the disc edge, quick radius test elsewhere (the band
+    // of ±2 px dwarfs any floating-point difference between the two).
+    const double cx = f.centerPhysical.x - f.windowPx.left;
+    const double cy = f.centerPhysical.y - f.windowPx.top;
+    const double rpx = geo::outerRadius(f.diameter) * f.scale;
+    const double inner2 = std::max(0.0, rpx - 2) * std::max(0.0, rpx - 2);
+    const double outer2 = (rpx + 2) * (rpx + 2);
+    // The pill's window-pixel bounds (± 2 px): the exact pill test runs only there.
+    const bool hasPill = pill != nullptr && pill->width > 0 && pill->height > 0;
+    const double pillLeft = hasPill ? cx + pill->x * f.scale - 2 : 0;
+    const double pillRight = hasPill ? cx + (pill->x + pill->width) * f.scale + 2 : -1;
+    const double pillTop = hasPill ? cy + pill->y * f.scale - 2 : 0;
+    const double pillBottom = hasPill ? cy + (pill->y + pill->height) * f.scale + 2 : -1;
+    for (int32_t j = 0; j < height; ++j) {
+        const double dy = j - cy;
+        uint8_t* row = bgra + static_cast<size_t>(j) * static_cast<size_t>(width) * 4;
+        for (int32_t i = 0; i < width; ++i) {
+            const double dx = i - cx;
+            const double d2 = dx * dx + dy * dy;
+            bool inside = d2 < inner2 ? true : d2 > outer2 ? false : windowPixelInsideDisc(i, j, f);
+            if (!inside && hasPill && i >= pillLeft && i <= pillRight && j >= pillTop && j <= pillBottom) {
+                inside = windowPixelInsidePill(i, j, f, *pill);
+            }
+            uint8_t* p = row + static_cast<size_t>(i) * 4;
+            if (!inside) {
+                p[0] = p[1] = p[2] = p[3] = 0;
+            } else if (p[3] == 0) {
+                p[0] = p[1] = p[2] = 0;  // premultiplied: colour <= alpha
+                p[3] = 1;
+            }
+        }
+    }
 }
 
 }  // namespace od::coords

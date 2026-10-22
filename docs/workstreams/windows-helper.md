@@ -22,10 +22,12 @@ have not been run yet.
 | JSON parser/writer (UTF-8, surrogate pairs, lone-surrogate escapes → U+FFFD, limits, duplicate keys in O(n log n)) | yes | unit tests; 20,002 corrupted inputs under ASan + UBSan, no findings; a 1 MiB line of distinct keys parses in ~3 ms (was ~2 s) | MSVC | — |
 | Wheel geometry (`hitTestWheel`, `placeWheel`, `isArmed`), V8-identical `Math.atan2`/`Math.hypot` | yes | golden: hitTest 2185, placeWheel 260, isArmed 25 — all pass; 6,578 atan2/hypot vectors from Node bit-exact | MSVC | — |
 | Coordinates (`displaysFromWin32Monitors`, physical↔DIP, wheel frame, rounding) | yes | golden coords.win 302 + displayForPoint/clamp/rounding 34 — all pass; per-pixel alpha-mask = hit-test invariant at 100–200 % | MSVC | real monitors |
+| Window layout with the caption strip (below / above / none, macOS numbers) and the hit-shape mask (disc ∪ visible caption pill) | yes | layout at the work-area edges, 150 % negative coordinates, the exact-edge pixel; the mask code itself on painted and blank buffers, per pixel against `hitTestWheel` + the pill at 100/125/150/175/200 %, both placements | MSVC | real monitors, taskbar positions (checklist 34) |
 | Classification (`menuKeyForPaths`, multi-file adjustment, payload checks) | yes | golden selection 42 + fileCount 10 — all pass | MSVC | real Explorer payloads |
-| Session state machine (`DragSessionController`) | yes | 23 scenario tests (drop, dead zone, disabled, Copy-only, leave/re-enter, grace, Esc, modes, arming, multi-file, unsupported, sleep, cancel, config freeze, 150 % negative coords) | MSVC | real drags |
+| Session state machine (`DragSessionController`) | yes | 33 scenario tests (drop, dead zone, disabled, Copy-only, leave/re-enter, grace, Esc, modes, arming, multi-file, unsupported, sleep, cancel, config freeze, 150 % negative coords, folders/cloud, the caption rule, caption above + arming when shifted, a release on / beside the caption pill) | MSVC | real drags |
 | Win32 app: stdio threads, Per-Monitor V2, OLE, message loop, polling observer, power/session events | yes | — | MinGW GCC 16 `-Wall -Wextra -Wshadow -Werror`: 0 warnings | **all GUI behaviour** |
 | Wheel window (layered, topmost, no-activate) + Direct2D/DirectWrite rendering | yes | geometry preview rasterised on macOS (no fonts) | MinGW | look on Windows, icons, Hangul fallback |
+| Secondary caption pill (spec §8): DirectWrite-measured pill, opaque `capsule`/`capsuleReject` fill, `capsuleText`, inner high-contrast outline; window sized to include the strip; a refused release on the visible pill is our cancel | yes | caption rule, pill geometry, mask and the controller's release handling unit-tested; geometry preview with the pill | renderer, window, `captionContains`: MinGW | look, readability under the drag image, drop beside the pill (checklist 34) |
 | `IDropTarget` (CF_HDROP, virtual files via `FileGroupDescriptorW` or `FileGroupDescriptor`, `IDropTargetHelper`, Copy/None), no file-system calls in callbacks | yes | — | MinGW | **Explorer drag & drop** |
 | OLE glue tests (`orbitdrop-ole-tests`: real `DropTarget` + controller, fake `IDataObject`; COPY/MOVE/LINK mapping, one drop per session, CF_HDROP Unicode/long paths, virtual (W and ANSI descriptor) and non-file data) | yes | — (Windows-only) | MinGW (built, **not run**); runs in CI under MSVC | first CI run |
 | Folder **and cloud-only placeholder** detection off the UI thread (`folder_check`, attributes only, never hydrates) + specific unsupported texts | yes | controller side unit-tested (`fileInfo`, folder/cloud/non-file/virtual texts, fallback); attribute classification unit-tested | worker thread: MinGW | real folders, network shares, OneDrive Files On-Demand |
@@ -39,10 +41,11 @@ The second, adversarial review of this helper (hardening pass, 2026-10-22) is re
 [`hardening-windows.md`](hardening-windows.md): every check, its result, the fixes and the
 evidence.
 
-The staged `apps/desktop/resources/helper/win32-x64/OrbitDropHelper.exe` (1,638,912 bytes,
-stripped) is the **MinGW cross build**; its `BUILD_INFO.txt` says *CROSS-COMPILED …
-NOT VERIFIED ON WINDOWS — do not ship*. Ship the MSVC artifact from CI or from
-`node scripts/build-native-win.mjs` run on Windows.
+The staged `apps/desktop/resources/helper/win32-x64/OrbitDropHelper.exe` (1,652,736 bytes,
+stripped, sha256 `0d78eeb65bd3aa0380bbd3256324028c1eb0e3f39b3166a3162b27ad75691d15`, with the
+secondary caption, 2026-10-23) is the **MinGW cross build**; its `BUILD_INFO.txt` says
+*CROSS-COMPILED … NOT VERIFIED ON WINDOWS — do not ship*. Ship the MSVC artifact from CI or
+from `node scripts/build-native-win.mjs` run on Windows.
 
 ## Files
 
@@ -57,7 +60,8 @@ native/windows/
     utf, json   strict UTF-8/16, JSON parser/writer
     protocol    message types, zod-equivalent validation, serializers
     geometry    port of packages/core/src/geometry.ts
-    coords      port of packages/core/src/coords.ts (Windows parts) + wheel frame
+    coords      port of packages/core/src/coords.ts (Windows parts) + wheel frame, window layout
+                with the caption strip, caption pill and the hit-shape mask
     selection   port of selection.ts menuKeyForPaths + payload classification
     wheel_layout  sector outlines (constant gaps, rounded corners) for the renderer
     session     DragSessionController
@@ -197,6 +201,28 @@ Windows-only additions:
 * A refused release on the disc (OLE calls `DragLeave` instead of `Drop`) reports
   `outsideRing` (dead zone or outside, or not armed), `disabledSector` or `invalidPayload`
   (unsupported payload or Copy not allowed). The result is the same for either event order.
+  A refused release on the **visible caption pill** is handled the same way: the pill is part
+  of the window's hit shape, so OLE hands the release to us, and it counts as outside the
+  ring (`outsideRing`, or `invalidPayload` for an unsupported drag). This is the macOS
+  helper's documented behaviour ("a release on the visible caption is our cancel"). Only the
+  window knows the pill as drawn (its width follows the text), so `DragLeave` passes
+  `onCaption` to the controller. A `DragLeave` anywhere else in the strip means the pointer
+  left; the window below got the drop, and the later button-up reports `dragEnded`. In
+  practice a pill stays under the pointer only for an unsupported drag. With a supported
+  drag the pill disappears as soon as the pointer reaches it (the `DragOver` there clears the
+  caption, and the redraw runs before OLE's next call), so a release at that spot reports
+  `dragEnded`; `outsideRing` needs a release that beats the redraw.
+* **Secondary caption (spec §8, "드래그 고스트가 글자를 가려도 … 중앙과 보조 힌트로").** The render
+  model carries a caption (`captionText`/`captionStyle`) that repeats the capsule's text while
+  it names the current choice: the armed sector (Active), or why the sector or the whole drag
+  is refused (Reject: a disabled sector's reason, Copy not allowed, an unsupported payload with
+  its folder/non-file/virtual/cloud text). There is no caption for the neutral wheel, the info
+  text (file type or count) or an enabled sector hovered before arming, and none when the
+  window has no caption strip. This is the macOS rule (`WheelViewModel.caption`): there the
+  caption shows exactly while the capsule is in the action or reject style. One difference
+  comes from the existing controllers: Windows shows a disabled or Copy-refused sector's reason
+  before arming, macOS only once armed, so the Windows caption follows the capsule there too
+  (pinned by a test).
 * *Windows only, second guard:* no DragEnter while the pointer moves ≥ 24 DIP over the
   neutral wheel for ≥ 350 ms means this is not an OLE drag (e.g. Shift pressed during a
   text selection): `cancelled invalidPayload`, hidden until release.
@@ -231,9 +257,23 @@ laid out in global DIP with the core's `displaysFromWin32Monitors`, so negative
 coordinates and mixed DPI are handled.
 
 The integer cursor position is converted with the monitor's affine map. The wheel is
-placed with `placeWheel` in that display's work area. The window is the enclosing pixel
-rectangle of the DIP frame (`placeWheelFromPhysical`). Pointers are hit-tested in the
+placed with `placeWheel` in that display's work area. Pointers are hit-tested in the
 wheel display's DIP.
+
+The window is laid out like the macOS panel (`coords::computePanelLayout`, same rule and
+numbers as `WheelPanelLayout`): the disc's bounding square plus a strip for the secondary
+caption, 6 DIP gap + 26 DIP high, **below** the disc when it fits inside the work area,
+**above** it when the wheel is pushed against the bottom edge (typically just above the
+taskbar), **none** when neither fits (the capsule alone then shows the choice). The strip
+never moves the disc. With the default geometry the window is 360 × 392 DIP. In pixels it
+is the enclosing rectangle of that DIP frame on the wheel's monitor, one pixel larger on
+each side: the mask samples a pixel at its integer corner and drawing is offset by half a
+pixel, so with an integer centre and radius (e.g. at 100 %) the disc's right-most and
+bottom pixel lie one pixel past the enclosing rectangle. placeWheel's `windowFrame` with
+`windowMargin` (`windowFramePhysical` in the golden vectors, `WheelFrame::windowFramePx`) is
+still computed for golden parity but no longer sizes the window, as on macOS. The window
+therefore no longer hangs over a monitor or work-area edge by the 24 DIP margin (at most by
+its one-pixel border).
 
 The pointer comes from our own `GetCursorPos`, not OLE's `POINTL`. That value is in the
 source's coordinate space, which is virtualised for DPI-unaware sources.
@@ -252,10 +292,15 @@ source's coordinate space, which is virtualised for DPI-unaware sources.
   - Icons come from Segoe Fluent Icons, else Segoe MDL2 Assets: compress U+E73F, metadata U+E8EC,
     edit U+E9E9, annotate U+E70F, background U+E8B9, crop U+E7A8, redact U+ED1A.
   - Labels shrink to fit, then get an ellipsis. Reasons wrap in the capsule.
-* **Alpha mask**: after drawing, every disc pixel gets alpha ≥ 1 and every pixel outside
-  gets alpha 0. This covers the dead zone and the gaps. It uses `coords::windowPixelInsideDisc`, the
-  *same* expression as pointer hit-testing. So "OLE finds our window at this pixel" and
-  "`hitTestWheel` is not outside" are one predicate (unit-tested per pixel at 100–200 %).
+* **Alpha mask** (`coords::applyHitShape`, portable and unit-tested on the exact code the
+  renderer runs): after drawing, every disc pixel and every pixel of the visible caption pill
+  gets alpha ≥ 1, and every other pixel gets alpha 0: the square's corners and the strip
+  beside the pill. The disc part covers the dead zone and the gaps and uses
+  `coords::windowPixelInsideDisc`, the *same* expression as pointer hit-testing; the pill part
+  uses `coords::windowPixelInsidePill`, the same predicate that decides whether a `DragLeave`
+  happened on the pill. So "OLE finds our window at this pixel" and "`hitTestWheel` is not
+  outside, or the pixel is on the visible pill" are one predicate (unit-tested per pixel at
+  100–200 %, both caption placements, with and without a pill).
   The rule relied on (Window Features → Layered Windows): "Hit testing of a layered window is
   based on the shape and transparency of the window. This means that the areas of the
   window that are color-keyed or whose alpha value is zero will let the mouse messages
@@ -263,9 +308,24 @@ source's coordinate space, which is virtualised for DPI-unaware sources.
   alpha-0 corners pass drops to the window below while the whole disc, dead zone included,
   stays our (refusing) target. The window never has `WS_EX_TRANSPARENT`, which would make the
   whole window click-through.
-* **No outer drop shadow.** Any non-zero alpha outside the disc would make OLE treat
-  the shadow as drop target. `wheelShadow` is used as a soft inner rim instead.
-  `windowMargin` stays transparent.
+* **No outer drop shadow.** Any non-zero alpha outside the disc and the pill would make OLE
+  treat the shadow as drop target. `wheelShadow` is used as a soft inner rim instead (the
+  caption pill has no shadow either; macOS paints one only in snapshots).
+* **Secondary caption pill** (`Renderer::drawCaption`), drawn whenever the render model has a
+  caption and the window has a strip. Same metrics as the macOS pill: one line at
+  min(13, max(10, `capsuleTextSize` − 3)) DIP (13 by default), weight ≥ 600, shrunk down to 10 DIP
+  to fit the strip minus 12 DIP padding on each side, then an ellipsis at the shrunk size (line
+  and paragraph separators in a configured reason become spaces); pill = text + 24 DIP, at
+  least 56 DIP, at most the strip, centred, 26 DIP high with round ends. Fill `capsule`
+  (action) or `capsuleReject` (reject) made **opaque** (readable over anything, and wholly in
+  the hit shape), text `capsuleText`. In high contrast the outline (`wheelRing`, like the
+  centre capsule's) is stroked *inside* the pill, since the mask would cut off the outer half
+  of a centred stroke. The window keeps its size when the caption appears or disappears; only
+  the alpha shape changes. The pill as drawn is kept by the window (`captionContains`) for the
+  `DragLeave` rule above. The shell's drag image hangs off the pointer, so the capsule and the
+  pill should rarely be covered together: over the upper sectors the pill below the ring is
+  far from the pointer, over the lower sectors the capsule is (expected, not yet seen on
+  Windows: checklist 34).
 * High contrast tokens get sector and capsule outlines. Fades use `appearMs`/`disappearMs`
   (none with reduced motion), changing only the constant alpha.
 * **UI Automation**: the window answers `WM_GETOBJECT` with a server-side provider.
@@ -274,6 +334,8 @@ source's coordinate space, which is virtualised for DPI-unaware sources.
   - When the armed sector (or the centre text) changes, it raises a UIA notification
     event (`NotificationProcessing_MostRecent`), so Narrator speaks the choice without the
     wheel taking focus. It also sends an MSAA name change.
+  - The caption only repeats the centre text, which is already announced, so it changes
+    nothing here.
   - `uiautomationcore.dll` is loaded on demand, so the import table does not change.
 * Window operations requested inside an `IDropTarget` method are deferred with
   `PostMessage`, so OLE callbacks return immediately. The guard covers the whole method,
@@ -310,6 +372,11 @@ source's coordinate space, which is virtualised for DPI-unaware sources.
     can tell without reading the file; main keeps its timeout heuristic for drops that beat
     the worker and for the Drop Zone/dialog.
 * `IDropTargetHelper` keeps the source's drag image visible over the wheel.
+* The visible caption pill is part of the target's hit shape. Over it every method answers
+  `DROPEFFECT_NONE` (outside the ring), so a release there ends in `DragLeave`, which the App
+  forwards with `onCaption` from the pill as drawn (`WheelWindow::captionContains`, a pure
+  read inside the OLE guard): our cancel, never the window below. The rest of the strip is
+  alpha 0, so OLE never asks us there.
 * Test seams: an injectable cursor source and an optional drag-image helper, used by the
   Windows-only OLE glue tests (`tests/win/test_ole_glue.cpp`).
 * COM exceptions never cross the boundary (`try/catch` → `DROPEFFECT_NONE`).
@@ -339,9 +406,9 @@ source's coordinate space, which is virtualised for DPI-unaware sources.
 
 | Where | Command | What it does |
 |---|---|---|
-| any OS | `node scripts/build-native-win.mjs --core-tests [--parity] [--no-asan]` | host compiler, 91 tests incl. all golden sections and the design-token drift check (`--require-golden`), then the same tests under ASan + UBSan on macOS/Linux (UBSan findings are fatal); `--parity` = zod cross-check (needs `node_modules/tsx`) |
+| any OS | `node scripts/build-native-win.mjs --core-tests [--parity] [--no-asan]` | host compiler, 99 tests incl. all golden sections and the design-token drift check (`--require-golden`), then the same tests under ASan + UBSan on macOS/Linux (UBSan findings are fatal); `--parity` = zod cross-check (needs `node_modules/tsx`) |
 | macOS/Linux | `node scripts/build-native-win.mjs --cross` | MinGW-w64 build, warnings as errors, DLL import allowlist, stages a stripped exe + `BUILD_INFO.txt` (UNVERIFIED) |
-| Windows | `node scripts/build-native-win.mjs` | MSVC x64 `/MT` (preset `msvc-x64`), core tests, OLE glue tests, `stdio-smoke.mjs` (pipes, ready/ping/errors/EOF exit + 13 PNG snapshots incl. folder/cloud/virtual/non-file texts), stages exe + `BUILD_INFO.txt` |
+| Windows | `node scripts/build-native-win.mjs` | MSVC x64 `/MT` (preset `msvc-x64`), core tests, OLE glue tests, `stdio-smoke.mjs` (pipes, ready/ping/errors/EOF exit + 15 PNG snapshots incl. folder/cloud/virtual/non-file texts and the caption below/above, with capsule and caption assertions), stages exe + `BUILD_INFO.txt` |
 | CMake directly | `cmake --preset host-tests && cmake --build --preset host-tests && ctest --preset host-tests` | also `host-tests-asan`, `mingw-x64`, `msvc-x64`, `ninja-msvc-x64` |
 
 * **Static CRT**: the MSVC preset sets `CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded` (`/MT`),
@@ -371,22 +438,30 @@ source's coordinate space, which is virtualised for DPI-unaware sources.
 
 ### Evidence from this machine (macOS 26.6 arm64, Apple clang 21, MinGW-w64 14 / GCC 16.2)
 
-* `orbitdrop-core-tests --require-golden`: 91 tests, 0 failures (86 before the hardening
-  pass). This includes every section of `tests/fixtures/wheel-golden.json`: derived 4,
-  hitTest 2,185 (incl. 5 non-finite), placeWheel 260, isArmed 25, selection 42, fileCount 10,
-  coords.win 302, displayForPoint/clamp/rounding 34. Also clean under AddressSanitizer +
-  UBSan (UBSan findings abort the run since the hardening pass).
+* `orbitdrop-core-tests --require-golden`: 99 tests, 0 failures (2026-10-23, with the
+  secondary caption; 92 before it, 86 before the hardening pass). This includes every section
+  of `tests/fixtures/wheel-golden.json`: derived 4, hitTest 2,185 (incl. 5 non-finite),
+  placeWheel 260, isArmed 25, selection 42, fileCount 10, coords.win 302 (the reference
+  `windowFramePhysical`, now `WheelFrame::windowFramePx`), displayForPoint/clamp/rounding 34.
+  Also clean under AddressSanitizer + UBSan (UBSan findings abort the run since the hardening
+  pass). The 7 caption tests: window layout below/above/none at the work-area edges, pill
+  geometry, the hit-shape mask per pixel (5 DPIs × both placements × 4 pill widths), the
+  caption rule (armed / refused, also before arming / unsupported / unarmed hover / neutral /
+  info), caption above near the taskbar with arming on a shifted wheel, and a release on vs.
+  beside the pill (incl. the supported drag whose pill vanished first: `dragEnded`).
 * Protocol parity: 56/56 helper→main samples valid. Main→helper verdicts are identical on
-  5,058 lines (default, hardening pass: incl. whitespace/escape/number-spelling and
-  lone-surrogate cases), 12,025 lines (`PARITY_ITERATIONS=6000`, after adding the three
+  5,061 lines (2026-10-23; 5,058 in the hardening pass: incl. whitespace/escape/number-spelling
+  and lone-surrogate cases), 12,025 lines (`PARITY_ITERATIONS=6000`, after adding the three
   optional `strings` keys) and earlier 30,015 lines (`PARITY_ITERATIONS=15000`). The macOS
-  helper's zod corpus (155 lines) gets the same verdicts, except the documented duplicate key.
+  helper's zod corpus (162 lines now, 155 then) gets the same verdicts, except the documented
+  duplicate key.
 * `orbitdrop-ole-tests.exe` (Windows-only OLE glue tests) **compiles and links under MinGW
   with `-Werror` but has not been run**. It runs in CI under MSVC (`ctest` plus a dedicated
   step) and in the build script on Windows.
 * `Math.atan2`/`Math.hypot`: 1,000,800 Node vectors bit-exact at `-O0`/`-O2` with
   contraction off (the C libm differs on 21 % of them).
-* MinGW from a clean build: 0 warnings with `-Werror`.
+* MinGW from a clean build: 0 warnings with `-Werror` (2026-10-23: 40 compile units, helper,
+  OLE tests and tools; the host Release build: 26 units, 0 warnings).
   - Imports: KERNEL32, USER32, GDI32, ole32, OLEAUT32 (BSTRs for UIA), SHELL32, SHCORE,
     ADVAPI32, WTSAPI32, d2d1, DWrite, and `api-ms-win-crt-*` (UCRT) only.
     `uiautomationcore.dll` is loaded on demand.
@@ -411,10 +486,13 @@ source's coordinate space, which is virtualised for DPI-unaware sources.
 `docs/screenshots/windows-helper-layout-preview-*.png` are **geometry-only
 rasterisations on macOS** by `orbitdrop-layout-preview`: sector outlines, gaps, corners,
 ring, capsule, highlight and alpha mask, with dots where labels go. They are *not*
-Direct2D output. The real renderer's PNGs come from the CI artifact
-`windows-helper-snapshots`.
+Direct2D output. They predate the caption strip (they show the old 408 DIP window with its
+transparent margin); the tool now draws the window as it is, strip included, and a pill sized
+for a short label when a sector is highlighted
+(`orbitdrop-layout-preview out.png 4 2 1 light [bottom]`, `bottom` = caption above). The real
+renderer's PNGs come from the CI artifact `windows-helper-snapshots`.
 
-## Manual verification checklist (Windows 11 x64, items 1–33)
+## Manual verification checklist (Windows 11 x64, items 1–34)
 
 Use the MSVC build (CI artifact or `node scripts/build-native-win.mjs` on Windows) and the
 app's normal start. Set `ORBITDROP_HELPER_DEBUG=1` to get helper diagnostics on stderr and
@@ -475,7 +553,8 @@ as `log` messages. Record the OS build, display setup and result for each item.
     hit-testing. Drag across the monitor boundary with the wheel open: still consistent.
 16. **Screen edges and corners and the taskbar**: activate at each edge and corner. The
     wheel is shifted fully inside the work area. An immediate release without moving does
-    not select (arming); moving ≥ 6 DIP or through the centre arms.
+    not select (arming); moving ≥ 6 DIP or through the centre arms. Just above a bottom
+    taskbar the caption pill appears above the ring (item 34).
 17. **Drag image**: the file's drag image stays visible above the wheel. If it is hidden
     behind the wheel, report the z-order problem.
 18. **Focus**: typing in the previously focused app keeps working after the wheel was shown.
@@ -528,6 +607,39 @@ Added by the hardening pass (see `hardening-windows.md`):
     record whether the next wheel follows the new setting without restarting OrbitDrop
     (Electron reports no change event for this setting; see Requests).
 
+Added with the secondary caption (2026-10-23):
+
+34. **Secondary caption pill** (spec §8):
+    - *Below*: open the wheel in the middle of the screen and move onto JPG. The sector
+      turns orange, the capsule says "JPG", and a small "JPG" pill appears about 6 DIP under
+      the ring, centred. The dead zone, the outside of the ring and an unarmed hover over an
+      enabled sector show no pill. A disabled sector shows its reason in the pill (already
+      before arming, like the capsule). An unsupported drag (a `.txt`, a
+      folder, text from a browser, an Outlook attachment) shows its reason in the pill for the
+      whole drag.
+    - *Above, near the taskbar*: activate just above a bottom taskbar. The wheel is pushed
+      up and the pill appears **above** the ring. With the taskbar at the left, right or top,
+      the pill stays below. Record the screen and taskbar setup.
+    - *Readable under the drag image*: drag several files at once, or a wide text selection
+      from a browser (large drag images), over the upper sectors. The drag image covers the
+      sector and the capsule; the pill below the ring stays readable. Over the lower sectors
+      the capsule stays readable. Note any position where both are covered.
+    - *A drop beside the pill reaches Explorer*: place an Explorer folder so that it lies
+      just below the ring, beside the pill (inside the strip, left or right of it) and in the
+      6 DIP gap. Open the wheel, arm a sector (pill visible), move onto the folder beside the
+      pill and release. Explorer highlights the folder and moves or copies the file into it,
+      and main gets `cancelled dragEnded`, no conversion. Repeat with the pill above (near the
+      taskbar) and in the corners of the wheel's square.
+    - *A release on the pill is our cancel*: with an unsupported drag (pill visible the whole
+      time) release on the pill. Nothing is moved or copied into the window under the pill,
+      and main gets `cancelled invalidPayload`. (With a supported drag the pill disappears as
+      soon as the pointer reaches it, so there is no pill left to release on; main then gets
+      `dragEnded`. Note whether the window below received the drop.)
+    - Repeat the first and fourth points at 100/125/150/200 % and on a monitor with negative
+      coordinates: the pill is crisp and centred, and drops beside it still reach Explorer.
+      High contrast: the pill has an outline just inside its edge. Narrator speaks nothing
+      new (the pill repeats the centre text).
+
 ## Known limitations and risks
 
 * **Nothing GUI-related has run on Windows.** First risks to check:
@@ -556,6 +668,17 @@ Added by the hardening pass (see `hardening-windows.md`):
   button state"); checklist item 26 verifies it.
 * The UI Automation provider (window name and notifications of the armed sector) has not
   been checked with Narrator (checklist item 24).
+* The secondary caption has not run on Windows: DirectWrite's text metrics for the pill, the
+  new window size (disc square + strip instead of the 408 DIP frame) and the pill as part of
+  the layered window's hit shape are compile-checked and reviewed only (checklist item 34). The layout, the caption rule, the mask and the
+  controller's handling of a release on the pill are unit-tested on macOS.
+* The visible pill is part of the hit shape by design (as on macOS): a release on it is our
+  cancel, not the drop of the window below. With a supported drag the pill is only visible
+  while a sector is armed, so the pointer is on the disc; this matters mainly for
+  unsupported drags, whose reason stays visible for the whole drag.
+* Over the lower sectors a large drag image can cover the pill below the ring; the capsule is
+  then the readable copy, and the other way round over the upper sectors ("중앙과 보조 힌트").
+  Near the bottom edge the pill moves above the ring and the roles swap.
 * Lock and session disconnect are reported as `sleep` (there is no dedicated cancel reason).
 
 ## Requests
@@ -598,6 +721,11 @@ Added by the hardening pass (see `hardening-windows.md`):
   for the "download it first" centre text, then main sends it and both helpers accept it
   (both parse `strings` strictly, so all three must change together). Until then the Windows
   helper uses a built-in ko/en text.
+* (secondary caption, no contract change) The `windowMargin` comment in
+  `packages/contracts/src/geometry.ts` says "the Windows window keeps alpha 0 outside the
+  disc"; it is now outside the disc and the visible caption pill, and the Windows window,
+  like the macOS panel, is the disc's bounding square plus the caption strip.
+  `docs/verification.md` counts 33 Windows checklist items; item 34 (the caption) was added.
 
 **packaging-docs**: package the CI MSVC `OrbitDropHelper.exe` as an extra resource outside
 asar. Refuse to ship a staged binary whose `BUILD_INFO.txt` says `CROSS-COMPILED`.
@@ -608,7 +736,13 @@ stable modifier set before activating, and hides a neutral wheel that gets no Dr
 while moving. Both may be worth sharing. (hardening pass) Windows now reads escaped lone
 surrogates as U+FFFD like your parser, and refuses cloud-only placeholders in the wheel;
 iCloud "dataless" files (`SF_DATALESS`) could get the same treatment on macOS. Windows
-accepts `1e-400` as 0 like JSON.parse, where Foundation refuses it.
+accepts `1e-400` as 0 like JSON.parse, where Foundation refuses it. (secondary caption) The
+Windows caption follows your layout and caption rule. Your docs say a release on the visible
+caption pill is our cancel with `outsideRing`; reading the code, AppKit answers a refused
+release with `draggingExited`, and `WheelView.pointerInsideDisc()` only tests the disc, so the
+pill probably ends as `dragEnded` (still our cancel, Finder gets nothing). Windows reports the
+documented reason by treating a `DragLeave` on the drawn pill like one on the disc; you may
+want to count the pill in `pointerInsideDisc()` or adjust the doc.
 
 **lead** (hardening pass): after the first green `native-windows` run, read the MSVC `/W4`
 log and turn on `ORBITDROP_WARNINGS_AS_ERRORS` in the msvc presets.

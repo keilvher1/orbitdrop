@@ -1,9 +1,12 @@
 // Wheel renderer: Direct2D (DC render target, software) + DirectWrite into a
 // premultiplied 32-bit top-down DIB section, ready for UpdateLayeredWindow and
-// for PNG snapshots (WIC). After drawing, an exact alpha pass gives every pixel
-// of the disc (dead zone and gaps included) alpha >= 1 and every pixel outside
-// it alpha 0, using coords::windowPixelInsideDisc — the same predicate as
-// hit-testing — so OLE finds the drop target exactly on the disc.
+// for PNG snapshots (WIC). The DIB is the whole window: the disc's bounding
+// square plus the caption strip (coords::PanelLayout). After drawing, an exact
+// alpha pass (coords::applyHitShape) gives every pixel of the disc (dead zone
+// and gaps included) and of the visible caption pill alpha >= 1 and every
+// other pixel alpha 0, using the same predicates as hit-testing, so OLE finds
+// the drop target exactly there and hands drags anywhere else to the window
+// below.
 #pragma once
 
 #include "win/win_util.h"
@@ -12,6 +15,7 @@
 #include <dwrite.h>
 
 #include <map>
+#include <optional>
 #include <string>
 #include <tuple>
 
@@ -43,12 +47,14 @@ public:
     const std::wstring& textFamily() const { return textFamily_; }
     const std::wstring& iconFamily() const { return iconFamily_; }
     const std::string& lastError() const { return lastError_; }
+    /** The caption pill of the last render (wheel-local DIP), if one was drawn: part of the hit shape. */
+    const std::optional<geo::Rect>& caption() const { return caption_; }
 
 private:
     bool ensureSurface(int w, int h);
     bool ensureTarget();
     bool draw(const session::RenderModel& m, const coords::WheelFrame& f);
-    void applyDiscMask(const coords::WheelFrame& f);
+    void drawCaption(const session::RenderModel& m, const coords::WheelFrame& f);
     IDWriteTextFormat* format(const std::wstring& family, float size, int weight, proto::Locale locale);
     void drawText(const std::wstring& text, const D2D1_RECT_F& box, float size, int weight, const proto::Color& color,
                   bool wrap, const std::wstring& family, proto::Locale locale, float minScale);
@@ -68,6 +74,7 @@ private:
     std::wstring textFamily_;
     std::wstring iconFamily_;
     std::string lastError_;
+    std::optional<geo::Rect> caption_;
 };
 
 }  // namespace od::win

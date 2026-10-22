@@ -479,7 +479,9 @@ session::Effect App::onDragOver(coords::PointI pointer, bool copyAllowed) {
 }
 
 void App::onDragLeave(bool pointerValid, coords::PointI pointer) {
-    core_.controller().dragLeave(pointerValid, pointer, nowMs());
+    // A refused release on the visible caption pill is ours, like one on the
+    // disc. Only the window knows the pill as drawn (its width follows the text).
+    core_.controller().dragLeave(pointerValid, pointer, nowMs(), pointerValid && wheel_.captionContains(pointer));
 }
 
 session::Effect App::onDrop(const selection::DragPayload& payload, coords::PointI pointer, bool copyAllowed) {

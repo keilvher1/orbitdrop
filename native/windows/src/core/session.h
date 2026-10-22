@@ -21,7 +21,10 @@
 //  * exactly one `drop` per session; hover never commits; releasing the
 //    modifier keeps an active wheel; DragLeave keeps the wheel for re-entry;
 //    a polled button-up only cleans up (after a grace period when the pointer
-//    is over the wheel, so a pending OLE Drop is never lost).
+//    is over the wheel, so a pending OLE Drop is never lost);
+//  * the secondary caption outside the ring repeats the current choice or the
+//    refusal (RenderModel::captionText); a refused release on its pill is our
+//    cancel, like one on the disc, while the rest of the strip is not ours.
 #pragma once
 
 #include <cstdint>
@@ -81,6 +84,21 @@ struct RenderModel {
     int hover = -1;      // sector under the pointer that cannot be selected
     std::string capsuleText;
     CapsuleStyle capsuleStyle = CapsuleStyle::Normal;
+    /**
+     * Secondary caption (spec §8), drawn as a pill in the window's caption strip
+     * outside the ring: the capsule's text while it names the current choice,
+     * i.e. the armed sector (Active) or why the sector or the whole drag is
+     * refused (Reject), so the choice stays readable when the shell's drag image
+     * covers the sector and the capsule. Empty for the neutral wheel, the info
+     * text (file type, count), an enabled sector hovered before arming, and when
+     * the window has no caption strip. The macOS helper's rule
+     * (WheelViewModel.caption: the capsule in the action or reject style), with
+     * one inherited difference: this controller shows a disabled or Copy-refused
+     * sector's reason before arming, macOS only once armed, so the caption shows
+     * it before arming too.
+     */
+    std::string captionText;
+    CapsuleStyle captionStyle = CapsuleStyle::Normal;
 
     /** Same visible content (ignores appearance fields that cannot change within a session). */
     bool sameContent(const RenderModel& o) const;
@@ -137,7 +155,10 @@ public:
     /** OLE IDropTarget events. `copyAllowed` = (*pdwEffect & DROPEFFECT_COPY) on entry. */
     Effect dragEnter(const selection::DragPayload& payload, coords::PointI pointer, bool copyAllowed, int64_t nowMs);
     Effect dragOver(coords::PointI pointer, bool copyAllowed, int64_t nowMs);
-    void dragLeave(bool pointerValid, coords::PointI pointer, int64_t nowMs);
+    /** `onCaption`: the pointer is on the caption pill as it is drawn on screen
+     *  (part of the window's hit shape, like the disc; only the window knows the
+     *  pill's text-dependent width). */
+    void dragLeave(bool pointerValid, coords::PointI pointer, int64_t nowMs, bool onCaption = false);
     Effect drop(const selection::DragPayload& payload, coords::PointI pointer, bool copyAllowed, int64_t nowMs);
 
     /** True while a DragEnter should read the drag data (first entry of a session). */
@@ -190,7 +211,7 @@ private:
         coords::PointI awaitLast;
         bool ending = false;  // button-up seen while inside; waiting for Drop/DragLeave
         int64_t endingSince = 0;
-        bool leftOnDisc = false;
+        bool leftOnWheel = false;  // DragLeave with the pointer still on the disc or the drawn caption pill
         int64_t leftAt = 0;
         geo::WheelHit leaveHit;
         bool leaveArmed = false;

@@ -254,6 +254,7 @@ TEST_CASE("ole: exactly one drop per session") {
     g_cursor = POINT{kJpgSector.x, kJpgSector.y};
     DWORD effect = DROPEFFECT_COPY | DROPEFFECT_MOVE;
     target->DragEnter(&data, MK_LBUTTON, kJpgSector, &effect);
+    CHECK_EQ(sink.model.captionText, std::string("JPG"));  // the secondary caption repeats the armed choice
     effect = DROPEFFECT_COPY | DROPEFFECT_MOVE;
     CHECK_EQ(target->Drop(&data, 0, kJpgSector, &effect), S_OK);
     CHECK_EQ(effect, static_cast<DWORD>(DROPEFFECT_COPY));
@@ -350,6 +351,7 @@ TEST_CASE("ole: virtual-only and non-file data are unsupported with their own te
         CHECK_EQ(effect, static_cast<DWORD>(DROPEFFECT_NONE));
         CHECK(sink.model.unsupported);
         CHECK_EQ(sink.model.capsuleText, std::string("No file on disk"));
+        CHECK_EQ(sink.model.captionText, std::string("No file on disk"));  // repeated under the ring
         CHECK(sink.last("state").get("menuKey")->isNull());
         CHECK_EQ(sink.folderChecks, 0);
         effect = DROPEFFECT_COPY;
