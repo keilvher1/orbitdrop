@@ -10,6 +10,7 @@ import {
   type ActionOptions,
   type ImageFormat,
   type JobProgress,
+  type JobWarning,
   type ProcessingLimits,
   type ProcessorInput,
   type ProcessorJob,
@@ -21,7 +22,20 @@ import {
 } from '@orbitdrop/contracts';
 import { toolResultName } from '@orbitdrop/core';
 import { imageIOHelperPath, isExecutableFile } from '../codecs/imageio';
-import { defaultQuality, encodeImage, mapSharpError, openImage, outputDirFor, readInputBuffer, writeBytes } from '../common/io';
+import {
+  defaultQuality,
+  droppedFrames,
+  encodeImage,
+  framesWarning,
+  keepMetadataFor,
+  mapSharpError,
+  openImage,
+  outputDirFor,
+  readInputBuffer,
+  toEightBit,
+  writeBytes,
+  type DroppedFrames,
+} from '../common/io';
 
 /**
  * Helpers shared by the tool executors (crop, add background, compress,
@@ -110,8 +124,15 @@ export interface LoadedImage {
    * composite RGB(A) drawings/patches and PNG/WebP cannot store CMYK.
    */
   readonly keepIcc: boolean;
+  /** Frames/pages of an animated or multi-page input the tool does not use (it works on the first). */
+  readonly dropped: DroppedFrames | null;
   /** Pipelines from open() are 8-bit (16-bit/float inputs were normalized once at load). */
   open(): Sharp;
+}
+
+/** FIRST_FRAME_ONLY / FIRST_PAGE_ONLY for a tool's result when the input had several frames or pages. */
+export function framesWarnings(image: Pick<LoadedImage, 'dropped'>): JobWarning[] {
+  return image.dropped ? [framesWarning(image.dropped, 1)] : [];
 }
 
 function isGreySpace(meta: Metadata): boolean {
@@ -152,21 +173,20 @@ export async function loadImage(input: ProcessorInput, limits: ProcessingLimits,
       const raw = await toRaw(base);
       open = () => sharp(raw.data, { raw: { width: raw.width, height: raw.height, channels: raw.channels as 1 | 2 | 3 | 4 }, limitInputPixels: limits.maxInputPixels });
     } else if (image.format === 'heic' || !eightBit) {
-      // Depth first, without geometry: sharp drops a kept profile when it rotates 16-bit data
-      // (EXIF auto-orientation included), so the intermediate stays unrotated and keeps EXIF —
-      // its Orientation tag is applied by open() on 8-bit data. EXIF/XMP also let Compress'
-      // keepMetadata copy them; the other tools never copy metadata. CMYK/grey profiles are
-      // applied, not kept. (HEIC arrives already decoded and oriented through openImage.)
+      // Depth first, without geometry (common/io toEightBit): sharp drops a kept profile when it
+      // rotates 16-bit data (EXIF auto-orientation included), so the intermediate stays unrotated
+      // and keeps EXIF — its Orientation tag is applied by open() on 8-bit data. EXIF/XMP also let
+      // Compress' keepMetadata copy them; the other tools never copy metadata. CMYK/grey profiles
+      // are applied, not kept. (HEIC arrives already decoded and oriented through openImage.)
       const unrotated = image.format === 'heic' ? base : sharp(buffer, inputOptions);
-      let p = (keepIcc ? unrotated.keepIccProfile() : unrotated).keepExif().keepXmp();
-      p = p.toColourspace(grey ? 'b-w' : 'srgb');
-      const intermediate = await p.png({ compressionLevel: 0, adaptiveFiltering: false }).toBuffer();
+      const intermediate = await toEightBit(unrotated, meta);
       open = () => sharp(intermediate, inputOptions).autoOrient();
     } else {
       open = () => sharp(buffer, inputOptions).autoOrient();
     }
     throwIfCancelled(signal);
-    return { input: image, buffer, meta, width, height, hasAlpha: meta.hasAlpha === true, grey, hasProfile, keepIcc, open };
+    const dropped = droppedFrames(image.format, meta, buffer);
+    return { input: image, buffer, meta, width, height, hasAlpha: meta.hasAlpha === true, grey, hasProfile, keepIcc, dropped, open };
   } catch (error) {
     throw toToolError(error, signal);
   }
@@ -361,10 +381,12 @@ function applyEncoder(pipeline: Sharp, format: 'jpeg' | 'png' | 'webp' | 'avif' 
 export async function encodeToolImage(make: () => Sharp, req: EncodeToolRequest): Promise<EncodedImage> {
   const target = await writtenFormat(req.format);
   const flatten = req.hasAlpha && !FORMAT_INFO[target].alpha;
+  // keepMetadata on CMYK needs the explicit sRGB output profile (see keepMetadataFor).
+  const space = req.keepMetadata ? (await make().metadata()).space : undefined;
   const prepare = (): Sharp => {
     let p = make();
     if (flatten) p = p.flatten({ background: req.flattenBackground ?? '#FFFFFF' });
-    if (req.keepMetadata) p = p.keepMetadata();
+    if (req.keepMetadata) p = keepMetadataFor(p, space);
     else if (req.keepIcc) p = p.keepIccProfile();
     return p;
   };

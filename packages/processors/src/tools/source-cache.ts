@@ -8,7 +8,8 @@ import { loadImage, throwIfCancelled, toRaw, toToolError, type LoadedImage, type
  * Small LRU caches for editor previews. A preview request decodes the source
  * once at (at most) the preview size; while the user drags a slider the same
  * downscaled source is reused instead of decoding a 24 MP JPEG every time.
- * Entries are keyed by path + size + mtime, so an edited file is decoded again.
+ * Entries are keyed by the file's identity (fileIdentityKey), so an edited or
+ * replaced file is decoded again.
  */
 export class Lru<V> {
   private readonly map = new Map<string, { value: V; cost: number }>();
@@ -74,13 +75,25 @@ interface FileIdentity {
   readonly key: string;
 }
 
-async function identify(input: ProcessorInput): Promise<FileIdentity> {
+/**
+ * Cache key for the current content of `path`: device + inode + size + mtime + ctime
+ * (nanoseconds). Size + mtime alone missed a file replaced by another one of the same size
+ * whose mtime had been preserved or restored (Finder/`cp -p` copies, rename-over saves,
+ * extracted archives — measured: previews and Compress estimates of the old picture). A
+ * rename-over gives a new inode and any write or utimes() moves ctime, which no user tool
+ * can set back.
+ */
+export async function fileIdentityKey(path: string): Promise<string> {
   try {
-    const info = await stat(input.path);
-    return { key: `${input.path}\u0000${info.size}\u0000${info.mtimeMs}` };
+    const info = await stat(path, { bigint: true });
+    return [path, info.dev, info.ino, info.size, info.mtimeNs, info.ctimeNs].join('\u0000');
   } catch (error) {
     throw mapFsError(error, 'READ_PERMISSION_DENIED');
   }
+}
+
+async function identify(input: ProcessorInput): Promise<FileIdentity> {
+  return { key: await fileIdentityKey(input.path) };
 }
 
 const sourceCache = new Lru<ScaledSource>(8, 160 * 1024 * 1024);

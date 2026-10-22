@@ -142,7 +142,9 @@ function joinLines(prev: string, next: string): string {
  */
 export function linesToParagraphs(lines: readonly TextLine[], columnWidth = 0): string[] {
   if (lines.length === 0) return [];
-  const reference = Math.max(columnWidth, ...lines.map((l) => l.width));
+  // A loop, not Math.max(...spread): a page with ~120k+ text lines overflows the call stack.
+  let reference = columnWidth;
+  for (const line of lines) reference = Math.max(reference, line.width);
   const paragraphs: string[] = [];
   let text = lines[0]!.text;
   let startX = lines[0]!.x;
@@ -183,7 +185,8 @@ export async function extractPageText(page: PdfPage): Promise<PageText> {
   const [x0 = 0, , x1 = 0] = page.view;
   const left = Math.min(x0, x1);
   const pageWidth = Math.abs(x1 - x0);
-  const minX = lines.length > 0 ? Math.min(...lines.map((l) => l.x)) : left;
+  let minX = lines.length > 0 ? Infinity : left;
+  for (const line of lines) minX = Math.min(minX, line.x);
   const margin = Math.min(Math.max(0, minX - left), pageWidth / 2);
   return { lines, columnWidth: Math.max(0, pageWidth - 2 * margin) };
 }

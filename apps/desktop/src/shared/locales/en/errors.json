@@ -37,5 +37,7 @@
   "warning.DOCX_IMAGE_ONLY": "The image was placed in the DOCX as a picture. Text in the image isn't recognised (no OCR).",
   "warning.METADATA_REMOVED": "Metadata was removed.",
   "warning.SKIPPED_SAME_FORMAT": "Skipped because the file is already in this format.",
-  "warning.ANNOTATION_FONT_FALLBACK": "Some characters can't be drawn with the installed fonts, so they may appear as boxes or be missing in the result."
+  "warning.ANNOTATION_FONT_FALLBACK": "Some characters can't be drawn with the installed fonts, so they may appear as boxes or be missing in the result.",
+  "warning.FIRST_FRAME_ONLY": "This is an animated image, so only its first frame was used. The other frames aren't in the result.",
+  "warning.FIRST_PAGE_ONLY": "This file has several pages (images), so only the first one was used. The other pages aren't in the result."
 }

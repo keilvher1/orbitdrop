@@ -2,6 +2,7 @@ import { FORMAT_INFO, type CropOptions, type JobWarning, type PreviewRequest, ty
 import {
   encodePreview,
   encodeToolImage,
+  framesWarnings,
   invalidOptions,
   loadImage,
   parseToolOptions,
@@ -59,7 +60,7 @@ export async function runCrop(job: ProcessorJob, ctx: ProcessorRunContext): Prom
       flattenBackground: options.flattenBackground,
       keepIcc: image.keepIcc,
     });
-    const warnings: JobWarning[] = [];
+    const warnings: JobWarning[] = framesWarnings(image);
     if (encoded.flattened && (await regionHasTransparency(image, region))) {
       warnings.push({ code: 'ALPHA_FLATTENED', params: { background: options.flattenBackground } });
     }

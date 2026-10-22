@@ -4,6 +4,7 @@ import { annotationBounds, drawAnnotations } from '@orbitdrop/core';
 import {
   encodePreview,
   encodeToolImage,
+  framesWarnings,
   loadImage,
   parseToolOptions,
   regionHasTransparency,
@@ -149,7 +150,7 @@ export async function runAnnotate(job: ProcessorJob, ctx: ProcessorRunContext): 
       flattenBackground: '#FFFFFF',
       keepIcc: image.keepIcc,
     });
-    const warnings: JobWarning[] = [...fontWarnings];
+    const warnings: JobWarning[] = [...fontWarnings, ...framesWarnings(image)];
     if (encoded.flattened && (await regionHasTransparency(image))) warnings.push({ code: 'ALPHA_FLATTENED', params: { background: '#FFFFFF' } });
     stage(ctx.onProgress, 'writing');
     const output = await writeToolOutput(job, input, encoded, signal, ctx.onCommitted);

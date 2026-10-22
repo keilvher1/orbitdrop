@@ -9,9 +9,10 @@ import {
   type ProcessorResult,
   type ProcessorRunContext,
 } from '@orbitdrop/contracts';
-import { readInputBuffer } from '../common/io';
+import { apngFrameCount, readInputBuffer } from '../common/io';
 import {
   encodeToolImage,
+  framesWarnings,
   loadImage,
   parseToolOptions,
   requireImageInput,
@@ -111,7 +112,8 @@ export async function inspectImage(input: ProcessorInput, limits: ProcessingLimi
       hasXmp: meta.xmp !== undefined && meta.xmp.length > 0,
       hasIptc: meta.iptc !== undefined && meta.iptc.length > 0,
       exif: summarizeExif(meta.exif),
-      pages: meta.pages ?? null,
+      // libvips reads only the default image of an APNG; its frame count is in the acTL chunk.
+      pages: meta.pages ?? (image.format === 'png' && apngFrameCount(buffer) > 1 ? apngFrameCount(buffer) : null),
     };
   } catch (error) {
     throw toToolError(error);
@@ -205,7 +207,9 @@ export async function runMetadata(job: ProcessorJob, ctx: ProcessorRunContext): 
     stage(ctx.onProgress, 'encoding');
     const result = await stripMetadata(image, options, job.settings, job.limits);
     if (result.data.length === 0) throw new OrbitError('INTERNAL', 'Empty result');
-    const warnings = result.flattened ? [{ code: 'ALPHA_FLATTENED' as const, params: { background: '#FFFFFF' } }] : [];
+    // The lossless path keeps every frame (GIF/WebP/APNG); re-encoding writes the first one only.
+    const warnings = result.method === 'reencode' ? framesWarnings(image) : [];
+    if (result.flattened) warnings.push({ code: 'ALPHA_FLATTENED', params: { background: '#FFFFFF' } });
     stage(ctx.onProgress, 'writing');
     const output = await writeToolOutput(job, input, result, signal, ctx.onCommitted);
     return { outputs: [output], warnings };

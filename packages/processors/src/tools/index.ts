@@ -9,6 +9,8 @@ import {
   type ProcessorResult,
   type ProcessorRunContext,
 } from '@orbitdrop/contracts';
+import { assertWritableDir } from '@orbitdrop/core/node';
+import { outputDirFor } from '../common/io';
 import { runAddBackground } from './add-background';
 import { runAnnotate } from './annotate';
 import { throwIfCancelled } from './common';
@@ -25,6 +27,11 @@ import { runRedact } from './redact';
  */
 export async function runTool(job: ProcessorJob, ctx: ProcessorRunContext): Promise<ProcessorResult> {
   throwIfCancelled(ctx.signal);
+  // Fail fast, like the conversions: a read-only or missing output folder is
+  // OUTPUT_DIR_NOT_WRITABLE (main offers another folder) before any decoding,
+  // not an OUTPUT_WRITE_FAILED after the whole image has been processed.
+  const first = job.inputs[0];
+  if (first) await assertWritableDir(outputDirFor(job, first), job.jobId);
   switch (job.actionId) {
     case 'tool.crop':
       return runCrop(job, ctx);

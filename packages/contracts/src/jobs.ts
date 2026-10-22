@@ -47,6 +47,8 @@ export interface OutputFileInfo {
  *   distinct characters it cannot draw, shapes = text shapes containing them, unreadable = text
  *   shapes with no drawable visible character, hangul = 1 when Hangul is among them (else 0).
  *   Counts only — never the text itself.
+ * - FIRST_FRAME_ONLY `{frames, files}` / FIRST_PAGE_ONLY `{pages, files}`: frames/pages in the
+ *   input (only the first was used), files = inputs of the job it applies to (added later)
  * - DOCX_TEXT_ONLY, DOCX_IMAGE_ONLY, SKIPPED_SAME_FORMAT: no params
  */
 export const WARNING_CODES = [
@@ -73,6 +75,10 @@ export const WARNING_CODES = [
    * font, or a script/emoji no font covers); they appear as boxes or are missing in the result.
    */
   'ANNOTATION_FONT_FALLBACK',
+  /** Animated input (GIF, WebP, APNG): only the first frame was converted or edited (added later). */
+  'FIRST_FRAME_ONLY',
+  /** Multi-page input (TIFF, HEIF collection): only the first page was converted or edited (added later). */
+  'FIRST_PAGE_ONLY',
 ] as const;
 export type WarningCode = (typeof WARNING_CODES)[number];
 

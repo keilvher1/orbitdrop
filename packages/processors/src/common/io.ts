@@ -1,9 +1,10 @@
-import { open, readFile, type FileHandle } from 'node:fs/promises';
-import sharp, { type Sharp, type SharpOptions } from 'sharp';
+import { open, type FileHandle } from 'node:fs/promises';
+import sharp, { type Metadata, type Sharp, type SharpOptions } from 'sharp';
 import {
   FORMAT_INFO,
   OrbitError,
   type ImageFormat,
+  type JobWarning,
   type ProcessingLimits,
   type ProcessorInput,
   type ProcessorJob,
@@ -33,11 +34,27 @@ export function configureSharp(): void {
 
 export async function readInputBuffer(input: ProcessorInput, limits: ProcessingLimits, signal?: AbortSignal): Promise<Buffer> {
   if (input.bytes > limits.maxInputBytes) throw new OrbitError('FILE_TOO_LARGE', 'File is larger than the limit');
+  let handle: FileHandle;
   try {
-    return await readFile(input.path, signal ? { signal } : undefined);
+    handle = await open(input.path, 'r');
   } catch (error) {
+    throw mapFsError(error, 'READ_PERMISSION_DENIED');
+  }
+  try {
+    // The size main validated may be stale (the file can grow or be emptied before the job runs):
+    // check the file being read, before reading it.
+    const { size } = await handle.stat();
+    if (size > limits.maxInputBytes) throw new OrbitError('FILE_TOO_LARGE', 'File is larger than the limit', { detail: `${size} > ${limits.maxInputBytes}` });
+    if (size === 0) throw new OrbitError('FILE_EMPTY', 'File is empty');
+    const data = await handle.readFile(signal ? { signal } : undefined);
+    if (data.length === 0) throw new OrbitError('FILE_EMPTY', 'File is empty');
+    return data;
+  } catch (error) {
+    if (error instanceof OrbitError) throw error;
     if (signal?.aborted) throw new OrbitError('CANCELLED', 'Cancelled', { cause: error });
     throw mapFsError(error, 'READ_PERMISSION_DENIED');
+  } finally {
+    await handle.close().catch(() => undefined);
   }
 }
 
@@ -63,6 +80,7 @@ export async function readInputBytes(input: ProcessorInput, limits: ProcessingLi
   try {
     const { size } = await handle.stat();
     if (size > limits.maxInputBytes) throw new OrbitError('FILE_TOO_LARGE', 'File is larger than the limit', { detail: `${size} > ${limits.maxInputBytes}` });
+    if (size === 0) throw new OrbitError('FILE_EMPTY', 'File is empty');
     const bytes = new Uint8Array(size);
     let filled = 0;
     while (filled < size) {
@@ -96,15 +114,127 @@ export async function openImage(buffer: Buffer, format: ImageFormat, limits: Pro
   return sharp(buffer, options).autoOrient();
 }
 
+function isEightBit(meta: Metadata): boolean {
+  return meta.depth === 'uchar' || meta.depth === 'char';
+}
+
+/**
+ * 8-bit stand-in for an input that is not 8 bits per channel (16-bit PNG/TIFF, 10/12-bit
+ * AVIF, float TIFF, the 16-bit PNG ImageIO decodes a 10-bit HEIC to): a lossless PNG with
+ * the same geometry — no rotation, the EXIF orientation stays a tag and is applied by
+ * autoOrient() on 8-bit data — the RGB ICC profile kept as is (CMYK converted to sRGB, grey
+ * kept grey) and EXIF/XMP carried. `unrotated` must be a plain pipeline over the input.
+ *
+ * Why: sharp 0.35 mishandles high-bit-depth input in several paths. RGB16 with an embedded
+ * profile (any, sRGB included) is processed in Display P3 and written back without converting
+ * or tagging it — conversions were off by up to 57 levels against ColorSync (measured); asking
+ * for an explicit sRGB output profile fixes that but shifts untagged RGB16 instead. recomb
+ * casts to 8-bit before linear, and rotating 16-bit data drops a kept profile. Outputs are
+ * 8-bit anyway, and sharp's 8-bit paths handle every profile correctly.
+ */
+export async function toEightBit(unrotated: Sharp, meta: Metadata): Promise<Buffer> {
+  const hasProfile = meta.hasProfile === true || meta.icc !== undefined;
+  const keepIcc = hasProfile && (meta.space === 'srgb' || meta.space === 'rgb16');
+  const grey = meta.space === 'b-w' || meta.space === 'grey16';
+  let pipeline = (keepIcc ? unrotated.keepIccProfile() : unrotated).keepExif().keepXmp();
+  pipeline = pipeline.toColourspace(grey ? 'b-w' : 'srgb');
+  return pipeline.png({ compressionLevel: 0, adaptiveFiltering: false }).toBuffer();
+}
+
+/** A decoded input for the conversions: its stored metadata and a factory of 8-bit pipelines. */
+export interface ImageSource {
+  /**
+   * Metadata of the input as stored (orientation, profile, depth, pages, EXIF/XMP/IPTC…);
+   * for BMP and HEIC that of the decoded pixels (our codec, ImageIO).
+   */
+  readonly meta: Metadata;
+  /**
+   * A fresh auto-oriented 8-bit pipeline each call, built from one shared buffer (never
+   * `Sharp.clone()`, which deep-copies its input — +1 GiB for a decoded 16k×16k BMP).
+   */
+  open(): Sharp;
+}
+
+/**
+ * Decode once for conversions (image → image, images → PDF, image → DOCX): BMP through our
+ * codec, HEIC through ImageIO, everything else by sharp. High-bit-depth input is reduced to 8
+ * bits first (toEightBit), so a 16-bit PNG with a profile converts to the right sRGB colours.
+ */
+export async function openImageSource(buffer: Buffer, format: ImageFormat, limits: ProcessingLimits): Promise<ImageSource> {
+  configureSharp();
+  const options: SharpOptions = { limitInputPixels: limits.maxInputPixels, failOn: 'error', animated: false };
+  if (format === 'bmp') {
+    const raw = decodeBmp(buffer, limits.maxInputPixels);
+    const open = (): Sharp => sharp(raw.data, { raw: { width: raw.width, height: raw.height, channels: 4 }, limitInputPixels: limits.maxInputPixels });
+    return { meta: await open().metadata(), open };
+  }
+  const decoded = format === 'heic' ? await decodeWithImageIO(buffer) : buffer;
+  const meta = await sharp(decoded, options).metadata();
+  if (isEightBit(meta)) return { meta, open: () => sharp(decoded, options).autoOrient() };
+  const intermediate = await toEightBit(sharp(decoded, options), meta);
+  return { meta, open: () => sharp(intermediate, options).autoOrient() };
+}
+
+/** Frames of an animated PNG from its acTL chunk (libvips reads only the default image), or 0. */
+export function apngFrameCount(buffer: Uint8Array): number {
+  const view = Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  if (view.length < 8 || view.readUInt32BE(0) !== 0x89504e47) return 0;
+  let pos = 8;
+  while (pos + 12 <= view.length) {
+    const length = view.readUInt32BE(pos);
+    const type = view.toString('latin1', pos + 4, pos + 8);
+    if (type === 'acTL' && length >= 8) return view.readUInt32BE(pos + 8); // num_frames
+    if (type === 'IDAT' || type === 'IEND') return 0;
+    pos += 12 + length;
+  }
+  return 0;
+}
+
+/**
+ * Frames or pages the conversions and tools do not use: they process the first frame of an
+ * animation (GIF, WebP, APNG) and the first page of a multi-page TIFF/HEIF. Null when the input
+ * has only one. Reported as FIRST_FRAME_ONLY / FIRST_PAGE_ONLY so nothing is dropped silently.
+ */
+export function droppedFrames(format: ImageFormat, meta: Pick<Metadata, 'pages'>, buffer: Uint8Array): DroppedFrames | null {
+  const pages = format === 'png' ? apngFrameCount(buffer) : (meta.pages ?? 1);
+  if (!(pages > 1)) return null;
+  return { kind: format === 'gif' || format === 'webp' || format === 'png' ? 'frames' : 'pages', count: pages };
+}
+
+export interface DroppedFrames {
+  readonly kind: 'frames' | 'pages';
+  /** Frames/pages in the file (only the first was used). */
+  readonly count: number;
+}
+
+/** FIRST_FRAME_ONLY {frames, files} / FIRST_PAGE_ONLY {pages, files}: `files` = inputs it applies to. */
+export function framesWarning(dropped: DroppedFrames, files: number): JobWarning {
+  return dropped.kind === 'frames'
+    ? { code: 'FIRST_FRAME_ONLY', params: { frames: dropped.count, files } }
+    : { code: 'FIRST_PAGE_ONLY', params: { pages: dropped.count, files } };
+}
+
 /** Wraps decoder failures (corrupt/truncated data, pixel limit) into OrbitErrors. */
 export function mapSharpError(error: unknown): OrbitError {
   if (error instanceof OrbitError) return error;
   const message = error instanceof Error ? error.message : String(error);
   if (/pixel limit/i.test(message)) return new OrbitError('IMAGE_TOO_LARGE', 'Image exceeds the pixel limit', { cause: error });
-  if (/unsupported image format|bad seek|premature end|corrupt|invalid|truncated|VipsJpeg|pngload|webpload|heifload|tiffload|gifload/i.test(message)) {
+  // Loader prefixes as libvips 8.18 reports them ("vipspng: libpng read error" for a truncated PNG).
+  if (/unsupported image format|bad seek|premature end|corrupt|invalid|truncated|VipsJpeg|vipspng|libpng|libspng|pngload|webpload|heifload|tiffload|gifload/i.test(message)) {
     return new OrbitError('IMAGE_CORRUPT', 'Image could not be decoded', { detail: message.slice(0, 300), cause: error });
   }
   return new OrbitError('INTERNAL', 'Image processing failed', { detail: message.slice(0, 300), cause: error });
+}
+
+/**
+ * keepMetadata() for an output pipeline. On CMYK input, sharp's keepMetadata()/keepIccProfile()
+ * convert to sRGB with sharp's built-in CMYK profile instead of the embedded one (52–55 levels
+ * off against ColorSync, measured) and then tag the result sRGB; asking for the sRGB output
+ * profile explicitly makes the conversion use the embedded profile. RGB profiles are kept as is.
+ */
+export function keepMetadataFor(pipeline: Sharp, space: string | undefined): Sharp {
+  const kept = pipeline.keepMetadata();
+  return space === 'cmyk' ? kept.withIccProfile('srgb') : kept;
 }
 
 export interface EncodeOptions {
@@ -150,7 +280,7 @@ export async function encodeImage(
     pipeline = pipeline.flatten({ background: options.flattenBackground ?? '#FFFFFF' });
     flattened = true;
   }
-  if (options.keepMetadata) pipeline = pipeline.keepMetadata();
+  if (options.keepMetadata) pipeline = keepMetadataFor(pipeline, meta.space);
   const quality = options.quality ?? defaultQuality(format, settings);
 
   if (format === 'bmp') {

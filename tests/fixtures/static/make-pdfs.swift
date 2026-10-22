@@ -1,17 +1,21 @@
 // Generates the static PDF fixtures that pdf-lib cannot produce:
 //   korean-text.pdf  2 pages of Hangul text with an embedded (subset) Apple SD Gothic Neo font
 //   encrypted.pdf    1 page, RC4-128 encrypted with a user password ("orbitdrop")
-// Usage: swift make-pdfs.swift <output-dir>     (macOS; run by make-static-fixtures.mjs)
+//   owner-only.pdf   1 page, RC4-128 encrypted with an owner password only (opens without a
+//                    password; printing and copying not allowed)
+// Usage: swift make-pdfs.swift <output-dir> [file names…]   (macOS; run by make-static-fixtures.mjs)
 import CoreGraphics
 import CoreText
 import Foundation
 
 let args = CommandLine.arguments
 guard args.count >= 2 else {
-    FileHandle.standardError.write("usage: swift make-pdfs.swift <output-dir>\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: swift make-pdfs.swift <output-dir> [file names…]\n".data(using: .utf8)!)
     exit(2)
 }
 let outDir = URL(fileURLWithPath: args[1], isDirectory: true)
+let only = Set(args.dropFirst(2))
+func wanted(_ name: String) -> Bool { only.isEmpty || only.contains(name) }
 
 func drawPDF(_ url: URL, pages: [[String]], fontName: String, size: CGFloat, info: [CFString: Any]) {
     var mediaBox = CGRect(x: 0, y: 0, width: 595, height: 842)
@@ -37,27 +41,47 @@ func drawPDF(_ url: URL, pages: [[String]], fontName: String, size: CGFloat, inf
     context.closePDF()
 }
 
-drawPDF(
-    outDir.appendingPathComponent("korean-text.pdf"),
-    pages: [
-        ["안녕하세요 OrbitDrop", "한글 텍스트 추출 테스트"],
-        ["두 번째 페이지입니다"],
-    ],
-    fontName: "AppleSDGothicNeo-Regular",
-    size: 20,
-    info: [kCGPDFContextCreator: "OrbitDrop fixtures"]
-)
+if wanted("korean-text.pdf") {
+    drawPDF(
+        outDir.appendingPathComponent("korean-text.pdf"),
+        pages: [
+            ["안녕하세요 OrbitDrop", "한글 텍스트 추출 테스트"],
+            ["두 번째 페이지입니다"],
+        ],
+        fontName: "AppleSDGothicNeo-Regular",
+        size: 20,
+        info: [kCGPDFContextCreator: "OrbitDrop fixtures"]
+    )
+}
 
-drawPDF(
-    outDir.appendingPathComponent("encrypted.pdf"),
-    pages: [["Encrypted fixture"]],
-    fontName: "Helvetica",
-    size: 20,
-    info: [
-        kCGPDFContextCreator: "OrbitDrop fixtures",
-        kCGPDFContextUserPassword: "orbitdrop",
-        kCGPDFContextOwnerPassword: "orbitdrop-owner",
-        kCGPDFContextEncryptionKeyLength: 128,
-    ]
-)
-print("wrote korean-text.pdf and encrypted.pdf to \(outDir.path)")
+if wanted("encrypted.pdf") {
+    drawPDF(
+        outDir.appendingPathComponent("encrypted.pdf"),
+        pages: [["Encrypted fixture"]],
+        fontName: "Helvetica",
+        size: 20,
+        info: [
+            kCGPDFContextCreator: "OrbitDrop fixtures",
+            kCGPDFContextUserPassword: "orbitdrop",
+            kCGPDFContextOwnerPassword: "orbitdrop-owner",
+            kCGPDFContextEncryptionKeyLength: 128,
+        ]
+    )
+}
+
+if wanted("owner-only.pdf") {
+    drawPDF(
+        outDir.appendingPathComponent("owner-only.pdf"),
+        pages: [["Owner password only"]],
+        fontName: "Helvetica",
+        size: 20,
+        info: [
+            kCGPDFContextCreator: "OrbitDrop fixtures",
+            kCGPDFContextOwnerPassword: "orbitdrop-owner",
+            kCGPDFContextAllowsPrinting: false,
+            kCGPDFContextAllowsCopying: false,
+            kCGPDFContextEncryptionKeyLength: 128,
+        ]
+    )
+}
+print("wrote \(only.isEmpty ? "korean-text.pdf, encrypted.pdf, owner-only.pdf" : only.sorted().joined(separator: ", ")) to \(outDir.path)")

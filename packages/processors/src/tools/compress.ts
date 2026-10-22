@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { stat } from 'node:fs/promises';
 import sharp from 'sharp';
 import type {
   CompressOptions,
@@ -12,11 +11,11 @@ import type {
   ProcessorRunContext,
   ProcessorSettings,
 } from '@orbitdrop/contracts';
-import { mapFsError } from '@orbitdrop/core/node';
 import {
   canEncode,
   encodePreview,
   encodeToolImage,
+  framesWarnings,
   loadImage,
   parseToolOptions,
   regionHasTransparency,
@@ -29,7 +28,7 @@ import {
   type EncodedImage,
   type LoadedImage,
 } from './common';
-import { Lru, onClearPreviewCaches } from './source-cache';
+import { Lru, fileIdentityKey, onClearPreviewCaches } from './source-cache';
 
 /**
  * Compress (P1). Re-encodes with the chosen format/quality, optionally
@@ -108,7 +107,7 @@ export async function runCompress(job: ProcessorJob, ctx: ProcessorRunContext): 
     throwIfCancelled(signal);
     stage(ctx.onProgress, 'encoding');
     const encoded = await encodeCompressed(image, options, job.settings);
-    const warnings: JobWarning[] = [];
+    const warnings: JobWarning[] = framesWarnings(image);
     if (encoded.alphaFlattened) warnings.push({ code: 'ALPHA_FLATTENED', params: { background: '#FFFFFF' } });
     const inputBytes = image.buffer.length;
     if (encoded.data.length >= inputBytes) {
@@ -180,15 +179,8 @@ function serially<T>(task: () => Promise<T>): Promise<T> {
 }
 
 async function encodeKeyFor(request: PreviewRequest, options: CompressOptions): Promise<string> {
-  let info;
-  try {
-    info = await stat(request.input.path);
-  } catch (error) {
-    throw mapFsError(error, 'READ_PERMISSION_DENIED');
-  }
-  return createHash('sha256')
-    .update(JSON.stringify([request.input.path, info.size, info.mtimeMs, options, request.settings]))
-    .digest('hex');
+  const identity = await fileIdentityKey(request.input.path);
+  return createHash('sha256').update(JSON.stringify([identity, options, request.settings])).digest('hex');
 }
 
 function estimateOf(entry: EncodeCacheEntry): EstimateEntry {

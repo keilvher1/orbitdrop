@@ -3,6 +3,7 @@ import type { EditOptions, PreviewRequest, PreviewResult, ProcessorJob, Processo
 import {
   encodePreview,
   encodeToolImage,
+  framesWarnings,
   loadImage,
   parseToolOptions,
   regionHasTransparency,
@@ -96,7 +97,8 @@ export async function runEdit(job: ProcessorJob, ctx: ProcessorRunContext): Prom
       flattenBackground: '#FFFFFF',
       keepIcc: image.keepIcc,
     });
-    const warnings = encoded.flattened && (await regionHasTransparency(image)) ? [{ code: 'ALPHA_FLATTENED' as const, params: { background: '#FFFFFF' } }] : [];
+    const warnings = framesWarnings(image);
+    if (encoded.flattened && (await regionHasTransparency(image))) warnings.push({ code: 'ALPHA_FLATTENED', params: { background: '#FFFFFF' } });
     stage(ctx.onProgress, 'writing');
     const output = await writeToolOutput(job, input, encoded, signal, ctx.onCommitted);
     return { outputs: [output], warnings };

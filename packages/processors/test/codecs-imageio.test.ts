@@ -117,7 +117,9 @@ describe.skipIf(process.platform === 'win32')('ImageIO helper bridge (fake helpe
   });
 
   it('probes the helper (JSON on the last line) and round-trips through temp files it cleans up', async () => {
-    expect(await probeImageIO({ helperPath: helper })).toEqual({ decode: ['heic', 'heif', 'png'], encode: ['heic'] });
+    // The fake helper is a Node script: starting it can take longer than the real helper's 3 s
+    // probe budget when the whole suite runs in parallel (seen once under load), so allow more.
+    expect(await probeImageIO({ helperPath: helper, timeoutMs: 20_000 })).toEqual({ decode: ['heic', 'heif', 'png'], encode: ['heic'] });
     const png = await sharp({ create: { width: 20, height: 10, channels: 3, background: '#ff0000' } }).png().toBuffer();
     const heic = await encodeWithImageIO(png, 'heic', 70, { helperPath: helper });
     expect(heic.subarray(0, 16).toString()).toBe('FAKEHEIC q=0.70\n');

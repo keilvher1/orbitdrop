@@ -12,7 +12,7 @@ import {
   type ProcessorRunContext,
 } from '@orbitdrop/contracts';
 import { convertedName } from '@orbitdrop/core';
-import { configureSharp, mapSharpError, openImage, readInputBuffer } from '../common/io';
+import { configureSharp, droppedFrames, framesWarning, mapSharpError, openImageSource, readInputBuffer, type DroppedFrames } from '../common/io';
 import { OutputLedger, extensionMismatchWarning, reporter, throwIfCancelled, toOrbitError, writableOutputDir } from './common';
 
 /**
@@ -27,12 +27,16 @@ import { OutputLedger, extensionMismatchWarning, reporter, throwIfCancelled, toO
  *
  * Embedding:
  *  - Baseline JPEGs (8-bit gray/RGB, upright orientation, sRGB or no ICC
- *    profile) are embedded byte-for-byte (no re-encoding, no quality loss).
+ *    profile) are embedded byte-for-byte (no re-encoding, no quality loss),
+ *    after a full decode proved the data intact (a truncated JPEG is
+ *    IMAGE_CORRUPT here too, never a broken picture in a "successful" PDF).
  *  - Other JPEGs (EXIF-rotated, progressive, CMYK, wide-gamut ICC) are decoded,
  *    oriented, converted to sRGB and re-encoded as baseline JPEG q95 4:4:4 —
  *    they are photos already, PNG would multiply the PDF size.
- *  - Every other format is decoded (orientation applied, sRGB) and embedded
- *    losslessly as PNG; transparency is kept (soft mask).
+ *  - Every other format is decoded (orientation applied, 8-bit, sRGB) and
+ *    embedded losslessly as PNG; transparency is kept (soft mask). Animated or
+ *    multi-page inputs contribute their first frame/page (FIRST_FRAME_ONLY /
+ *    FIRST_PAGE_ONLY).
  */
 
 const PAGE_SIZES = { a4: [595.28, 841.89], letter: [612, 792] } as const;
@@ -172,6 +176,17 @@ export interface PreparedImage {
   readonly density: number;
   /** Metadata kinds (exif, xmp, iptc…) not carried into the PDF. */
   readonly metadataRemoved: readonly string[];
+  /** Frames/pages of an animated or multi-page input that were not used (first one only). */
+  readonly dropped: DroppedFrames | null;
+}
+
+/**
+ * Decode every scan (at reduced size where the codec allows it: JPEG DCT scaling still
+ * entropy-decodes all data) with failOn 'error', so a truncated or corrupt JPEG is rejected
+ * before its bytes are embedded unchanged.
+ */
+async function assertDecodes(buffer: Buffer, limits: ProcessingLimits): Promise<void> {
+  await sharp(buffer, { limitInputPixels: limits.maxInputPixels, failOn: 'error' }).resize(64, 64, { fit: 'inside' }).raw().toBuffer();
 }
 
 function metadataKinds(meta: { exif?: unknown; xmp?: unknown; iptc?: unknown }): string[] {
@@ -196,6 +211,7 @@ export async function prepareImage(buffer: Buffer, input: ProcessorInput, limits
       const simpleColour = frame !== null && (frame.components === 1 || frame.components === 3);
       const srgb = !meta.icc || /srgb/i.test(iccDescription(meta.icc) ?? '');
       if (upright && baseline && simpleColour && srgb) {
+        await assertDecodes(buffer, limits);
         const stripped = keepMetadata ? { data: buffer, removed: [] } : stripJpegMetadata(buffer);
         return {
           kind: 'jpg',
@@ -204,16 +220,26 @@ export async function prepareImage(buffer: Buffer, input: ProcessorInput, limits
           height: meta.height,
           density: densityOf(meta.density),
           metadataRemoved: stripped.removed.filter((k) => k !== 'comment' && k !== 'app1'),
+          dropped: null,
         };
       }
-      const image = await openImage(buffer, 'jpeg', limits);
-      const { data, info } = await image.jpeg({ quality: 95, chromaSubsampling: '4:4:4' }).toBuffer({ resolveWithObject: true });
-      return { kind: 'jpg', bytes: data, width: info.width, height: info.height, density: densityOf(meta.density), metadataRemoved: metadataKinds(meta) };
+      const source = await openImageSource(buffer, 'jpeg', limits);
+      const { data, info } = await source.open().jpeg({ quality: 95, chromaSubsampling: '4:4:4' }).toBuffer({ resolveWithObject: true });
+      return { kind: 'jpg', bytes: data, width: info.width, height: info.height, density: densityOf(meta.density), metadataRemoved: metadataKinds(meta), dropped: null };
     }
-    const image = await openImage(buffer, input.format as Parameters<typeof openImage>[1], limits);
-    const meta = await image.metadata();
-    const { data, info } = await image.png({ compressionLevel: 1 }).toBuffer({ resolveWithObject: true });
-    return { kind: 'png', bytes: data, width: info.width, height: info.height, density: densityOf(meta.density), metadataRemoved: metadataKinds(meta) };
+    const format = input.format as Parameters<typeof openImageSource>[1];
+    const source = await openImageSource(buffer, format, limits);
+    const { meta } = source;
+    const { data, info } = await source.open().png({ compressionLevel: 1 }).toBuffer({ resolveWithObject: true });
+    return {
+      kind: 'png',
+      bytes: data,
+      width: info.width,
+      height: info.height,
+      density: densityOf(meta.density),
+      metadataRemoved: metadataKinds(meta),
+      dropped: droppedFrames(format, meta, buffer),
+    };
   } catch (error) {
     throw mapSharpError(error);
   }
@@ -278,11 +304,19 @@ export async function convertImagesToPdf(job: ProcessorJob, options: ConvertOpti
   doc.setCreator('OrbitDrop');
   doc.setProducer('OrbitDrop (pdf-lib)');
   const metadataRemoved = new Set<string>();
+  const dropped: { frames: DroppedFrames | null; framesFiles: number; pages: DroppedFrames | null; pagesFiles: number } = { frames: null, framesFiles: 0, pages: null, pagesFiles: 0 };
   for (const [index, input] of ordered.entries()) {
     throwIfCancelled(ctx.signal);
     const buffer = await readInputBuffer(input, job.limits, ctx.signal);
     const prepared = await prepareImage(buffer, input, job.limits, options.keepMetadata);
     for (const kind of prepared.metadataRemoved) metadataRemoved.add(kind);
+    if (prepared.dropped?.kind === 'frames') {
+      dropped.frames ??= prepared.dropped;
+      dropped.framesFiles += 1;
+    } else if (prepared.dropped?.kind === 'pages') {
+      dropped.pages ??= prepared.dropped;
+      dropped.pagesFiles += 1;
+    }
     throwIfCancelled(ctx.signal);
     let image: PDFImage;
     try {
@@ -322,6 +356,8 @@ export async function convertImagesToPdf(job: ProcessorJob, options: ConvertOpti
       break;
     }
   }
+  if (dropped.frames) warnings.push(framesWarning(dropped.frames, dropped.framesFiles));
+  if (dropped.pages) warnings.push(framesWarning(dropped.pages, dropped.pagesFiles));
   if (metadataRemoved.size > 0) warnings.push({ code: 'METADATA_REMOVED', params: { kinds: [...metadataRemoved].join(',') } });
   return { outputs: [output], warnings };
 }

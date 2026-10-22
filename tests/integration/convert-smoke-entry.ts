@@ -5,7 +5,7 @@
  * with ELECTRON_RUN_AS_NODE=1 and inside a real Electron utilityProcess.
  * Prints exactly one line: `CONVERT_SMOKE {json}`; exit code 0 when ok.
  */
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,6 +14,56 @@ import sharp from 'sharp';
 import { DEFAULT_PROCESSING_LIMITS, type ActionId, type ProcessorResult } from '@orbitdrop/contracts';
 import { validateInputFile } from '@orbitdrop/core/node';
 import { probeEngines, runJob } from '@orbitdrop/processors';
+import { pdfResourceLoads } from '../../packages/processors/src/pdf/engine';
+
+// Successful WebAssembly instantiations in this process: PDF.js falls back to JS decoders when
+// its wasm cannot be instantiated, so pixels alone would not show that the wasm was used.
+let wasmInstantiated = 0;
+const instantiate = WebAssembly.instantiate.bind(WebAssembly);
+WebAssembly.instantiate = (async (...args: Parameters<typeof WebAssembly.instantiate>) => {
+  const result = await instantiate(...args);
+  wasmInstantiated += 1;
+  return result;
+}) as typeof WebAssembly.instantiate;
+
+/**
+ * CCITT G4, JBIG2 (MMR) and JPEG 2000 images from tests/fixtures/static (CONVERT_SMOKE_FIXTURES),
+ * copied into `dir` so outputs never land in the repository. Returns what was checked.
+ */
+async function decoderChecks(dir: string): Promise<{ ok: boolean; details: Record<string, unknown> }> {
+  const fixtures = process.env.CONVERT_SMOKE_FIXTURES;
+  if (!fixtures) return { ok: false, details: { error: 'CONVERT_SMOKE_FIXTURES not set' } };
+  const expected = await sharp(join(fixtures, 'bilevel-source.png')).greyscale().raw().toBuffer({ resolveWithObject: true });
+  const details: Record<string, unknown> = {};
+  let ok = true;
+  for (const name of ['ccitt-g4.pdf', 'jbig2-mmr.pdf']) {
+    const path = join(dir, name);
+    await copyFile(join(fixtures, name), path);
+    const out = (await run('convert.png', [path], { dpi: 150 })).outputs[0]!;
+    const got = await sharp(out.path).greyscale().raw().toBuffer({ resolveWithObject: true });
+    let mismatches = got.info.width === expected.info.width && got.info.height === expected.info.height ? 0 : -1;
+    if (mismatches === 0) for (let i = 0; i < got.data.length; i += 1) if (got.data[i]! < 128 !== expected.data[i]! < 128) mismatches += 1;
+    details[name] = { width: got.info.width, height: got.info.height, mismatches };
+    ok &&= mismatches === 0;
+  }
+  const jpx = join(dir, 'jpx-image.pdf');
+  await copyFile(join(fixtures, 'jpx-image.pdf'), jpx);
+  const page = (await run('convert.png', [jpx], { dpi: 150 })).outputs[0]!;
+  const { data, info } = await sharp(page.path).raw().toBuffer({ resolveWithObject: true });
+  const at = (xPt: number, yPt: number) => {
+    const i = (Math.round((yPt * 150) / 72) * info.width + Math.round((xPt * 150) / 72)) * info.channels;
+    return [data[i]!, data[i + 1]!, data[i + 2]!];
+  };
+  const left = at(226, 396);
+  const right = at(386, 396);
+  const jpxOk = left[0]! > 180 && left[2]! < 80 && right[2]! > 180 && right[0]! < 80;
+  details['jpx-image.pdf'] = { left, right, ok: jpxOk };
+  const loads = pdfResourceLoads();
+  details.resourceLoads = loads;
+  details.wasmInstantiated = wasmInstantiated;
+  ok &&= jpxOk && (loads['jbig2.wasm'] ?? 0) > 0 && (loads['openjpeg.wasm'] ?? 0) > 0 && wasmInstantiated >= 2;
+  return { ok, details };
+}
 
 const settings = { pdfDpi: 150, jpegQuality: 85, webpQuality: 80, avifQuality: 60, heicQuality: 70 } as const;
 
@@ -89,6 +139,10 @@ async function main(): Promise<void> {
     ok &&= first.outputs.length === 2 && first.outputs[0]!.name === 'report-p001.jpg' && first.outputs[0]!.width === 1275 && first.outputs[0]!.height === 1650;
     const second = results[2] as { outputs: { width: number; height: number }[] };
     ok &&= second.outputs[0]!.width === 2550 && second.outputs[0]!.height === 3300;
+
+    const decoders = await decoderChecks(dir);
+    results.push({ actionId: 'convert.png (CCITT, JBIG2, JPX)', ...decoders.details });
+    ok &&= decoders.ok;
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

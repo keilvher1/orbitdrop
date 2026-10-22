@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Proves that sharp + @napi-rs/canvas + pdf.js (+ pdf-lib, docx) load and
 // convert under Electron's Node, bundled the way electron-vite bundles the
-// processor host (CJS, @orbitdrop/* inlined, runtime dependencies external):
+// processor host (CJS, @orbitdrop/* inlined, runtime dependencies external),
+// including PDF.js' CCITT, JBIG2 and JPEG 2000 decoders (the wasm ones must be
+// read and instantiated in every mode, app.asar included):
 //
 //   node tests/integration/convert-electron-smoke.mjs [node|utility|asar ...]
 //
@@ -14,8 +16,8 @@
 //            their native binaries (*.node, *.dylib, *.so, *.dll) unpacked — the
 //            electron-builder layout with asarUnpack for native files
 //   memory   (opt-in, not in the default set) generates a large PDF (CONVERT_MEMORY_MB,
-//            default 200) and converts it to TXT and JPG in a utilityProcess started with
-//            --expose-gc, sampling the process RSS (convert-memory-entry.ts)
+//            default 200; or measures CONVERT_MEMORY_INPUT) and converts it to TXT and JPG in a
+//            utilityProcess started with --expose-gc, sampling the process RSS (convert-memory-entry.ts)
 //
 // Prints one JSON summary line `CONVERT_ELECTRON_SMOKE {...}` and exits 0 when all modes pass.
 // Runtime dependencies resolve through a `node_modules` symlink to the repo's
@@ -145,6 +147,8 @@ export async function runConvertSmoke(modes = ['node', 'utility', 'asar'], { tim
     delete baseEnv.NODE_PATH;
     const linkType = process.platform === 'win32' ? 'junction' : 'dir';
     delete baseEnv.ORBITDROP_IMAGEIO_HELPER;
+    // CCITT/JBIG2/JPX PDFs the entry renders to prove PDF.js finds its wasm decoders in each mode.
+    baseEnv.CONVERT_SMOKE_FIXTURES = join(ROOT, 'tests', 'fixtures', 'static');
 
     for (const mode of modes) {
       let outcome;
@@ -152,8 +156,9 @@ export async function runConvertSmoke(modes = ['node', 'utility', 'asar'], { tim
         await symlink(join(ROOT, 'node_modules'), join(appDir, 'node_modules'), linkType);
       }
       if (mode === 'memory') {
-        const pdfPath = join(work, 'big.pdf');
-        summary.memoryPdf = await makeLargePdf(pdfPath, Number(process.env.CONVERT_MEMORY_MB ?? 200));
+        // CONVERT_MEMORY_INPUT measures an existing PDF instead (e.g. a 14 400 pt page).
+        const pdfPath = process.env.CONVERT_MEMORY_INPUT ?? join(work, 'big.pdf');
+        summary.memoryPdf = process.env.CONVERT_MEMORY_INPUT ? { path: pdfPath } : await makeLargePdf(pdfPath, Number(process.env.CONVERT_MEMORY_MB ?? 200));
         await bundleEntry(join(appDir, 'memory.cjs'), MEMORY_ENTRY);
         outcome = await runProcess(
           electron,

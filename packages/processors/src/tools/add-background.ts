@@ -18,6 +18,7 @@ import { findPreset, presetSvg, roundedRectMaskSvg, shadowShapeSvg } from './bac
 import {
   encodePreview,
   encodeToolImage,
+  framesWarnings,
   invalidOptions,
   loadImage,
   parseToolOptions,
@@ -211,7 +212,8 @@ export async function runAddBackground(job: ProcessorJob, ctx: ProcessorRunConte
       hasAlpha: transparent,
       flattenBackground: '#FFFFFF',
     });
-    const warnings: JobWarning[] = encoded.flattened ? [{ code: 'ALPHA_FLATTENED', params: { background: '#FFFFFF' } }] : [];
+    const warnings: JobWarning[] = framesWarnings(image);
+    if (encoded.flattened) warnings.push({ code: 'ALPHA_FLATTENED', params: { background: '#FFFFFF' } });
 
     stage(ctx.onProgress, 'writing');
     const output = await writeToolOutput(job, input, encoded, signal, ctx.onCommitted);

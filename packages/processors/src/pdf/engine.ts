@@ -196,6 +196,18 @@ class NoopFilterFactory {
 
 type BinaryKind = 'cMapUrl' | 'standardFontDataUrl' | 'wasmUrl';
 
+/** Resources served by LocalBinaryDataFactory in this process, by file name (diagnostics, smoke tests). */
+const resourceLoads = new Map<string, number>();
+
+/**
+ * How often each CMap, standard font and wasm decoder (openjpeg.wasm, jbig2.wasm…) was read
+ * from the local pdfjs-dist package in this process. Lets the packaged-app smoke test prove that
+ * PDF.js found its decoders inside app.asar / the utilityProcess, not only that pages rendered.
+ */
+export function pdfResourceLoads(): Readonly<Record<string, number>> {
+  return Object.fromEntries(resourceLoads);
+}
+
 /** Reads CMaps, standard fonts and wasm decoders from the local pdfjs-dist package. */
 class LocalBinaryDataFactory {
   readonly #bases: Record<BinaryKind, string | null>;
@@ -213,6 +225,7 @@ class LocalBinaryDataFactory {
     if (!base) throw new Error(`No base URL for ${kind}`);
     if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) throw new Error('Invalid resource name');
     const data = await readFile(fileURLToPath(`${base}${filename}`));
+    resourceLoads.set(filename, (resourceLoads.get(filename) ?? 0) + 1);
     return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
   }
 }
@@ -311,11 +324,11 @@ export async function openPdf(bytes: Uint8Array, engine?: PdfEngine, options: { 
 // ---------------------------------------------------------------- rendering
 
 export interface RenderedPage {
-  /** Opaque RGBA pixels (straight alpha, all 255). Valid until `release()`. */
+  /** Opaque RGBA pixels (straight alpha, all 255): a copy, independent of the canvas. */
   readonly data: Buffer;
   readonly width: number;
   readonly height: number;
-  /** Frees the canvas memory now instead of at the next GC. */
+  /** Kept for callers; the canvas is already freed when renderPage returns. */
   release(): void;
 }
 
@@ -357,17 +370,12 @@ export async function renderPage(engine: PdfEngine, page: PdfPage, scale: number
   } finally {
     signal?.removeEventListener('abort', onAbort);
   }
+  // canvas.data() returns a copy of the pixels (@napi-rs/canvas 1.0.11; pinned by a test), so the
+  // canvas is freed before the page is encoded: a page being encoded holds one copy, not two (34 MB
+  // less per Letter page at 300 DPI while another page renders). The peak of a single huge page is
+  // unchanged (measured): it is reached while data() copies, when both exist.
   const data = canvas.data();
-  let released = false;
-  return {
-    data,
-    width,
-    height,
-    release: () => {
-      if (released) return;
-      released = true;
-      canvas.width = 0;
-      canvas.height = 0;
-    },
-  };
+  canvas.width = 0;
+  canvas.height = 0;
+  return { data, width, height, release: () => undefined };
 }

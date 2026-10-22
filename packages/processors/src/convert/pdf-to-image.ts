@@ -91,7 +91,7 @@ async function encodePage(
   configureSharp();
   const image = sharp(data, { raw: { width, height, channels: 4 } }).removeAlpha().withDensity(dpi);
   if (target === 'jpeg') {
-    return image
+    const jpeg = await image
       .jpeg({
         quality,
         chromaSubsampling: quality >= 90 ? '4:4:4' : '4:2:0',
@@ -103,8 +103,34 @@ async function encodePage(
         progressive: false,
       })
       .toBuffer();
+    return withJfifDensity(jpeg, dpi);
   }
   return image.png({ compressionLevel: 6 }).toBuffer();
+}
+
+/**
+ * sharp writes the DPI of a JPEG only as EXIF XResolution/YResolution (withDensity keeps EXIF,
+ * and libvips then leaves out the JFIF APP0 segment), so readers that look at the JFIF density
+ * saw none. A JFIF APP0 with the same density (dots per inch, rounded) goes right after SOI;
+ * an existing JFIF segment gets its density set instead.
+ */
+export function withJfifDensity(jpeg: Buffer, dpi: number): Buffer {
+  if (jpeg.length < 4 || jpeg[0] !== 0xff || jpeg[1] !== 0xd8) return jpeg;
+  const density = Math.max(1, Math.min(0xffff, Math.round(dpi)));
+  if (jpeg[2] === 0xff && jpeg[3] === 0xe0 && jpeg.length >= 18 && jpeg.toString('latin1', 6, 11) === 'JFIF\u0000') {
+    const out = Buffer.from(jpeg);
+    out[13] = 1; // units: dots per inch
+    out.writeUInt16BE(density, 14);
+    out.writeUInt16BE(density, 16);
+    return out;
+  }
+  const app0 = Buffer.alloc(18);
+  app0.set([0xff, 0xe0, 0x00, 0x10]);
+  app0.write('JFIF\u0000', 4, 'latin1');
+  app0.set([1, 1, 1], 9); // version 1.01, units: dots per inch
+  app0.writeUInt16BE(density, 12);
+  app0.writeUInt16BE(density, 14);
+  return Buffer.concat([jpeg.subarray(0, 2), app0, jpeg.subarray(2)]);
 }
 
 export async function convertPdfToImages(
