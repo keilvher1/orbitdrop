@@ -230,6 +230,7 @@ export class WindowManager {
       backgroundColor: this.deps.background(),
       hasShadow: true,
       autoHideMenuBar: true,
+      acceptFirstMouse: spec.acceptFirstMouse,
       webPreferences: {
         preload: this.deps.preloadPath,
         contextIsolation: true,

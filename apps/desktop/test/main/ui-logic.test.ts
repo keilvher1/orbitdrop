@@ -36,6 +36,8 @@ describe('window placement', () => {
   it('the editor starts 520 DIP wide within the 440–560 range, the Drop Zone is small and always on top', () => {
     expect(WINDOW_SPECS.editor.width).toBe(520);
     expect(WINDOW_SPECS.editor.minWidth).toBe(440);
+    // Windows shown without focus take the first click (macOS acceptFirstMouse); focused ones do not click through.
+    expect(Object.entries(WINDOW_SPECS).filter(([, spec]) => spec.acceptFirstMouse).map(([kind]) => kind).sort()).toEqual(['dropzone', 'jobs']);
     // the panel is laid out at 520 DIP: users cannot resize the window around it (its content sizes it)
     expect(WINDOW_SPECS.editor.resizable).toBe(false);
     // the renderer sizes the height to its content; short views must be able to shrink the window
