@@ -101,7 +101,7 @@ Virtualization.framework의 VNC 서버(tart `--vnc-experimental`)로 넣었다 �
 | 게스트 | macOS 14.8.7 (23J520) arm64 — 최소 지원 버전인 macOS 14 계열에서 처음 실행 |
 | 이미지 | `ghcr.io/cirruslabs/macos-sonoma-vanilla:latest` (manifest `sha256:7ea0d508…`), tart 2.41.1 (Cirrus Labs Developer ID, 공증됨) |
 | 자원 | CPU 4 · 메모리 6 GB · 화면 1440×900 px(1×), 이어서 1440×900 pt(2×, Retina 2880×1800) |
-| 설치본 | `OrbitDrop-0.1.0-mac-arm64-unsigned.dmg` sha256 `d725a4b4…`(7faf031) → 고친 뒤 `e14b0c74…`(78c83b0). `hdiutil` + `ditto`로 `/Applications`에 설치(격리 속성 없음), `codesign --verify --deep --strict` 통과 |
+| 설치본 | `OrbitDrop-0.1.0-mac-arm64-unsigned.dmg` sha256 `d725a4b4…`(7faf031) → 고친 뒤 `e14b0c74…`(78c83b0) → `632818a7…`(7951bd3). `hdiutil` + `ditto`로 `/Applications`에 설치(격리 속성 없음), `codesign --verify --deep --strict` 통과 |
 | VNC 키 매핑(실측) | VZ VNC 서버는 **Alt → Command**, **Meta → Option**으로 보낸다(텍스트 편집기에서 Meta+b가 `∫`). 그래서 Option+Shift는 Meta+Shift로 보냈다 |
 
 | # (위 절차) | 결과 | 확인 내용 · 스크린샷 |
@@ -124,8 +124,9 @@ Virtualization.framework의 VNC 서버(tart `--vnc-experimental`)로 넣었다 �
    새 파일·이름 바꾸기·복사는 대화상자가 없고 **하드 링크만** 대화상자를 띄운다. macOS에서는 결과 이름을 예약한 뒤 `rename`으로
    확정하도록 바꿨고, 고친 설치본으로 한 번도 접근하지 않은 다운로드 폴더의 3쪽 PDF를 변환해 대화상자 없이 0.7초에 끝남을 확인했다
    (`vm-macos14-11`, 2쪽 90° 회전 → 3300×2550). 자세한 내용: [permissions.md](permissions.md).
-2. **지원하지 않는 항목 안내가 드래그 이미지에 가림(개선 후보).** 이유는 가운데 캡슐에만 나오는데, 넓은 텍스트 드래그 이미지가 그
-   위에 놓인다. 활성 조각처럼 링 아래 캡션에도 이유를 보이면 가려지지 않는다.
+2. **지원하지 않는 항목 안내가 드래그 이미지에 가림(수정됨, 7951bd3).** 이유가 가운데 캡슐에만 나와 넓은 텍스트 드래그 이미지가
+   그 위를 덮었다. 이제 활성 조각처럼 링 아래 캡션에도 이유를 보인다 — 고친 설치본(Retina 2×)에서 텍스트 드래그 때 캡슐은 가려져도
+   캡션의 "파일이 아님"이 보임을 확인했다(`vm-macos14-18`). Windows helper에는 이 보조 캡션 자체가 없어 따로 추가 중이다.
 3. **VNC 입력 한계.** Ctrl+⌘+Q(잠금)는 동작하지 않았고, 포인터 모양(Copy의 초록 +)은 VNC 캡처에 찍히지 않는다.
 
 **재현.** `tart clone ghcr.io/cirruslabs/macos-sonoma-vanilla:latest od-sonoma` → `tart run od-sonoma --no-graphics
@@ -141,21 +142,22 @@ Virtualization.framework의 VNC 서버(tart `--vnc-experimental`)로 넣었다 �
 
 환경: macOS 26.6 (25G72) arm64, Xcode 27.1, Node 24.7.0, pnpm 11.27.1, electron-builder 26.15.3, Electron 44.9.0.
 
-명령: `node scripts/package.mjs mac --arch all` (2026-10-23 01:15 CST, 소스 커밋 `7faf031` — 미커밋 변경은 문서뿐, 건너뛴 단계 없음: 라이선스 목록 재생성 → 아이콘 검증 →
+명령: `node scripts/package.mjs mac --arch all` (2026-10-23 02:40 CST, 소스 커밋 `7951bd3` — 미커밋 변경 없음, 건너뛴 단계 없음: 라이선스 목록 재생성 → 아이콘 검증 →
 `scripts/build-native.mjs mac`로 helper 빌드·서명·stdio smoke → `electron-vite build`(현재 소스) → before-pack(의존성 수집기 보정) → arm64·x64 electron-builder →
 after-pack 검사(의존성 트리 포함) → DMG 안의 앱으로 smoke test(숨긴 창 렌더링 포함) → 네이티브 모듈 검사). 종료 코드 0, 미완료 항목 없음. 산출물은 **미서명(ad-hoc)** 이며
 이름에 `-unsigned`가 붙는다.
 
-> **이전 0.1.0 패키지(소스 `d4f6d1e`, DMG sha256 `234836d3…`/`b3cfebbc…`)는 쓰지 말 것.** 설치해 실행하면 **모든 창이 빈 화면**이었다
+> **이전 0.1.0 패키지는 쓰지 말 것** — 소스 `d4f6d1e`(DMG `234836d3…`/`b3cfebbc…`)는 창이 빈 화면, `7faf031`(`d725a4b4…`/`acea3922…`)은
+> 보호 폴더 첫 사용 때 권한 대화상자(아래 가상 머신 기록 발견 1). 첫 문제의 경위: 설치해 실행하면 **모든 창이 빈 화면**이었다
 > (`GrantFileProtocolExtraPrivileges` fuse가 꺼져 app.asar 안의 `file://` 화면을 읽지 못함 — `ERR_FILE_NOT_FOUND`). 당시 smoke test는 창을
 > 열지 않아 통과했고 E2E는 패키지가 아닌 `out/`으로 돌았다. 2차 점검(패키징)에서 발견해 fuse를 켜고, `package.mjs`가 fuse를 다시 읽어 확인하며,
 > smoke test가 숨긴 창을 실제로 그려 보도록 고쳤다(아래 `window`).
 
 | 항목 | macOS arm64 | macOS x64 |
 |---|---|---|
-| DMG | `apps/desktop/release/OrbitDrop-0.1.0-mac-arm64-unsigned.dmg` 135.4 MB, sha256 `d725a4b4ffe5506e9ee23685565384f32b1a7b069dbc61d3031e2b6625cf669a` | `apps/desktop/release/OrbitDrop-0.1.0-mac-x64-unsigned.dmg` 144.2 MB, sha256 `acea39227b66ffbfd9f9adc8d9b302c98c20da02dc7ae4a79891a6ce5e0688e1` |
-| ZIP | `…-mac-arm64-unsigned.zip` 135.1 MB, sha256 `49dccf794afac97ec96621510fc8317371fc81158a7b36053a2c0386d63a6d03` | `…-mac-x64-unsigned.zip` 144.0 MB, sha256 `bf7cf925ff1322130d482588a7727d27e6bd7d7e434cb3b7f25571331911cb9b` |
-| 빌드 보고서 | `build-report-darwin-arm64.json` (`source.commit` 7faf031…, `dirty: true` = 문서만) | `build-report-darwin-x64.json` |
+| DMG | `apps/desktop/release/OrbitDrop-0.1.0-mac-arm64-unsigned.dmg` 135.4 MB, sha256 `632818a7a60b4016b7551419b3327177008c5fab87a969e4ae471f556cdcbd41` | `apps/desktop/release/OrbitDrop-0.1.0-mac-x64-unsigned.dmg` 144.2 MB, sha256 `9ba2ecc566b93f2bf45684c78a6a6b6616a76e73cfb2b7983c338dbad6e98e6a` |
+| ZIP | `…-mac-arm64-unsigned.zip` 135.1 MB, sha256 `245967af5307f9362d886183e72760d0e652194f7f7ba4923eaf4348615ae87d` | `…-mac-x64-unsigned.zip` 144.0 MB, sha256 `011b7c484661edf0765680c83e178421fe2cb20f0b73749aad1d9e161a7a636f` |
+| 빌드 보고서 | `build-report-darwin-arm64.json` (`source.commit` 7951bd3…, `dirty: false`) | `build-report-darwin-x64.json` |
 | 앱 크기(설치 시) | 320.2 MB | 333.9 MB |
 | `app.asar` / `app.asar.unpacked` | 14.2 MB (1,041 항목 — 브라우저·ESM 중복 빌드 제외) / 45 MB | 14.2 MB (1,041 항목) / 52 MB |
 | Info.plist | `CFBundleIdentifier=app.orbitdrop.desktop`, `LSUIElement=true`, `LSMinimumSystemVersion=14.0`, `ElectronAsarIntegrity` 있음, 개인정보 사용 설명 키 없음(`usageDescriptions: []`) | 동일 |
@@ -173,16 +175,16 @@ after-pack 검사(의존성 트리 포함) → DMG 안의 앱으로 smoke test(�
 | Resources | `THIRD_PARTY_LICENSES.md`, `LICENSE.electron.txt`, `LICENSES.chromium.html`, `tray/trayTemplate{,@2x}.png`, `ko.lproj`, `en.lproj` | 동일 |
 | DMG 읽기 전용 마운트 | `Applications → /Applications`, `OrbitDrop.app`; 내부 앱 `codesign --verify` valid | 동일 |
 | 의존성 트리(after-pack, Node 해석 방식) | 35개 패키지, 42개 의존성, 문제 0 (`nanoid` 6.0.2, `tslib` 1.14.1 — 이전 패키지는 2건 어긋남) | 동일 |
-| smoke test (DMG 안의 앱을 직접 실행) | 종료 0, 앱 내부 1,092 ms, `helper.ready: true`, **숨긴 About 창 렌더링 190 ms** | `arch -x86_64`(Rosetta 2) 종료 0, 앱 내부 24.9초(첫 번역 포함), `helper.ready: true`, 창 렌더링 6.8초 |
+| smoke test (DMG 안의 앱을 직접 실행) | 종료 0, `helper.ready: true`, **숨긴 About 창 렌더링 296 ms** | `arch -x86_64`(Rosetta 2) 종료 0, `helper.ready: true`, 창 렌더링 6.7초 |
 | 네이티브 모듈 검사 | librsvg 2.63.2 / libvips 8.18.7, 그라데이션·둥근 모서리 마스크 정상, canvas `app.asar.unpacked`에서 로드, Apple SD Gothic Neo 한글, 패키지 안의 pdf-lib로 PDF 1쪽·docx로 DOCX 생성 | 동일(Rosetta 2) |
 
 패키지된 앱의 smoke test 출력(arm64, 한 줄):
 
 ```text
-ORBITDROP_SMOKE {"ok":true,"version":"0.1.0","platform":"darwin","arch":"arm64","packaged":true,"durationMs":1092,"probe":{"ok":true,"decode":["jpeg","png","webp","gif","tiff","avif","heic","bmp","pdf"],"encode":["jpeg","png","webp","gif","tiff","avif","heic","bmp","pdf","docx","txt"],"pdfRender":true,"pdfText":true,"enabledActions":["convert.jpeg","convert.png","convert.webp","convert.heic","convert.tiff","convert.avif","convert.bmp","convert.pdf","convert.docx","convert.txt","tool.compress","tool.metadata","tool.edit","tool.annotate","tool.addBackground","tool.crop","tool.redact"],"errors":[]},"helper":{"ok":true,"required":true,"found":true,"source":"packaged","ready":true,"version":"0.1.0","globalDrag":{"available":true,"reason":null},"error":null},"conversion":{"ok":true,"actionId":"convert.jpeg","state":"completed","width":64,"height":48,"bytes":865,"ms":219,"error":null},"pdfConversion":{"ok":true,"actionId":"convert.png","state":"completed","width":300,"height":150,"bytes":1395,"ms":258,"error":null},"window":{"ok":true,"view":"about","ms":190,"loaded":true,"preload":true,"rendered":true,"shown":false,"error":null,"consoleErrors":[]}}
+ORBITDROP_SMOKE {"ok":true,"version":"0.1.0","platform":"darwin","arch":"arm64","packaged":true,"durationMs":1219,"probe":{"ok":true,"decode":["jpeg","png","webp","gif","tiff","avif","heic","bmp","pdf"],"encode":["jpeg","png","webp","gif","tiff","avif","heic","bmp","pdf","docx","txt"],"pdfRender":true,"pdfText":true,"enabledActions":["convert.jpeg","convert.png","convert.webp","convert.heic","convert.tiff","convert.avif","convert.bmp","convert.pdf","convert.docx","convert.txt","tool.compress","tool.metadata","tool.edit","tool.annotate","tool.addBackground","tool.crop","tool.redact"],"errors":[]},"helper":{"ok":true,"required":true,"found":true,"source":"packaged","ready":true,"version":"0.1.0","globalDrag":{"available":true,"reason":null},"error":null},"conversion":{"ok":true,"actionId":"convert.jpeg","state":"completed","width":64,"height":48,"bytes":865,"ms":210,"error":null},"pdfConversion":{"ok":true,"actionId":"convert.png","state":"completed","width":300,"height":150,"bytes":1395,"ms":246,"error":null},"window":{"ok":true,"view":"about","ms":296,"loaded":true,"preload":true,"rendered":true,"shown":false,"error":null,"consoleErrors":[]}}
 ```
 
-x64(Rosetta 2)도 같은 내용(`"arch":"x64"`, `durationMs` 24931, `helper.ready: true`, `window.rendered: true`)이다. 의미:
+x64(Rosetta 2)도 같은 내용(`"arch":"x64"`, `helper.ready: true`, `window.rendered: true`)이다. 의미:
 패키지 안에서 엔진 probe(HEIC는 helper의 ImageIO 모드), 번들 helper 탐색·`ready` 핸드셰이크, 실제 작업 파이프라인으로
 PNG→JPEG와 PDF→PNG(utilityProcess의 PDF.js + @napi-rs/canvas)가 성공했고, 실제 창 구성(app.asar의 `file://` 화면, preload, CSP, IPC)으로 숨긴 About 창이 그려졌다. **실제 Finder 드래그 검증은 아니다.**
 
