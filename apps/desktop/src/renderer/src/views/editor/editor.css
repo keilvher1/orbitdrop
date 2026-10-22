@@ -21,7 +21,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 14px 16px 16px;
+  padding: 10px 16px 16px;
   background: var(--c-window-bg);
 }
 
@@ -29,8 +29,9 @@
   flex: 1;
 }
 
+/* No negative bottom margin: the sticky footer is opaque and would cover the last line. */
 .editor-footnote {
-  margin: 10px 16px -4px;
+  margin: 10px 16px 0;
   overflow: hidden;
   color: var(--c-text-muted);
   font-size: 11px;
