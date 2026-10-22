@@ -50,9 +50,12 @@ export function finishedCutoff(recent: readonly JobSnapshot[]): number | null {
 
 /**
  * Which retry actions a job offers: run again (cancelled jobs, and failures
- * main accepts — contracts canRetryJob) and/or save to another folder.
+ * main accepts — contracts canRetryJob) and/or save to another folder. Jobs
+ * from an earlier run (history only) offer neither: main no longer has their
+ * inputs and options.
  */
 export function retryOptions(job: JobSnapshot): { readonly retry: boolean; readonly elsewhere: boolean } {
+  if (job.earlierRun === true) return { retry: false, elsewhere: false };
   const code = job.state === 'failed' ? job.error?.code : undefined;
   return { retry: canRetryJob(job), elsewhere: code !== undefined && RETRY_ELSEWHERE_CODES.has(code) };
 }
@@ -316,7 +319,9 @@ function JobCard({ job, onAnnounce }: { readonly job: JobSnapshot; readonly onAn
   const [busy, setBusy] = useState<CardAction | null>(null);
   const [actionError, setActionError] = useState<ActionError | null>(null);
   /** This job was run again (here or in another folder); the new job is listed separately. */
-  const [retried, setRetried] = useState(false);
+  const [retriedHere, setRetried] = useState(false);
+  // Also when the retry happened while this window was closed (main remembers it for the session).
+  const retried = retriedHere || job.retried === true;
   const retriedRef = useRef<HTMLParagraphElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const mounted = useRef(true);

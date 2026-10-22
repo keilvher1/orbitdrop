@@ -166,7 +166,9 @@ describe('JobManager with the processor pool', () => {
     const restarted = new JobManager({ run: async () => ({ outputs: [], warnings: [] }), settings: () => DEFAULT_SETTINGS, outputs, history });
     const listed = restarted.list();
     expect(listed).toHaveLength(1);
-    expect(listed[0]).toMatchObject({ jobId, state: 'completed' });
+    expect(listed[0]).toMatchObject({ jobId, state: 'completed', earlierRun: true });
+    // A job of this session is not marked (it can be retried while main still has its inputs).
+    expect(first.jobs.list()[0]!.earlierRun).toBeUndefined();
     const outputId = listed[0]!.outputs[0]!.outputId;
     expect(outputs.get(outputId)?.path).toBe(out);
     expect(restarted.recentWithOutputs(5).map((j) => j.jobId)).toEqual([jobId]);
@@ -344,8 +346,11 @@ describe('clearFinished', () => {
     m.behaviour.set('fail.png', 'fail');
     const [failed] = m.jobs.submit([spec({ inputs: [input('fail.png')] })], null);
     await m.jobs.waitFor(failed!);
+    expect(m.jobs.get(failed!)?.snapshot.retried).toBeUndefined();
     m.jobs.markRetried(failed!, ['job_new']);
     expect(m.jobs.retriedAs(failed!)).toEqual(['job_new']);
+    // The snapshot says so too, so a reopened Jobs window shows "retried" instead of the buttons.
+    expect(m.jobs.get(failed!)?.snapshot.retried).toBe(true);
     m.jobs.clearFinished();
     expect(m.jobs.retriedAs(failed!)).toBeUndefined();
   });

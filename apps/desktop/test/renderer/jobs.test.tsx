@@ -226,6 +226,19 @@ describe('JobsView retry', () => {
     expect(buttons('stopped.png')).toEqual(['다시 시도']);
   });
 
+  it('offers no retry for a job from an earlier run (history only), and shows "retried" for one main already retried', async () => {
+    await renderJobs([
+      { ...failed('h', 'before-restart.jpg', 'OUTPUT_DIR_NOT_WRITABLE', 25), earlierRun: true },
+      { ...failed('o', 'old-timeout.pdf', 'TIMEOUT', 24), earlierRun: true },
+      { ...failed('s', 'done-again.jpg', 'OUTPUT_DIR_NOT_WRITABLE', 23), retried: true },
+    ]);
+    expect(within(cardOf('before-restart.jpg')).queryAllByRole('button')).toEqual([]);
+    expect(within(cardOf('old-timeout.pdf')).queryAllByRole('button')).toEqual([]);
+    // Reopening the window keeps the note (main remembers the retry for the session).
+    expect(within(cardOf('done-again.jpg')).getByText('다시 시도했습니다.')).toBeTruthy();
+    expect(within(cardOf('done-again.jpg')).queryAllByRole('button')).toEqual([]);
+  });
+
   it('a started retry replaces the buttons with "retried" and is announced', async () => {
     const { orbit, user } = await renderJobs([failed('t', 'slow.pdf', 'TIMEOUT')]);
     const card = cardOf('slow.pdf');

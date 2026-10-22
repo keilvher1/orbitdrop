@@ -108,4 +108,11 @@ export interface JobSnapshot {
   readonly error: OrbitErrorInfo | null;
   /** Input bytes (sum) — lets the UI compare sizes for compression. */
   readonly inputBytes: number;
+  /**
+   * Known only from history: the job ran before OrbitDrop was last started. Its inputs and options
+   * are not kept, so it cannot be retried or saved elsewhere (no such buttons are offered).
+   */
+  readonly earlierRun?: boolean;
+  /** This session already ran the job again (retryJob / retryJobElsewhere); the new job is listed separately. */
+  readonly retried?: boolean;
 }

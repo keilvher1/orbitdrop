@@ -296,9 +296,10 @@ export const RETRY_JOB_CODES: ReadonlySet<ErrorCode> = new Set<ErrorCode>([...RE
 /**
  * Whether `retryJob` accepts a job: every cancelled job, and failed jobs whose
  * error is one of RETRY_JOB_CODES — a retry must be possible after a cancel, a
- * timeout or a crashed worker.
+ * timeout or a crashed worker. Never a job from an earlier run (history only).
  */
-export function canRetryJob(job: Pick<JobSnapshot, 'state' | 'error'>): boolean {
+export function canRetryJob(job: Pick<JobSnapshot, 'state' | 'error' | 'earlierRun'>): boolean {
+  if (job.earlierRun === true) return false;
   if (job.state === 'cancelled') return true;
   return job.state === 'failed' && job.error !== null && RETRY_JOB_CODES.has(job.error.code);
 }

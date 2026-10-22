@@ -286,7 +286,9 @@ export class JobManager {
   /** Remember that a failed job was retried (forgotten with the job). */
   markRetried(jobId: string, jobIds: readonly string[]): void {
     const record = this.records.get(jobId);
-    if (record) record.retriedAs = [...jobIds];
+    if (!record) return;
+    record.retriedAs = [...jobIds];
+    this.scheduleBroadcast(); // snapshots carry `retried`
   }
 
   /** Flush a pending broadcast immediately. */
@@ -419,6 +421,7 @@ export class JobManager {
     const entry = record.entry;
     return {
       ...base,
+      ...(record.retriedAs !== null ? { retried: true } : {}),
       state: entry.state,
       progress: entry.progress,
       startedAt: entry.startedAt,
@@ -482,6 +485,7 @@ export class JobManager {
       warnings: entry.warnings,
       error: entry.error,
       inputBytes: entry.inputBytes,
+      earlierRun: true,
     };
   }
 
