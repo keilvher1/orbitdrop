@@ -6,14 +6,19 @@
 //   * the native drag helper is missing, not executable, or built for another architecture;
 //   * sharp (+ libvips) or @napi-rs/canvas binaries for the target os/arch are missing;
 //   * required JS entry points / runtime packages are missing from app.asar;
+//   * a packaged package cannot resolve one of its dependencies inside the package, or resolves it
+//     to a version outside the declared range (electron-builder's pnpm collector copied the wrong
+//     copy of a hoisted package before; see apps/desktop/build/before-pack.cjs);
 //   * a Windows binary imports the Visual C++ runtime without shipping it next to itself
 //     (policy: static CRT or app-local DLLs; the installer never installs a VC++ redistributable).
 // It also prunes native packages built for a foreign architecture (normally already excluded
 // by electron-builder.yml) and prints a short inventory.
 //
-// Escape hatch for packaging experiments before the helper exists:
+// Escape hatches for packaging experiments (never for a release):
 //   ORBITDROP_ALLOW_MISSING_HELPER=1  → a missing helper is a warning (package.mjs labels the
-//   artifacts "-nohelper"). Everything else stays fatal.
+//   artifacts "-incomplete").
+//   ORBITDROP_ALLOW_DEPENDENCY_MISMATCH=1 → dependency-tree problems are warnings.
+// Everything else stays fatal.
 'use strict';
 
 const fs = require('node:fs');
@@ -144,6 +149,64 @@ function listAsar(asarFile) {
   }
 }
 
+// Type-only packages: excluded from the package on purpose (electron-builder.yml "files"), never
+// loaded at run time, so a dependency on them may stay unresolved.
+const TYPES_ONLY = /^(@types\/.+|undici-types)$/;
+// Package roots: node_modules/<name>/package.json or node_modules/@scope/<name>/package.json at any
+// depth (a package.json in a package's sub-folder, e.g. nanoid/async/package.json, is not a root).
+const PACKAGE_ROOT = /^(?:(.*)\/)?node_modules\/((?:@[^/]+\/)?[^/@][^/]*)\/package\.json$/;
+
+/**
+ * Checks the dependency tree inside app.asar the way Node resolves it at run time: every
+ * dependency (and installed optional dependency) of the app and of every packaged package must be
+ * found from the depending package's folder upwards, at a version that satisfies the declared
+ * semver range. Type-only packages and optional dependencies that are not installed are skipped.
+ * Returns { packages, edges, problems[] }.
+ */
+function checkDependencyTree(asarFile, entries) {
+  const asar = require('@electron/asar');
+  // electron-builder's own semver (always installed with it), not whatever is hoisted to the root.
+  const semver = require(require.resolve('semver', { paths: [path.dirname(require.resolve('app-builder-lib/package.json'))] }));
+  const readJson = (rel) => JSON.parse(asar.extractFile(asarFile, rel).toString('utf8'));
+  const roots = new Map(); // package dir ('' = the app) → package.json
+  roots.set('', readJson('package.json'));
+  for (const e of entries) {
+    const m = PACKAGE_ROOT.exec(e);
+    if (m) roots.set(e.slice(0, -'/package.json'.length), readJson(e));
+  }
+  const resolve = (fromDir, name) => {
+    for (let dir = fromDir; ; ) {
+      if (!/(^|\/)node_modules$/.test(dir)) {
+        const candidate = `${dir ? `${dir}/` : ''}node_modules/${name}`;
+        if (roots.has(candidate)) return candidate;
+      }
+      if (!dir) return null;
+      const i = dir.lastIndexOf('/');
+      dir = i < 0 ? '' : dir.slice(0, i);
+    }
+  };
+  const problems = [];
+  let edges = 0;
+  for (const [dir, pkg] of roots) {
+    const label = dir ? `${pkg.name}@${pkg.version}` : 'the app (package.json)';
+    const deps = [...Object.entries(pkg.dependencies ?? {}).map(([n, r]) => [n, r, false]), ...Object.entries(pkg.optionalDependencies ?? {}).map(([n, r]) => [n, r, true])];
+    for (const [name, range, optional] of deps) {
+      if (TYPES_ONLY.test(name)) continue;
+      const found = resolve(dir, name);
+      if (!found) {
+        if (!optional) problems.push(`${label} depends on ${name}@${range}, which is not in the package`);
+        continue;
+      }
+      edges++;
+      const version = roots.get(found).version;
+      if (semver.validRange(range) && !semver.satisfies(version, range, { includePrerelease: true })) {
+        problems.push(`${label} depends on ${name}@${range} but resolves to ${name}@${version} (${found})`);
+      }
+    }
+  }
+  return { packages: roots.size - 1, edges, problems };
+}
+
 async function afterPack(context) {
   const platform = context.electronPlatformName; // darwin | win32 | linux | mas
   const arch = ARCH_NAMES[context.arch] || String(context.arch);
@@ -182,13 +245,21 @@ async function afterPack(context) {
       'node_modules/pdfjs-dist/standard_fonts/FoxitSerif.pfb',
       'node_modules/pdfjs-dist/wasm/openjpeg.wasm',
       'node_modules/pdf-lib/package.json',
+      'node_modules/pdf-lib/cjs/index.js', // what require('pdf-lib') loads (the es/ build is trimmed)
       'node_modules/@napi-rs/canvas/package.json',
       'node_modules/docx/package.json',
+      'node_modules/docx/dist/index.cjs', // what require('docx') loads (other dist entry points are trimmed)
     ];
     for (const r of required) if (!entries.has(r)) errors.push(`app.asar is missing ${r}`);
     const leaked = [...entries].filter((e) => /^(src|test|e2e)\//.test(e) || /\.map$/.test(e) || /^node_modules\/(electron|electron-builder|typescript|vite|vitest)\//.test(e));
     if (leaked.length) errors.push(`app.asar contains development files, e.g. ${leaked.slice(0, 5).join(', ')}`);
     notes.push(`app.asar ${mb(fs.statSync(asarFile).size)}, ${entries.size} entries`);
+    const deps = checkDependencyTree(asarFile, entries);
+    if (deps.problems.length) {
+      const msg = `dependency tree inside app.asar is broken (see apps/desktop/build/before-pack.cjs):\n    ${deps.problems.join('\n    ')}`;
+      (process.env.ORBITDROP_ALLOW_DEPENDENCY_MISMATCH === '1' ? warnings : errors).push(msg);
+    }
+    notes.push(`dependency tree: ${deps.packages} packages, ${deps.edges} resolved dependencies, ${deps.problems.length} problems`);
   }
 
   // ── 2. native modules for the target os/arch ────────────────────────────────
@@ -305,3 +376,5 @@ module.exports.default = afterPack;
 module.exports.machOArchs = machOArchs;
 module.exports.peInfo = peInfo;
 module.exports.binaryInfo = binaryInfo;
+module.exports.checkDependencyTree = checkDependencyTree;
+module.exports.listAsar = listAsar;

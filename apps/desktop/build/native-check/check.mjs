@@ -3,7 +3,11 @@
 //   * libvips built with librsvg: userSpaceOnUse linear/radial gradients and an rx/ry rounded
 //     mask read back through extractChannel(0), as in packages/processors/src/tools;
 //   * @napi-rs/canvas mapped from app.asar.unpacked, a system Korean font, Hangul ink;
-//   * the native files actually mapped into the process (Node diagnostic report).
+//   * the native files actually mapped into the process (Node diagnostic report);
+//   * the pure-JS writers the packaged smoke test does not reach: pdf-lib (Images → PDF) embeds a
+//     PNG and reads the PDF back, docx (PDF → DOCX) packs a Korean paragraph into a ZIP — from the
+//     package's own node_modules, so a dependency copied at the wrong version or trimmed away by
+//     electron-builder.yml "files" fails here.
 // Prints one line: NATIVE_CHECK {...}
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -59,6 +63,31 @@ try {
   }
 } catch (err) {
   fail(`@napi-rs/canvas: ${err.message}`);
+}
+
+try {
+  const { PDFDocument } = req('pdf-lib');
+  // 1×1 RGBA PNG
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==', 'base64');
+  const doc = await PDFDocument.create();
+  const image = await doc.embedPng(png);
+  doc.addPage([72, 72]).drawImage(image, { x: 0, y: 0, width: 72, height: 72 });
+  const bytes = await doc.save();
+  const pages = (await PDFDocument.load(bytes)).getPageCount();
+  out.pdfLib = { bytes: bytes.length, pages };
+  if (pages !== 1 || Buffer.from(bytes.subarray(0, 5)).toString('latin1') !== '%PDF-') fail('pdf-lib wrote a broken PDF');
+} catch (err) {
+  fail(`pdf-lib: ${err.message}`);
+}
+
+try {
+  const docx = req('docx');
+  const document = new docx.Document({ sections: [{ children: [new docx.Paragraph({ children: [new docx.TextRun('한글 문단')] })] }] });
+  const buffer = await docx.Packer.toBuffer(document);
+  out.docx = { bytes: buffer.length };
+  if (buffer.subarray(0, 2).toString('latin1') !== 'PK') fail('docx wrote no ZIP container');
+} catch (err) {
+  fail(`docx: ${err.message}`);
 }
 
 out.loaded = process.report.getReport().sharedObjects.filter((p) => /sharp-|libvips|skia\./i.test(p));

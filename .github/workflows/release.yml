@@ -29,22 +29,17 @@ env:
   ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
 
 jobs:
+  # Signing/notarization secrets are given only to the steps that need them (never to dependency
+  # installation, tests or build scripts). Unset secrets arrive as empty strings, which
+  # scripts/package.mjs treats as absent: the packages are then unsigned and labelled so.
   macos:
     name: macOS release (arm64 + x64)
     runs-on: macos-latest
     timeout-minutes: 90
-    env:
-      CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-      CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
@@ -62,20 +57,33 @@ jobs:
         run: node scripts/build-native.mjs mac --arch all
       - name: Build bundles
         run: pnpm build
-      # notarytool needs the App Store Connect API key as a file.
+      # notarytool needs the App Store Connect API key as a file. The presence check runs in the
+      # shell: a step's own `env:` is not visible to its `if:` (the previous `if:` never ran).
       - name: Prepare notarization key
         env:
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
-        if: env.APPLE_API_KEY_P8 != ''
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
         run: |
+          if [ -z "$APPLE_API_KEY_P8" ]; then
+            echo "APPLE_API_KEY_P8 is not set: no App Store Connect API key for notarization"
+            exit 0
+          fi
           key="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
-          printf '%s' "$APPLE_API_KEY_P8" > "$key"
+          (umask 077 && printf '%s' "$APPLE_API_KEY_P8" > "$key")
           echo "APPLE_API_KEY=$key" >> "$GITHUB_ENV"
       - name: Package (signed if credentials exist) and smoke-test
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: node scripts/package.mjs mac --arch all --skip-build --skip-native ${{ inputs.require_signing && '--require-signing' || '' }}
       - name: Upload packages (workflow artifacts only)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: OrbitDrop-macos-${{ github.run_number }}
           if-no-files-found: warn
@@ -93,13 +101,10 @@ jobs:
     defaults:
       run:
         shell: bash
-    env:
-      WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-      WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
@@ -117,10 +122,13 @@ jobs:
       - name: Build bundles
         run: pnpm build
       - name: Package (signed if credentials exist), smoke-test, install/uninstall test
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: node scripts/package.mjs win --arch x64 --skip-build --skip-native --install-test ${{ inputs.require_signing && '--require-signing' || '' }}
       - name: Upload packages (workflow artifacts only)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: OrbitDrop-windows-${{ github.run_number }}
           if-no-files-found: warn

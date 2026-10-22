@@ -14,14 +14,18 @@
 //     (darwin-arm64, darwin-x64, win32-x64), listed once per family so the output is the same
 //     on macOS and Windows;
 //   * notable embedded components (Electron/Chromium, libvips and its libraries, pdf.js fonts,
-//     cmaps and wasm decoders, Skia and the Rust crates inside @napi-rs/canvas).
+//     cmaps and wasm decoders, Skia and the Rust crates inside @napi-rs/canvas);
+//   * npm packages compiled into shipped dependency files (docx's dist bundle, the core-js
+//     polyfills of pdf.js's legacy build), found by their module markers.
+// Licence texts the npm packages do not carry (libvips and its libraries, Skia and the canvas
+// components, compiled-in packages) come from the committed snapshot docs/licenses/upstream,
+// refreshed with `node scripts/licenses-fetch.mjs` (network); this script never uses the network.
 // The output is deterministic (sorted, no timestamps).
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { DESKTOP, LIBRSVG_CRATES, LIBVIPS_SOURCES, NATIVE_SNAPSHOT, ROOT, UPSTREAM_DIR, coreJsVersion, readUpstreamIndex, scanInlinedModules } from './licenses-sources.mjs';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const DESKTOP = join(ROOT, 'apps', 'desktop');
 const OUTPUT = join(ROOT, 'THIRD_PARTY_LICENSES.md');
 
 // Build tools among apps/desktop devDependencies: not shipped.
@@ -66,9 +70,9 @@ const FAMILIES = [
     texts: 'MIT: same text as the @napi-rs/canvas package above. Statically linked components: see the @napi-rs/canvas section.',
   },
 ];
-// Component lists of the native binaries (libvips + its libraries, @napi-rs/canvas SBOM), refreshed
-// from the darwin packages when they are installed and committed so Windows produces the same file.
-const NATIVE_SNAPSHOT = join(ROOT, 'docs', 'licenses', 'native-components.json');
+// Component lists of the native binaries (libvips + its libraries, @napi-rs/canvas SBOM) live in
+// NATIVE_SNAPSHOT (docs/licenses/native-components.json), refreshed from the darwin packages when
+// they are installed and committed so Windows produces the same file.
 
 const readJson = (p) => JSON.parse(readFileSync(p, 'utf8'));
 const relRoot = (p) => relative(ROOT, p).split('\\').join('/');
@@ -235,7 +239,7 @@ const libvipsTable = [
   '| Library | Version | Licence (per sharp-libvips) |',
   '|---|---|---|',
   ...native.libvips.table.map(([lib, lic]) => {
-    const v = libvipsVersions[lib] ?? libvipsVersions[lib.replace(/^lib/, '')] ?? libvipsVersions[versionKey[lib]] ?? '';
+    const v = libvipsVersions[lib] ?? libvipsVersions[lib.replace(/^lib/, '')] ?? libvipsVersions[versionKey[lib]] ?? `(part of libvips ${libvipsVersions.vips ?? ''})`;
     return `| ${lib} | ${v} | ${lic} |`;
   }),
 ].join('\n');
@@ -243,7 +247,7 @@ const libvipsTable = [
 const comps = native.canvas.components;
 const licenceKinds = [...new Set(comps.map((c) => c.license))].sort();
 const canvasSbom = [
-  `The macOS packages ship a CycloneDX SBOM (\`sbom.cdx.json\`) listing ${comps.length} statically linked components (the Windows binary is built from the same sources plus Windows system-binding crates):`,
+  `Each platform package ships a CycloneDX SBOM (\`sbom.cdx.json\`). The macOS one lists the ${comps.length} statically linked components below (for ${native.canvas.package} the Windows package's SBOM lists the same components):`,
   '',
   '<details><summary>Components inside the @napi-rs/canvas native binary</summary>',
   '',
@@ -258,6 +262,40 @@ const canvasSbom = [
 
 const pdfjsDir = resolvePackage('pdfjs-dist', DESKTOP);
 const pdfjsVersion = pdfjsDir ? readJson(join(pdfjsDir, 'package.json')).version : '?';
+
+// ── licence texts from docs/licenses/upstream (libvips libraries, canvas components, compiled-in packages) ──
+const upstream = readUpstreamIndex();
+const upstreamByKey = new Map(upstream.components.map((c) => [`${c.group}/${c.name}@${c.version}`, c]));
+const librsvgCrates = existsSync(LIBRSVG_CRATES) ? readJson(LIBRSVG_CRATES) : null;
+if (!librsvgCrates) problems.push('docs/licenses/librsvg-crates.json is missing (run node scripts/licenses-fetch.mjs --librsvg-crates)');
+else if (librsvgCrates.librsvg !== libvipsVersions.rsvg) problems.push(`docs/licenses/librsvg-crates.json lists librsvg ${librsvgCrates.librsvg}, libvips bundles ${libvipsVersions.rsvg} (run node scripts/licenses-fetch.mjs --librsvg-crates)`);
+const upstreamNeeded = [
+  ...Object.entries(libvipsVersions).map(([key, version]) => `libvips/${LIBVIPS_SOURCES[key]?.name ?? key}@${version}`),
+  `libvips/libnsgif@libvips-${libvipsVersion}`,
+  'canvas/skia@main',
+  'rust/rust-std@stable',
+  ...native.canvas.components.map((c) => `canvas/${c.name}@${c.version}`),
+  ...(librsvgCrates?.crates ?? []).map((c) => `librsvg/${c.name}@${c.version}`),
+];
+for (const key of upstreamNeeded) if (!upstreamByKey.has(key)) problems.push(`docs/licenses/upstream has no licence text for ${key} (run node scripts/licenses-fetch.mjs)`);
+// npm packages compiled into the shipped files of the node_modules packages (module markers)
+const shippedPackages = list.filter((e) => e.kinds.has('node_modules')).map((e) => ({ name: e.name, version: e.version, dir: e.dir }));
+const inlined = scanInlinedModules(shippedPackages).map((m) => {
+  const entry = upstream.components.find((c) => c.group === 'bundled' && c.name === m.name && c.host === `${m.host}@${m.hostVersion}` && c.chain === m.chain);
+  if (!entry) problems.push(`no licence text for ${m.chain} compiled into ${m.host} ${m.hostVersion} (run node scripts/licenses-fetch.mjs)`);
+  if (entry && m.name === 'core-js') {
+    const banner = coreJsVersion(join(resolvePackage(m.host, DESKTOP) ?? '', 'legacy', 'build', 'pdf.mjs'));
+    if (banner && banner !== entry.version) problems.push(`core-js ${banner} is compiled into ${m.host} but docs/licenses/upstream has ${entry.version} (run node scripts/licenses-fetch.mjs)`);
+  }
+  return { ...m, entry };
+});
+const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
+for (const c of upstream.components) {
+  for (const f of c.files) {
+    const p = join(UPSTREAM_DIR, f.path);
+    if (!existsSync(p) || sha256(readFileSync(p)) !== f.sha256) problems.push(`docs/licenses/upstream/${f.path} is missing or modified (run node scripts/licenses-fetch.mjs)`);
+  }
+}
 
 // ── render ───────────────────────────────────────────────────────────────────
 // Production dependencies of apps/desktop stay external (node_modules) in the main/preload
@@ -286,6 +324,8 @@ How components are shipped:
 * **node_modules** — copied as-is into \`app.asar\` (native binaries into \`app.asar.unpacked\`),
   including each package's own LICENSE/NOTICE files.
 * **bundled into app code** — compiled into the JavaScript under \`app.asar/out/\` by electron-vite.
+* **compiled into <package>** — part of a file another package publishes already bundled (docx's
+  \`dist\`, pdf.js's legacy build); their licence texts are reproduced below.
 * **runtime** — Electron (with Chromium and Node.js) is the application runtime.
 
 ## Summary
@@ -295,6 +335,10 @@ How components are shipped:
 | electron | ${electronPkg.version} | ${electronPkg.license} | runtime | https://github.com/electron/electron |
 ${list.map((e) => `| ${esc(e.name)} | ${e.version} | ${esc(e.license)} | ${kindLabel(e.kinds)} | ${esc(e.repo)} |`).join('\n')}
 ${families.map((f) => `| ${esc(f.family)} | ${[...new Set(f.rows.map((r) => r.version))].join(', ')} | ${[...new Set(f.rows.map((r) => r.license))].map(esc).join('; ')} | node_modules (native, per target) | ${esc(f.repo)} |`).join('\n')}
+${inlined
+  .filter((m) => m.entry)
+  .map((m) => `| ${esc(m.name)} | ${m.entry.version} | ${esc(m.entry.license)} | compiled into ${esc(m.host)} ${m.hostVersion} | https://www.npmjs.com/package/${m.name}/v/${m.entry.version} |`)
+  .join('\n')}
 
 ### Platform binary packages
 
@@ -313,9 +357,16 @@ ${f.rows.map((r) => `| ${r.target} | ${r.name} | ${r.version} | ${esc(r.license)
 ### Electron, Chromium and Node.js
 
 Electron ${electronPkg.version} is MIT-licensed (text below). Electron embeds Chromium and Node.js
-and their third-party components; their complete notices are in \`LICENSES.chromium.html\`, which
-electron-builder ships with every build (macOS: \`OrbitDrop.app/Contents/Resources/\`; Windows: the
-installation folder, next to \`LICENSE.electron.txt\`).
+and their third-party components; their complete notices are in \`LICENSES.chromium.html\`, which is
+shipped with every build (macOS: \`OrbitDrop.app/Contents/Resources/LICENSES.chromium.html\`;
+Windows: the installation folder, next to \`OrbitDrop.exe\` and \`LICENSE.electron.txt\`).
+
+Among them is **FFmpeg**, which Chromium builds as a separate dynamic library
+(\`Electron Framework.framework/Libraries/libffmpeg.dylib\` on macOS, \`ffmpeg.dll\` on Windows) under
+the GNU LGPL 2.1 or later. OrbitDrop ships it unmodified, exactly as published in Electron
+${electronPkg.version}, and does not call it directly; its notice is the "ffmpeg" entry of
+\`LICENSES.chromium.html\`. Source: https://chromium.googlesource.com/chromium/third_party/ffmpeg
+(the revision pinned by Electron ${electronPkg.version}'s Chromium); the LGPL notes below apply to it too.
 
 ### libvips ${libvipsVersion} and its libraries (via sharp)
 
@@ -339,7 +390,14 @@ LGPL compliance notes for OrbitDrop:
 * Corresponding source for these exact versions: libvips https://github.com/libvips/libvips
   (v${libvipsVersion}); build scripts and sources of every bundled library:
   https://github.com/lovell/sharp-libvips (v${libvipsPkgVersion}).
-* The LGPL-3.0 text and the GPL-3.0 text it refers to are reproduced at the end of this file.
+* cairo is used under the Mozilla Public License 1.1; its source is available from
+  https://gitlab.freedesktop.org/cairo/cairo (tag ${libvipsVersions.cairo ?? '?'}) and through the sharp-libvips build above.
+* libvips also contains libnsgif (MIT, vendored in the libvips source tree), and librsvg is written
+  in Rust: it statically links the ${librsvgCrates?.crates.length ?? '?'} crates listed under "Crates linked into librsvg"
+  below and the Rust standard library.
+* The licence text of every library above, as published upstream for the bundled version (the npm
+  packages ship only the table), is reproduced under "Licence texts" below. The LGPL-3.0 text and
+  the GPL-3.0 text it refers to are at the end of this file.
 
 ### pdf.js ${pdfjsVersion} (pdfjs-dist) data files
 
@@ -349,7 +407,7 @@ in the package:
 | Files | Licence | Licence file |
 |---|---|---|
 | \`standard_fonts/Foxit*.pfb\` | BSD-3-Clause-style (PDFium Authors / Foxit) | \`standard_fonts/LICENSE_FOXIT\` |
-| \`standard_fonts/LiberationSans-*.ttf\` | GPL-2.0 with font exception (Red Hat Liberation licence), distributed unmodified; source: https://github.com/liberationfonts/liberation-fonts | \`standard_fonts/LICENSE_LIBERATION\` |
+| \`standard_fonts/LiberationSans-*.ttf\` (Liberation Sans 1.07.4) | GPL-2.0 with the font embedding exception (Red Hat Liberation Font licence), distributed unmodified; the same files are published in https://github.com/mozilla/pdf.js/tree/v${pdfjsVersion}/external/standard_fonts | \`standard_fonts/LICENSE_LIBERATION\` |
 | \`cmaps/*.bcmap\` | BSD-3-Clause (Adobe Systems) | \`cmaps/LICENSE\` |
 | \`iccs/*.icc\` | CC0-1.0 | \`iccs/LICENSE\` |
 | \`wasm/openjpeg.wasm\` (JPEG 2000) | BSD-2-Clause (OpenJPEG) + BSD-3-Clause wrapper (Mozilla) | \`wasm/LICENSE_OPENJPEG\`, \`wasm/LICENSE_PDFJS_OPENJPEG\` |
@@ -358,13 +416,29 @@ in the package:
 
 Only the "legacy" build is shipped. The scripting sandbox (\`pdf.sandbox.*\`, \`wasm/quickjs-eval.*\`,
 QuickJS, MIT), the web viewer and the modern build are not used and are excluded from the package.
+The legacy build (\`legacy/build/pdf.mjs\`, \`pdf.worker.mjs\`) compiles in the core-js polyfills
+(MIT, listed under "Code compiled into dependency files").
 
 ### @napi-rs/canvas (Skia)
 
 @napi-rs/canvas is MIT. Its native binary statically links Google's Skia graphics library
-(BSD-3-Clause, https://skia.org/) and the Rust crates below.
+(BSD-3-Clause, https://skia.org/), the C/C++ libraries Skia pins, the Rust crates below and the
+Rust standard library. Their licence texts are reproduced under "Licence texts" below.
 
 ${canvasSbom}
+
+### Code compiled into dependency files
+
+Some dependencies publish files that already contain other npm packages (found by the module
+markers in the shipped files; versions from the publishing package's own lockfile, or from the
+banner for core-js). They ship inside those files, not as separate packages:
+
+| Package | Version | Licence | Compiled into | Shipped file(s) |
+|---|---|---|---|---|
+${inlined
+  .filter((m) => m.entry)
+  .map((m) => `| ${esc(m.name)} | ${m.entry.version} | ${esc(m.entry.license)} | ${esc(m.host)} ${m.hostVersion} | ${m.files.map((f) => `\`${f.replace(/^node_modules\//, '')}\``).join(', ')} |`)
+  .join('\n')}
 
 ### Native drag helpers
 
@@ -385,17 +459,92 @@ redistributed with OrbitDrop.
 ## Licence texts
 
 Texts are copied from each package as published. Packages that do not include a licence file are
-marked; their licence is the SPDX identifier from their package.json.
+marked; their licence is the SPDX identifier from their package.json. A text that is identical
+(ignoring white space) to one already reproduced is referenced instead of repeated.
 `);
 
-out.push(`<details><summary>electron ${electronPkg.version} — ${electronPkg.license}</summary>\n\n${fence(readText(join(ROOT, 'node_modules', 'electron', 'LICENSE')))}\n\n</details>\n`);
+// Each distinct licence text once; later occurrences point to the first one.
+const printedTexts = new Map();
+const normKey = (text) => sha256(Buffer.from(text.replace(/\s+/g, ' ').trim(), 'utf8'));
+function textBlock(owner, fileLabel, text, source) {
+  const key = normKey(text);
+  const from = source ? ` (source: ${source})` : '';
+  if (printedTexts.has(key)) return `\`${fileLabel}\`${from}: same text as ${printedTexts.get(key)} above.`;
+  printedTexts.set(key, `${owner}, \`${fileLabel}\``);
+  return `\`${fileLabel}\`${from}\n\n${fence(text)}`;
+}
+
+out.push(`<details><summary>electron ${electronPkg.version} — ${electronPkg.license}</summary>\n\n${textBlock(`electron ${electronPkg.version}`, 'LICENSE', readText(join(ROOT, 'node_modules', 'electron', 'LICENSE')))}\n\n</details>\n`);
 for (const e of list) {
-  const body = e.files.length ? e.files.map((f) => `\`${f}\`\n\n${fence(readText(join(e.dir, f)))}`).join('\n\n') : `_No licence file in the published package; licence: ${e.license}. Source: ${e.repo}_`;
+  const body = e.files.length ? e.files.map((f) => textBlock(`${e.name} ${e.version}`, f, readText(join(e.dir, f)))).join('\n\n') : `_No licence file in the published package; licence: ${e.license}. Source: ${e.repo}_`;
   out.push(`<details><summary>${e.name} ${e.version} — ${esc(e.license)}</summary>\n\n${body}\n\n</details>\n`);
 }
 for (const f of families) {
   out.push(`<details><summary>${f.family} — ${[...new Set(f.rows.map((x) => x.license))].map(esc).join('; ')}</summary>\n\n_${f.texts}_\n\n</details>\n`);
 }
+
+// Texts the npm packages do not carry (docs/licenses/upstream, see scripts/licenses-fetch.mjs).
+const shortVersion = (v) => (/^[0-9a-f]{40}$/.test(String(v)) ? `@${String(v).slice(0, 12)}` : String(v));
+const UPSTREAM_GROUPS = [
+  ['libvips', `libvips ${libvipsVersion} and the libraries bundled with it`, `As published upstream for the versions in \`@img/sharp-libvips-*\` ${libvipsPkgVersion} / \`@img/sharp-win32-x64\` (versions.json); the npm packages only list the licences.`],
+  ['librsvg', `Crates linked into librsvg ${libvipsVersions.rsvg ?? '?'} (inside libvips)`, `The normal dependency closure of librsvg-c for ${(librsvgCrates?.targets ?? []).join(', ')} (\`cargo tree\` on librsvg's source, default features; see docs/licenses/librsvg-crates.json). Texts from each crate as published on crates.io.`],
+  ['canvas', `Skia and the components linked into @napi-rs/canvas ${native.canvas.package}`, 'C/C++ libraries at the commits Skia pins (from the SBOM) and Rust crates as published on crates.io. Skia\'s text is from its main branch (unchanged for years).'],
+  ['rust', 'Rust standard library', 'Linked into librsvg and @napi-rs/canvas. From the rust-lang/rust repository.'],
+  ['bundled', 'npm packages compiled into dependency files', 'From each package as published on npm, at the version compiled in.'],
+];
+const declaredOnly = [];
+for (const [group, title, intro] of UPSTREAM_GROUPS) {
+  const comps = upstream.components.filter((c) => c.group === group);
+  if (!comps.length) continue;
+  out.push(`### ${title}\n\n${intro}\n`);
+  for (const c of comps) {
+    const owner = `${c.name} ${shortVersion(c.version)}`;
+    const where = c.host ? ` — compiled into ${c.host.replace(/@([^@]+)$/, ' $1')}` : '';
+    const blocks = c.files.map((f) => {
+      const text = readText(join(UPSTREAM_DIR, f.path));
+      if (f.name === 'NO-LICENCE-FILE.txt') {
+        declaredOnly.push({ owner, license: c.license });
+        return `_${text.trim()} The ${esc(c.license)} text is under "Licences declared without a published text" below._`;
+      }
+      return textBlock(owner, f.name, text, f.source);
+    });
+    out.push(`<details><summary>${owner} — ${esc(c.license)}${where}</summary>\n\n${blocks.join('\n\n')}\n\n</details>\n`);
+  }
+}
+if (declaredOnly.length) {
+  const mplKey = [...printedTexts.keys()].find((k) => printedTexts.get(k) && upstream.components.some((c) => c.license === 'MPL-2.0' && printedTexts.get(k).startsWith(`${c.name} `)));
+  out.push(`### Licences declared without a published text
+
+${declaredOnly.map((d) => `* ${d.owner} — ${esc(d.license)}`).join('\n')}
+
+These components state their licence in their package metadata but publish no licence file. The
+standard texts apply${mplKey ? `; the MPL-2.0 text is reproduced above (${printedTexts.get(mplKey)})` : ''}. MIT License (SPDX \`MIT\`), where the
+copyright notice is the authors named in the component's metadata:
+`);
+  out.push(fence(`MIT License
+
+Copyright (c) <the authors named above>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`));
+  out.push('');
+}
+out.push('### GNU licences referenced above\n');
 out.push(`<details><summary>GNU Lesser General Public License v3.0 (libvips and LGPL libraries)</summary>\n\n${fence(readText(join(ROOT, 'docs', 'licenses', 'LGPL-3.0.txt')))}\n\n</details>\n`);
 out.push(`<details><summary>GNU General Public License v3.0 (referenced by the LGPL-3.0)</summary>\n\n${fence(readText(join(ROOT, 'docs', 'licenses', 'GPL-3.0.txt')))}\n\n</details>\n`);
 

@@ -3,7 +3,9 @@
 OrbitDrop은 **electron-builder 26.15.3** 하나로 패키징한다(선택 이유: [decisions.md ADR-02](decisions.md#adr-02-패키저-electron-builder)).
 설정: [`apps/desktop/electron-builder.yml`](../apps/desktop/electron-builder.yml) ·
 구동 스크립트: [`scripts/package.mjs`](../scripts/package.mjs) ·
-검사 훅: [`scripts/after-pack.cjs`](../scripts/after-pack.cjs) ·
+훅: [`apps/desktop/build/before-pack.cjs`](../apps/desktop/build/before-pack.cjs)(node_modules 수집 우회),
+[`scripts/after-pack.cjs`](../scripts/after-pack.cjs)(검사) ·
+라이선스: [`scripts/licenses.mjs`](../scripts/licenses.mjs), [`scripts/licenses-fetch.mjs`](../scripts/licenses-fetch.mjs) ·
 CI: [`.github/workflows/ci.yml`](../.github/workflows/ci.yml), [`release.yml`](../.github/workflows/release.yml).
 
 > 원칙: macOS 패키지는 macOS에서, Windows 패키지는 Windows에서만 만든다. 서명 자격 증명이 없으면
@@ -30,11 +32,11 @@ node scripts/package.mjs win --arch x64   # Windows에서 실행
 | `--allow-incomplete` | helper나 `--smoke-test` 구현이 아직 없을 때 파이프라인만 시험(산출물에 `-incomplete` 표시) |
 
 `package.mjs`의 단계: 사전 점검(호스트 OS, 대상 아키텍처의 sharp/libvips/canvas 바이너리 설치 여부,
-Rosetta) → `scripts/licenses.mjs`로 `THIRD_PARTY_LICENSES.md` 재생성 → 아이콘 검증 →
-`scripts/build-native.mjs`로 helper 빌드·스테이징 → `electron-vite build` → 아키텍처별
-electron-builder(after-pack 검사 포함) → 검사(macOS: Info.plist, `lipo`, `codesign --verify`,
-`spctl`, DMG 읽기 전용 마운트) → **패키지된 앱의 `--smoke-test`**(macOS는 읽기 전용으로 마운트한 DMG 안의 앱을
-그대로 실행, Apple Silicon에서 x64는 `arch -x86_64`) → **네이티브 모듈 검사**(아래) →
+Rosetta) → `scripts/licenses.mjs`로 `THIRD_PARTY_LICENSES.md` 재생성(오프라인) → 아이콘 검증 →
+`scripts/build-native.mjs`로 helper 빌드·스테이징 → `electron-vite build` → **제품 ID 일치 검사**(아래 "제품 ID") →
+아키텍처별 electron-builder(before-pack·after-pack 훅 포함) → 검사(macOS: Info.plist, `lipo`, `codesign --verify`,
+`spctl`, DMG 읽기 전용 마운트; 공통: **Electron fuse 되읽기**) → **패키지된 앱의 `--smoke-test`**(macOS는 읽기 전용으로
+마운트한 DMG 안의 앱을 그대로 실행, Apple Silicon에서 x64는 `arch -x86_64`) → **네이티브 모듈 검사**(아래) →
 `apps/desktop/release/build-report-<os>-<arch>.json`(GitHub Actions에서는 작업 요약 표도 작성).
 다른 작업이 패키징 도중 `apps/desktop/out`을 다시 빌드하면 감지해 실패시킨다.
 
@@ -42,7 +44,13 @@ electron-builder(after-pack 검사 포함) → 검사(macOS: Info.plist, `lipo`,
 [`apps/desktop/build/native-check`](../apps/desktop/build/native-check)를 utilityProcess로 실행해 패키지 Resources 안의
 sharp/libvips/@napi-rs/canvas 파일을 앱과 같은 경로 해석으로 불러온다. librsvg(배경 추가의 SVG 그라데이션·둥근 모서리 마스크),
 canvas의 `app.asar.unpacked` 로드와 시스템 한글 글꼴(macOS Apple SD Gothic Neo, Windows Malgun Gothic), 실제로 매핑된
-네이티브 파일 경로를 확인한다. macOS x64는 electron-builder가 내려받은 darwin-x64 런타임을 Rosetta 2로 쓴다.
+네이티브 파일 경로를 확인하고, smoke test가 거치지 않는 순수 JS 기록기도 패키지 안의 사본으로 실행한다: pdf-lib가 PNG를 넣은
+PDF를 쓰고 다시 읽으며(이미지 → PDF), docx가 한글 문단을 ZIP으로 묶는다(PDF → DOCX). 잘못된 버전으로 복사되었거나
+`files` 제외 규칙에 잘려 나간 의존성은 여기서 실패한다. macOS x64는 electron-builder가 내려받은 darwin-x64 런타임을 Rosetta 2로 쓴다.
+
+Electron fuse 되읽기: `@electron/fuses`로 패키지 실행 파일(macOS는 Electron Framework, Windows는 exe)의 fuse 값을 읽어
+`electron-builder.yml`의 `electronFuses`와 하나라도 다르면 실패시키고 build report의 `inspection.fuses`에 기록한다.
+UI를 `loadFile()`로 `app.asar` 안에서 여는 동안 `GrantFileProtocolExtraPrivileges`가 꺼져 있으면 별도로 실패시킨다(§3 참고).
 
 ## 2. 산출물
 
@@ -63,7 +71,7 @@ universal 바이너리는 만들지 않는다(네이티브 모듈과 helper를 �
 | sharp + libvips, @napi-rs/canvas 네이티브 바이너리 | `app.asar.unpacked/node_modules/@img/sharp-darwin-<arch>`, `@img/sharp-libvips-darwin-<arch>`, `@napi-rs/canvas-darwin-<arch>` | `resources\app.asar.unpacked\node_modules\@img\sharp-win32-x64`(libvips DLL 포함), `@napi-rs\canvas-win32-x64-msvc` |
 | PDF.js 리소스(cmaps, standard_fonts, wasm, iccs, legacy build) | `app.asar/node_modules/pdfjs-dist/**` | 동일 |
 | 네이티브 드래그 helper | `helper/OrbitDropHelper` | `resources\helper\OrbitDropHelper.exe` |
-| 트레이/메뉴 막대 아이콘 | `tray/trayTemplate.png`, `tray/trayTemplate@2x.png` | `resources\tray\tray.ico`, `tray.png` |
+| 트레이/메뉴 막대 아이콘 (OS별로 쓰는 파일만) | `tray/trayTemplate.png`, `tray/trayTemplate@2x.png` | `resources\tray\tray.ico`, `tray.png`, `tray@2x.png` |
 | 라이선스 | `THIRD_PARTY_LICENSES.md`, `LICENSE.electron.txt`, `LICENSES.chromium.html` | `resources\THIRD_PARTY_LICENSES.md`, `LICENSE.electron.txt`, `LICENSES.chromium.html` |
 
 * **ASAR**: 켜져 있다. 네이티브 코드는 asar 내부를 읽을 수 없으므로 네이티브 패키지만
@@ -77,9 +85,24 @@ universal 바이너리는 만들지 않는다(네이티브 모듈과 helper를 �
   빌드를 실패시킨다.
 * **npmRebuild: false**: sharp와 @napi-rs/canvas는 N-API 프리빌트라 Electron에서 재컴파일하지 않는다.
   설치본은 Homebrew·시스템 Node·외부 변환기를 쓰지 않는다(sharp는 자체 libvips 사용).
+* **node_modules 수집(electron-builder 26.15.3 + pnpm 11 hoisted 버그 우회)**: `pnpm list --json`은 hoisted 배치에도
+  존재하지 않는 가상 저장소 경로(`node_modules/.pnpm/<이름>@<버전>/…`)를 보고하고, electron-builder의 pnpm 수집기는
+  정확한 버전을 못 찾으면 "선언 범위 밖 버전 허용" 대체 경로로 최상위에 hoist된 사본을 복사한다(로그는 debug 수준뿐).
+  0.1.0 패키지(소스 d4f6d1e)는 그래서 pdf-lib 1.17.1에 tslib 1.14.1 대신 2.8.1을, docx 9.12.0에 nanoid 6.0.2 대신
+  3.3.20을 담았다(둘 다 개발 도구용 사본; 현재는 우연히 동작). [`build/before-pack.cjs`](../apps/desktop/build/before-pack.cjs)
+  (`beforePack`)가 수집기에 hoisted 트리에서 정확한 이름@버전을 찾게 하고(대상 app-builder-lib 버전에서만 적용, 다른 버전이면 경고),
+  after-pack 훅이 결과를 검증한다(아래). electron-builder를 올리면 우회가 여전히 필요한지 확인하고 `PATCHED_VERSIONS`를 갱신한다.
+* **번들에서 뺀 파일(크기)**: pdf.js 최신 빌드·뷰어·스크립팅 샌드박스(QuickJS), 그리고 Node가 읽지 않는 브라우저/ESM 중복본 —
+  docx의 다른 진입점(`docx/layout` 등, `index.cjs`/`index.mjs`는 유지), `pdf-lib/es`, `@pdf-lib/*`의 `dist`/`es`,
+  `pako`·`jszip`·`xml-js`의 `dist`, CLI·테스트·도구 설정 파일. 실측(arm64 사본에서 같은 규칙으로 재구성): `app.asar`
+  24.9 MB → 14.9 MB, node_modules 1,117 → 911 파일. 재구성한 사본으로 smoke test·패키지 안 pdf-lib/docx 실행·의존성 검사 통과.
 * **Electron fuses**: `runAsNode`, `NODE_OPTIONS`, `--inspect` 계열을 끄고 asar 무결성 검증과
   `onlyLoadAppFromAsar`를 켠다. 사용자가 OrbitDrop에 준 권한(예: 손쉬운 사용)을 다른 프로세스가
-  `ELECTRON_RUN_AS_NODE`로 재사용하지 못하게 하기 위함.
+  `ELECTRON_RUN_AS_NODE`로 재사용하지 못하게 하기 위함. **`GrantFileProtocolExtraPrivileges`는 켜 둔다**: 창들이 UI를
+  `loadFile()`로 `app.asar` 안의 `file://`에서 여는데, 이 fuse를 끄면 Electron의 `file://` 처리기가 asar를 읽지 않아 모든 창이
+  `ERR_FILE_NOT_FOUND`로 빈 화면이 된다(asar 밖에서는 모듈 스크립트·CSS가 CORS로 막힌다). 0.1.0 패키지가 이 상태로 나갔다 —
+  smoke test는 창을 열지 않아 통과했다(실측: [workstreams/hardening-packaging.md](workstreams/hardening-packaging.md)).
+  이 fuse를 끄려면 먼저 UI를 사용자 정의 프로토콜(예: `app://`)로 제공해야 한다.
 * **언어 리소스**: Chromium UI 문자열은 `ko`, `en-US`만 남긴다(`electronLanguages`).
 
 ### after-pack 훅이 실패시키는 경우
@@ -87,6 +110,9 @@ universal 바이너리는 만들지 않는다(네이티브 모듈과 helper를 �
 * `app.asar`에 필수 항목(`out/main/index.js`, `out/main/processor-host.js`, `out/preload/index.js`,
   `out/renderer/index.html`, sharp·pdfjs-dist(legacy build, 폰트, wasm)·pdf-lib·canvas·docx)이 없거나
   `src/`, `test/`, 소스맵, 빌드 도구가 들어간 경우
+* **패키지 안의 의존성 트리**가 깨진 경우: 앱과 패키지에 든 모든 패키지의 `dependencies`(설치된 `optionalDependencies` 포함)를
+  Node 방식으로 패키지 안에서 찾아, 없거나 선언 범위 밖 버전이면 실패(타입 전용 `@types/*`, `undici-types`는 제외).
+  실험용 우회 `ORBITDROP_ALLOW_DEPENDENCY_MISMATCH=1`(경고로 낮춤, 배포용 아님)
 * 대상 OS/아키텍처의 sharp `.node`, libvips, canvas `.node`가 없거나 아키텍처가 다른 경우
 * helper가 없거나, 실행 권한이 없거나(macOS), 다른 아키텍처인 경우
 * Windows 바이너리가 Visual C++ 재배포 패키지나 MinGW 런타임 DLL(`vcruntime140.dll`,
@@ -125,7 +151,17 @@ Windows 10/11에 포함되어 있어 허용한다. 훅이 PE import 표를 읽�
     (Electron Framework, `.node`, `libvips-cpp.dylib`)가 같은 Team ID로 서명되므로 쓰지 않는다.
   * App Sandbox는 쓰지 않는다(드래그한 파일 옆에 결과를 쓰는 동작과 맞지 않음, Mac App Store 비대상).
   * 손쉬운 사용/입력 모니터링은 entitlement가 아니라 TCC 권한이다 → [permissions.md](permissions.md).
-* `LSUIElement=true`(메뉴 막대 앱, Dock 아이콘 없음), `LSMinimumSystemVersion=14.0`.
+* **Info.plist** (`mac.extendInfo`, `package.mjs`가 검사):
+  * `LSUIElement=true`(메뉴 막대 앱, Dock 아이콘 없음; main도 `app.dock.hide()`), `LSMinimumSystemVersion=14.0`
+    (ADR-10, helper도 minos 14.0), `LSApplicationCategoryType=public.app-category.utilities`,
+    `NSHumanReadableCopyright`(`copyright`), `CFBundleIdentifier`=appId.
+  * Electron 템플릿의 권한 설명(`NSCamera…`, `NSMicrophone…`, `NSBluetoothAlways…`, `NSBluetoothPeripheral…`,
+    `NSAudioCapture…UsageDescription`)은 지운다: OrbitDrop은 모든 권한 요청을 거부하고(`src/main/security.ts`) hardened runtime에
+    장치 entitlement도 없다. 남아 있으면 `package.mjs`가 실패시킨다.
+  * `NSAppTransportSecurity`(`NSAllowsArbitraryLoads`, localhost 예외)는 electron-builder가 항상 넣는다(electron-updater용).
+    Apple의 URL 로딩 API에만 적용되고 Chromium 네트워크에는 영향이 없으며, OrbitDrop은 네트워크 요청을 하지 않으므로 그대로 둔다.
+  * Electron 하위 앱(`OrbitDrop Helper*.app`)의 `CFBundleName`은 electron-builder가 "Electron Helper …"로 남긴다(실행 파일 이름과
+    표시 이름은 OrbitDrop Helper …). 보이는 곳이 없어 그대로 둔다.
 
 ### 나중에 서명·공증하기
 
@@ -145,14 +181,25 @@ Windows 10/11에 포함되어 있어 허용한다. 훅이 PE import 표를 읽�
 ## 5. Windows: NSIS 설치 프로그램 · Authenticode · SmartScreen
 
 * **사용자별 설치**: `oneClick: false`, `perMachine: false`, `allowElevation: false` +
-  [`build/installer.nsh`](../apps/desktop/build/installer.nsh)의 `customInstallMode`로 "현재 사용자" 모드를 강제.
-  `RequestExecutionLevel user` → UAC 프롬프트 없음. 기본 위치 `%LOCALAPPDATA%\Programs\OrbitDrop`,
+  [`build/installer.nsh`](../apps/desktop/build/installer.nsh)의 `customInstallMode`로 "현재 사용자" 모드를 강제(설치 대상
+  선택 페이지 없음; NSIS 매크로 이름은 대소문자를 가리지 않아 템플릿의 `!ifmacrodef customInstallmode`와 맞는 것을 makensis로
+  확인). `RequestExecutionLevel user` → UAC 프롬프트 없음. 기본 위치 `%LOCALAPPDATA%\Programs\OrbitDrop`,
   디렉터리 페이지에서 변경 가능(관리자 권한이 필요한 폴더를 고르면 설치가 실패할 수 있다 — 권한 상승은 하지 않는다).
-* 시작 메뉴·바탕 화면 바로가기, 제거 프로그램(`Uninstall OrbitDrop.exe`, HKCU 제거 항목).
-  제거 시 사용자 설정(`%APPDATA%\OrbitDrop`)은 남긴다(`deleteAppDataOnUninstall: false`).
+  고른 경로에 `OrbitDrop`이 없으면 설치 프로그램이 `\OrbitDrop` 하위 폴더를 붙인다.
+* 시작 메뉴·바탕 화면 바로가기(AppUserModelID = appId), 제거 프로그램(`Uninstall OrbitDrop.exe`, HKCU 제거 항목,
+  GUID는 appId에서 만들어진다).
+* **제거가 지우는 것**: 설치 폴더 전체(`RMDir /r` — 설치 폴더에 다른 파일을 두지 않는다), 바로가기, HKCU 제거 항목과 설치 정보,
+  그리고 "로그인 시 실행"을 켰다면 남는 시작 항목(`HKCU\…\CurrentVersion\Run`과 `…\Explorer\StartupApproved\Run`의 appId 값;
+  `installer.nsh`의 `customUnInstall`, 새 버전 설치가 이전 버전을 `--updated`로 제거할 때는 남긴다).
+  **남기는 것**: 사용자 데이터 `%APPDATA%\OrbitDrop`(설정 `settings.json`, 작업 기록 `history.json`, `logs\main.log`, Chromium
+  캐시; `deleteAppDataOnUninstall: false`). 함께 지우려면 폴더를 직접 지우거나 `"…\Uninstall OrbitDrop.exe" --delete-app-data`로 실행한다.
+  원본·결과 파일은 사용자 폴더에 있으므로 제거와 무관하다.
 * 설치 언어: 한국어(기본) / 영어.
 * 무인 설치/제거(테스트용): `OrbitDrop-…-setup.exe /S /D=C:\경로`, `"…\Uninstall OrbitDrop.exe" /S`.
   CI는 `--install-test`로 이를 자동 검사한다.
+* **C++ 런타임**: helper는 `/MT`(정적 CRT, CMake 프리셋 `msvc-x64`). 함께 들어가는 sharp(`sharp-win32-x64-0.35.5.node`,
+  `libvips-42.dll`, `libvips-cpp-8.18.7.dll`)와 `skia.win32-x64-msvc.node`의 import 표에도 VC++ 재배포 DLL이 없다(npm 배포본을
+  after-pack 판별기로 확인, UCRT `api-ms-win-crt-*`만 사용). Electron의 `electron.exe`도 마찬가지.
 * **서명**: `WIN_CSC_LINK`(또는 `CSC_LINK`) + `WIN_CSC_KEY_PASSWORD`가 있으면 electron-builder가
   signtool로 exe·설치 프로그램에 Authenticode 서명한다. Azure Trusted Signing을 쓰려면
   `win.azureSignOptions`(endpoint, certificateProfileName, codeSigningAccountName)를 설정하고
@@ -168,22 +215,71 @@ Windows 10/11에 포함되어 있어 허용한다. 훅이 PE import 표를 읽�
 
 - [ ] `--require-signing`으로 빌드했고 `build-report`의 `signing.mode`가 Developer ID / Authenticode
 - [ ] macOS: `spctl` accepted(Notarized), `stapler validate` 통과
-- [ ] smoke test와 [verification.md](verification.md)의 수동 GUI 검증 결과 기록
+- [ ] smoke test와 [verification.md](verification.md)의 수동 GUI 검증 결과 기록(설치본에서 창이 실제로 그려지는지 포함)
 - [ ] `THIRD_PARTY_LICENSES.md`가 최신(`node scripts/licenses.mjs --check`)
-- [ ] LGPL 구성요소(libvips 등)의 대응 소스 제공 방법 결정(업스트림 링크 외에 릴리스와 함께 소스 보관/서면 제공 등)
-- [ ] OrbitDrop 자체 라이선스 결정(README), appId(`app.orbitdrop.desktop`)·제품명 확정
+- [ ] LGPL/MPL 구성요소의 소스 제공 방법 결정(아래 "LGPL·MPL 소스 제공 — 결정 필요")
+- [ ] OrbitDrop 자체 라이선스 결정(README), 제품 ID·제품명 확정(아래 "제품 ID")
+
+## 제품 ID
+
+`app.orbitdrop.desktop`은 임시 ID다. 바꿀 곳(첫 공개 배포 **전에** 한 번 정한다):
+
+| 위치 | 쓰임 |
+|---|---|
+| `apps/desktop/electron-builder.yml`의 `appId` | macOS `CFBundleIdentifier`(Electron 하위 앱은 `<appId>.helper…`), Windows NSIS 제거 항목 GUID, 바로가기 AppUserModelID |
+| `apps/desktop/src/main/index.ts`의 `app.setAppUserModelId(…)` | Windows 알림·작업 표시줄 묶음·로그인 시 실행 레지스트리 값 이름. **`package.mjs`가 빌드된 main 번들의 값과 appId가 다르면 실패시킨다** |
+| `native/macos/Support/Info.plist`, `scripts/build-native-mac.mjs`의 `BUNDLE_ID` (`com.orbitdrop.helper`) | macOS 드래그 helper의 번들 ID·서명 식별자(앱 ID와 달라도 동작; 같은 접두사로 맞추기를 권장) |
+
+나중에 바꾸면: Windows에서는 제거 항목 GUID와 설치 정보 키가 달라져 새 버전이 이전 설치를 찾지 못한다(제거 항목이 둘이 됨, 이전
+설치 폴더 경로를 이어받지 못함). macOS에서는 손쉬운 사용·입력 모니터링 허용과 로그인 항목이 새 ID로 다시 필요하다. 사용자 데이터
+폴더 이름은 제품명(`OrbitDrop`)을 따르므로 ID만 바꾸면 그대로다.
+
+## LGPL·MPL 소스 제공 — 결정 필요
+
+설치본에는 동적 라이브러리로 들어가는 **LGPL** 구성요소(libvips와 glib·pango·fribidi·libexif·libheif·librsvg·proxy-libintl이 든
+`libvips-cpp` / `libvips-42.dll`, Electron의 FFmpeg `libffmpeg.dylib` / `ffmpeg.dll`)와 **MPL** 구성요소(libvips 안의 cairo
+MPL-1.1, @napi-rs/canvas·librsvg에 정적 링크된 MPL-2.0 크레이트 cssparser·selectors 등)가 있다. 모두 수정하지 않고 업스트림 배포본
+그대로 쓰며, 라이선스 원문과 업스트림 소스 위치는 `THIRD_PARTY_LICENSES.md`에 있다. 그러나 LGPL(GPL-3.0 §6 / LGPL-2.1 §6)은 바이너리를
+배포하는 쪽이 **대응 소스를 제공하거나 받을 수 있게 할 책임**을 지게 하고, 업스트림 서버가 사라져도 그 책임은 남는다. 공개 배포 전에
+프로젝트 소유자가 다음 중 하나를 고른다(이 저장소는 아직 정하지 않았다):
+
+1. **릴리스와 함께 소스 보관** — 각 릴리스마다 정확한 버전의 소스 묶음(sharp-libvips 태그의 빌드 스크립트와 각 라이브러리 tarball,
+   librsvg의 crate 소스, Chromium FFmpeg 리비전, MPL 구성요소)을 같은 배포 위치에 올린다. 가장 확실하지만 보관 용량과 수고가 든다.
+2. **서면 제공(written offer)** — 최소 3년 동안 요청하면 소스를 실비로 제공한다고 고지에 적는다(LGPL-2.1 §6(c), GPL-3.0 §6(b)).
+   요청 창구와 보관 책임이 남는다.
+3. **업스트림 링크만** — 현재 `THIRD_PARTY_LICENSES.md`의 상태. 업스트림이 계속 제공하는 동안만 유효하고, 법적 위험을 소유자가 진다.
+
+어느 쪽이든 사용자가 수정한 libvips/FFmpeg로 교체할 수 있어야 한다(동적 링크라 가능; macOS에서는 교체 후 ad-hoc 재서명).
+MPL은 수정하지 않는 한 "소스 위치 고지"로 충족된다(위 1·2에 함께 포함하면 간단하다).
 
 ## 7. 제3자 라이선스 목록
 
-`node scripts/licenses.mjs`가 [`THIRD_PARTY_LICENSES.md`](../THIRD_PARTY_LICENSES.md)를 만든다(`--check`: 최신인지 확인, CI에서 실행).
-범위: `apps/desktop`의 운영 의존성 트리(앱의 `node_modules`), 번들에 들어가는 런타임 라이브러리(React, lucide-react 등
-`devDependencies` 중 빌드 도구가 아닌 것과 워크스페이스 패키지의 의존성), 대상별 네이티브 패키지(sharp/libvips/canvas의
-darwin-arm64·darwin-x64·win32-x64), 그리고 Electron/Chromium, libvips와 그 라이브러리(LGPL 준수 메모 포함), pdf.js의 폰트·
-CMap·wasm, @napi-rs/canvas에 정적 링크된 Skia와 크레이트 목록. LGPL-3.0/GPL-3.0 원문은 `docs/licenses/`(gnu.org 원본과 동일).
+`node scripts/licenses.mjs`가 [`THIRD_PARTY_LICENSES.md`](../THIRD_PARTY_LICENSES.md)를 만든다(`--check`: 최신인지 확인, CI에서 실행;
+네트워크를 쓰지 않음). 범위:
+
+* `apps/desktop`의 운영 의존성 트리(앱의 `node_modules`)와 각 패키지의 LICENSE/NOTICE 원문;
+* 번들에 들어가는 런타임 라이브러리(React, lucide-react 등 `devDependencies` 중 빌드 도구가 아닌 것과 워크스페이스 패키지의 의존성);
+* 대상별 네이티브 패키지(sharp/libvips/canvas의 darwin-arm64·darwin-x64·win32-x64);
+* **다른 패키지의 배포 파일에 이미 컴파일되어 들어 있는 npm 패키지** — docx의 `dist`(buffer, ieee754, events, jszip 등 45개)와
+  pdf.js legacy 빌드의 core-js. 배포 파일의 모듈 표시(`//#region node_modules/…`, `// MODULE: ./node_modules/…`)로 찾고,
+  `electron-builder.yml`의 `files` 제외 규칙에서 빠지는 파일만 본다;
+* Electron/Chromium(FFmpeg 포함), libvips와 그 라이브러리, librsvg에 링크된 Rust 크레이트, @napi-rs/canvas의 Skia·C/C++ 라이브러리·
+  크레이트, Rust 표준 라이브러리, pdf.js의 폰트·CMap·wasm. LGPL-3.0/GPL-3.0 원문은 `docs/licenses/`(gnu.org 원본과 동일).
+
+npm 패키지에 원문이 없는 구성요소의 라이선스 원문은 **`docs/licenses/upstream/`** 스냅숏에서 가져온다(파일마다 출처 URL과 SHA-256을
+`index.json`에 기록, 줄 끝은 LF). 스냅숏은 `node scripts/licenses-fetch.mjs`(네트워크 읽기: GitHub/GitLab/googlesource 원본, npm·crates.io
+tarball — 압축은 메모리에서 풀고 라이선스 파일만 쓴다)로 갱신해 커밋한다. librsvg가 링크하는 크레이트 목록은
+`node scripts/licenses-fetch.mjs --librsvg-crates`(cargo 필요)가 librsvg 소스의 `cargo tree -p librsvg-c -e normal --locked`를 대상 3개
+(aarch64/x86_64-apple-darwin, x86_64-pc-windows-gnullvm)에 대해 실행해 `docs/licenses/librsvg-crates.json`에 적는다(기본 기능 가정).
+sharp·canvas·docx·pdf.js를 올리면 `licenses.mjs --check`가 "run node scripts/licenses-fetch.mjs"로 실패하므로 이 순서로 갱신한다:
+`node scripts/licenses.mjs`(macOS, native-components.json 갱신) → 필요하면 `--librsvg-crates` → `node scripts/licenses-fetch.mjs` →
+`node scripts/licenses.mjs`.
 
 * 출력은 macOS와 Windows에서 같다. 각 체크아웃에는 자기 OS의 네이티브 패키지만 설치되므로, 대상별 패키지의 라이선스는
   스크립트의 고정 표(설치된 패키지와 대조)로, libvips 구성요소 표와 canvas SBOM은 darwin 패키지에서 갱신해 커밋하는
-  `docs/licenses/native-components.json`으로 만든다.
+  `docs/licenses/native-components.json`으로 만든다(Windows 배포본의 versions.json·SBOM이 같은 내용임을 1.3.4 / 1.0.11에서 확인).
+* 같은 원문(공백 무시)은 한 번만 싣고 이후에는 "same text as …"로 가리킨다. 패키지와 저장소 어디에도 원문이 없는 구성요소(block,
+  objc_id, objc-foundation — MIT, selectors — MPL-2.0)는 메타데이터의 라이선스·저자와 표준 원문으로 표시한다.
 * 새 런타임 의존성을 추가하면 다시 생성해 커밋한다. `package.mjs`는 패키징할 때마다 재생성하고, 앱에 `Resources/THIRD_PARTY_LICENSES.md`로 넣는다.
 
 ## 8. 로컬 검증 기록

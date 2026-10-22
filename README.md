@@ -17,7 +17,7 @@
 
 | 영역 | 상태 |
 |---|---|
-| macOS 패키지 (arm64, x64) | dmg/zip 생성, helper·sharp/libvips·@napi-rs/canvas가 대상 아키텍처로 포함, ad-hoc 서명, DMG 안의 앱으로 smoke test(helper `ready`, PNG→JPEG, PDF→PNG) **자동 검증됨**(개발 Mac, x64는 Rosetta 2). 코드 서명·공증 자격 증명 없음 → **미서명** 산출물 |
+| macOS 패키지 (arm64, x64) | dmg/zip 생성, helper·sharp/libvips·@napi-rs/canvas가 대상 아키텍처로 포함, ad-hoc 서명, DMG 안의 앱으로 smoke test(helper `ready`, PNG→JPEG, PDF→PNG) **자동 검증됨**(개발 Mac, x64는 Rosetta 2). 코드 서명·공증 자격 증명 없음 → **미서명** 산출물. **주의**: 0.1.0 패키지(소스 d4f6d1e)는 Electron fuse 설정 때문에 설치본의 창이 열리지 않는다(`ERR_FILE_NOT_FOUND`, smoke test는 창을 열지 않아 놓침) — 설정은 고쳤고 재패키징이 필요하다([docs/workstreams/hardening-packaging.md](docs/workstreams/hardening-packaging.md)) |
 | Windows 패키지 (x64) | NSIS 사용자별 설치 프로그램 설정·CI(빌드, smoke, 무인 설치/제거) 작성, **아직 Windows에서 실행되지 않음** |
 | 실제 Finder/Explorer 전역 드래그 | 네이티브 helper 구현됨(macOS는 권한 없이 동작하는 관찰 방식), **실제 OS GUI 검증 전** — [verification.md](docs/verification.md) 절차 |
 | 변환·편집 엔진 | sharp(libvips), PDF.js + @napi-rs/canvas, pdf-lib, docx — 패키지 안에서 엔진 probe와 PNG→JPG 작업 파이프라인 확인 |
@@ -48,6 +48,33 @@
 * 사용: **macOS 14 이상**(Apple Silicon; Intel x64 산출물은 별도 검증 상태) · **Windows 11 x64**(사용자별 설치, 관리자 권한 불필요).
   Electron 44 자체는 macOS 13+, Windows 10+를 지원하지만 OrbitDrop의 검증 대상은 위와 같습니다([ADR-10](docs/decisions.md#adr-10-최소-os-버전)).
 * 개발: Node.js 22.12+(24 권장), pnpm 11, macOS helper는 Xcode/Swift 6, Windows helper는 Visual Studio C++ + CMake.
+
+## 설치와 제거
+
+지금의 산출물(`OrbitDrop-<버전>-mac-<arch>-unsigned.dmg`/`.zip`, `OrbitDrop-<버전>-win-x64-unsigned-setup.exe`)은 **서명·공증하지 않은
+로컬 테스트용 빌드**입니다(파일 이름의 `-unsigned`). 만든 컴퓨터에서 시험하는 용도이며 배포하지 않습니다. 인터넷에서 받은 미서명
+사본은 macOS Gatekeeper가 막고 Windows SmartScreen이 경고하는 것이 정상이며, 이 문서는 그 검사를 끄거나 우회하는 방법을 안내하지
+않습니다. 배포용은 서명된 빌드로 만듭니다([docs/packaging.md](docs/packaging.md)).
+
+**macOS (14 이상)**
+
+* 설치: DMG를 열어 `OrbitDrop.app`을 `Applications`로 끌어 놓고 실행합니다. 창 없이 메뉴 막대에 아이콘이 나타납니다(Dock 아이콘 없음).
+* 제거: 메뉴 막대 아이콘 → 종료 → `/Applications/OrbitDrop.app`을 휴지통으로. 설정에서 "로그인 시 실행"을 켰다면 먼저 끄거나
+  시스템 설정 › 일반 › 로그인 항목에서 지웁니다. 손쉬운 사용·입력 모니터링을 허용했다면 시스템 설정 › 개인정보 보호 및 보안의
+  해당 목록에서 OrbitDrop을 지웁니다.
+* 사용자 데이터(앱을 지워도 남음, 필요하면 직접 삭제): `~/Library/Application Support/OrbitDrop`(설정 `settings.json`, 작업 기록
+  `history.json`, `logs/main.log`, 캐시), `~/Library/Preferences/app.orbitdrop.desktop.plist`.
+
+**Windows (11 x64)**
+
+* 설치: `…-setup.exe`를 실행합니다. 현재 사용자용으로 설치되며 관리자 권한(UAC)을 묻지 않습니다. 기본 위치
+  `%LOCALAPPDATA%\Programs\OrbitDrop`(변경 가능 — OrbitDrop 전용 폴더를 고릅니다), 시작 메뉴·바탕 화면 바로가기가 생깁니다.
+* 제거: 설정 › 앱 › 설치된 앱 › OrbitDrop › 제거(또는 설치 폴더의 `Uninstall OrbitDrop.exe`). 설치 폴더 전체, 바로가기, 제거 항목,
+  "로그인 시 실행" 시작 항목을 지웁니다.
+* 사용자 데이터 `%APPDATA%\OrbitDrop`(설정, 작업 기록, 로그, 캐시)은 남깁니다. 함께 지우려면 폴더를 직접 지우거나
+  `"%LOCALAPPDATA%\Programs\OrbitDrop\Uninstall OrbitDrop.exe" --delete-app-data`로 제거합니다.
+
+변환·편집 결과 파일은 원본 옆에 저장되므로 앱 제거와 무관하게 남습니다.
 
 ## 개발 명령
 
@@ -94,7 +121,9 @@ docs/                요구사항 · 결정(ADR) · 개발 · 지원표 · 검�
 
 * OrbitDrop 자체 코드의 라이선스는 **아직 정해지지 않았습니다**(프로젝트 소유자 결정 사항). 정해지기 전에는 별도 허가 없이
   재배포할 수 없습니다.
-* 함께 배포되는 제3자 구성요소와 라이선스: [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
-  (`node scripts/licenses.mjs`로 생성, 설치본에도 포함). libvips와 일부 라이브러리는 **LGPL-3.0-or-later**이며
-  교체 가능한 동적 라이브러리로 포함됩니다. Electron/Chromium 고지는 `LICENSES.chromium.html`로 함께 배포됩니다.
+* 함께 배포되는 제3자 구성요소와 라이선스 원문: [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
+  (`node scripts/licenses.mjs`로 생성, 설치본에도 포함; npm 패키지에 원문이 없는 libvips 구성요소·Rust 크레이트·컴파일되어 들어간
+  패키지의 원문은 `docs/licenses/upstream/` 스냅숏). libvips와 일부 라이브러리, Electron에 든 FFmpeg는 **LGPL**이며 교체 가능한
+  동적 라이브러리로 포함됩니다. 공개 배포 전에 LGPL·MPL 소스 제공 방법을 정해야 합니다([docs/packaging.md](docs/packaging.md#lgplmpl-소스-제공--결정-필요)).
+  Electron/Chromium 고지는 `LICENSES.chromium.html`로 함께 배포됩니다.
 * 앱 아이콘(`apps/desktop/build/icon.svg`)은 이 프로젝트의 자체 디자인입니다.

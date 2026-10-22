@@ -5,10 +5,12 @@
 //   node scripts/package.mjs win [--arch x64]               (run on Windows)
 //
 // Steps: preflight → third-party license list → icon check → native helper
-// (scripts/build-native.mjs) → electron-vite build → electron-builder per arch (after-pack hook
-// verifies the package) → inspection (macOS: Info.plist, codesign, DMG layout) → the packaged
-// app's `--smoke-test` (x64 via `arch -x86_64` on Apple Silicon) → native-module check of the
-// packaged sharp/libvips(+librsvg)/@napi-rs/canvas files → report.
+// (scripts/build-native.mjs) → electron-vite build → product id check (appId = the AppUserModelID
+// in the main bundle) → electron-builder per arch (before-pack hook fixes the pnpm node_modules
+// collection, after-pack hook verifies the package and its dependency tree) → inspection (macOS:
+// Info.plist, codesign, DMG layout; both: Electron fuses read back) → the packaged app's
+// `--smoke-test` (x64 via `arch -x86_64` on Apple Silicon) → native-module check of the packaged
+// sharp/libvips(+librsvg)/@napi-rs/canvas files and the pdf-lib/docx writers → report.
 //
 // Signing: real signing happens only when credentials are provided through the environment
 // (macOS: CSC_LINK/CSC_NAME [+ APPLE_* for notarization]; Windows: WIN_CSC_LINK/CSC_LINK +
@@ -32,6 +34,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { appendFileSync, createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,6 +42,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DESKTOP = join(ROOT, 'apps', 'desktop');
 const RELEASE = join(DESKTOP, 'release');
+const require = createRequire(import.meta.url);
 const isWin = process.platform === 'win32';
 const rel = (p) => {
   const r = relative(ROOT, p).split('\\').join('/');
@@ -128,6 +132,8 @@ const packageDir = (name) => join(ROOT, 'node_modules', ...name.split('/'));
 step(`OrbitDrop package: ${target} [${archs.join(', ')}]${opts.dir ? ' (dir only)' : ''}`);
 const desktopPkg = JSON.parse(readFileSync(join(DESKTOP, 'package.json'), 'utf8'));
 console.log(`  version ${desktopPkg.version}, node ${process.version}, host ${process.platform}-${process.arch}`);
+// electron-builder.yml, parsed with electron-builder's own YAML reader (appId, fuses).
+const builderYml = createRequire(require.resolve('app-builder-lib/package.json'))('js-yaml').load(readFileSync(join(DESKTOP, 'electron-builder.yml'), 'utf8'));
 
 for (const a of archs) {
   const needed =
@@ -231,6 +237,14 @@ if (!opts.skipBuild) {
 for (const f of ['out/main/index.js', 'out/main/processor-host.js', 'out/preload/index.js', 'out/renderer/index.html']) {
   if (!existsSync(join(DESKTOP, f))) fatal(`bundle missing: apps/desktop/${f}`);
 }
+// The product id lives in electron-builder.yml and, as the Windows AppUserModelID (notifications,
+// taskbar grouping, the NSIS shortcut), in apps/desktop/src/main/index.ts. They must agree.
+const mainBundle = readFileSync(join(DESKTOP, 'out', 'main', 'index.js'), 'utf8');
+const aumid = (mainBundle.match(/setAppUserModelId\(\s*["'`]([^"'`]+)["'`]\s*\)/) || [])[1];
+if (!aumid) console.warn('  ⚠ no literal setAppUserModelId("…") in out/main/index.js; cannot compare it with appId');
+else if (aumid !== builderYml.appId) fatal(`appId mismatch: electron-builder.yml says "${builderYml.appId}", apps/desktop/src/main/index.ts sets AppUserModelID "${aumid}" (change both; docs/packaging.md "제품 ID")`);
+// The windows load the UI from file:// inside app.asar (loadFile), which needs this fuse enabled.
+const uiFromFile = /\.loadFile\(/.test(mainBundle);
 
 // ── 6. electron-builder per arch ─────────────────────────────────────────────
 const labels = [];
@@ -298,6 +312,7 @@ for (const a of archs) {
   }
   if (target === 'mac') inspectMac(result, appDir, a);
   else inspectWin(result, appDir);
+  result.inspection.fuses = await inspectFuses(target === 'mac' ? appDir : join(appDir, `${desktopPkg.productName}.exe`), a);
 }
 
 // ── 7. inspection ────────────────────────────────────────────────────────────
@@ -314,8 +329,15 @@ function inspectMac(result, appDir, a) {
       LSUIElement: info.LSUIElement,
       ElectronAsarIntegrity: Boolean(info.ElectronAsarIntegrity),
     };
+    ins.infoPlist.NSHumanReadableCopyright = info.NSHumanReadableCopyright;
+    ins.infoPlist.LSApplicationCategoryType = info.LSApplicationCategoryType;
+    // Privacy usage descriptions: OrbitDrop requests no camera/microphone/Bluetooth/… access
+    // (electron-builder.yml removes Electron's template keys).
+    ins.infoPlist.usageDescriptions = Object.keys(info).filter((k) => /UsageDescription$/.test(k));
     if (info.LSUIElement !== true) errors.push(`${a}: Info.plist LSUIElement is not true`);
     if (info.LSMinimumSystemVersion !== '14.0') errors.push(`${a}: LSMinimumSystemVersion is ${info.LSMinimumSystemVersion}, expected 14.0`);
+    if (info.CFBundleIdentifier !== builderYml.appId) errors.push(`${a}: CFBundleIdentifier is ${info.CFBundleIdentifier}, electron-builder.yml appId is ${builderYml.appId}`);
+    if (ins.infoPlist.usageDescriptions.length) errors.push(`${a}: Info.plist asks for permissions OrbitDrop never uses: ${ins.infoPlist.usageDescriptions.join(', ')}`);
   }
   const main = join(appDir, 'Contents', 'MacOS', desktopPkg.productName);
   ins.mainArchs = capture('lipo', ['-archs', main]).out;
@@ -341,6 +363,40 @@ function inspectMac(result, appDir, a) {
   const spctl = capture('spctl', ['--assess', '--type', 'execute', '-vv', appDir]);
   ins.gatekeeper = `${spctl.status === 0 ? 'accepted' : 'rejected'}: ${spctl.out.split('\n')[0]}`;
   for (const [k, v] of Object.entries(ins)) console.log(`  ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`);
+}
+
+/**
+ * Reads the Electron fuse wire back from the packaged binary (macOS: the .app, Windows: the .exe)
+ * and compares every fuse configured in electron-builder.yml. Also refuses a package whose UI
+ * could not load: the windows use loadFile() (file:// inside app.asar), which fails with
+ * ERR_FILE_NOT_FOUND when GrantFileProtocolExtraPrivileges is disabled.
+ */
+async function inspectFuses(binary, a) {
+  // The copy electron-builder itself uses to flip the fuses.
+  const { getCurrentFuseWire, FuseV1Options } = createRequire(require.resolve('app-builder-lib/package.json'))('@electron/fuses');
+  const STATE = { 48: 'disabled', 49: 'enabled', 114: 'removed', 144: 'inherit' };
+  let wire;
+  try {
+    wire = await getCurrentFuseWire(binary);
+  } catch (err) {
+    errors.push(`${a}: cannot read the Electron fuses of ${rel(binary)}: ${err.message}`);
+    return null;
+  }
+  const fuses = {};
+  for (const [name, index] of Object.entries(FuseV1Options)) {
+    if (typeof index === 'number' && wire[index] !== undefined) fuses[name] = STATE[wire[index]] ?? String(wire[index]);
+  }
+  for (const [key, wanted] of Object.entries(builderYml.electronFuses ?? {})) {
+    const name = key.charAt(0).toUpperCase() + key.slice(1);
+    if (typeof wanted !== 'boolean' || !(name in FuseV1Options)) continue;
+    const expected = wanted ? 'enabled' : 'disabled';
+    if (fuses[name] !== expected) errors.push(`${a}: fuse ${name} is ${fuses[name]} in the package, electron-builder.yml asks for ${expected}`);
+  }
+  if (uiFromFile && fuses.GrantFileProtocolExtraPrivileges !== 'enabled') {
+    errors.push(`${a}: GrantFileProtocolExtraPrivileges is ${fuses.GrantFileProtocolExtraPrivileges} but the windows load the UI with loadFile() from app.asar — every window would fail with ERR_FILE_NOT_FOUND`);
+  }
+  console.log(`  fuses: ${Object.entries(fuses).map(([k, v]) => `${k}=${v}`).join(', ')}`);
+  return fuses;
 }
 
 /** Entitlement keys embedded in a signature ([] when none or empty), null if unreadable. */
@@ -569,6 +625,7 @@ function nativeCheck(result) {
   if (!line) return { ran: true, ok: false, problems: [`no NATIVE_CHECK line (exit ${r.status}): ${`${r.stdout ?? ''}`.trim().split('\n').slice(-3).join(' | ')}`] };
   const report = JSON.parse(line.slice('NATIVE_CHECK '.length));
   console.log(`  librsvg ${report.sharp?.rsvg ?? 'MISSING'} (libvips ${report.sharp?.vips}), Korean font: ${report.koreanFont ?? 'none'}, Hangul ink: ${report.hangulInkPixels ?? 0}px`);
+  console.log(`  pdf-lib: ${report.pdfLib ? `${report.pdfLib.pages} page, ${report.pdfLib.bytes} bytes` : 'FAILED'}; docx: ${report.docx ? `${report.docx.bytes} bytes` : 'FAILED'}`);
   for (const p of report.loaded ?? []) console.log(`  loaded ${rel(p)}`);
   for (const w of report.warnings ?? []) console.warn(`  ⚠ ${w}`);
   console.log(`  → ${report.ok ? 'OK' : `FAILED: ${report.problems.join('; ')}`}`);
@@ -655,7 +712,7 @@ for (const r of results) {
   if (r.app) console.log(`    app: ${r.app.path} (${mb(r.app.bytes)})`);
   for (const x of r.artifacts) console.log(`    ${x.path} (${mb(x.bytes)}) sha256 ${x.sha256}`);
   if (r.smoke) console.log(`    smoke: ${r.smoke.ok ? 'OK' : r.smoke.ran ? (r.smoke.implemented ? 'FAILED' : 'not implemented') : `not run (${r.smoke.error})`}`);
-  if (r.nativeCheck) console.log(`    native-module check: ${r.nativeCheck.ran ? (r.nativeCheck.ok ? `OK (librsvg ${r.nativeCheck.sharp?.rsvg}, ${r.nativeCheck.koreanFont})` : 'FAILED') : `not run (${r.nativeCheck.reason})`}`);
+  if (r.nativeCheck) console.log(`    native-module check: ${r.nativeCheck.ran ? (r.nativeCheck.ok ? `OK (librsvg ${r.nativeCheck.sharp?.rsvg}, ${r.nativeCheck.koreanFont}, pdf-lib + docx)` : 'FAILED') : `not run (${r.nativeCheck.reason})`}`);
   console.log(`    report: ${rel(join(RELEASE, `build-report-${r.os}-${r.arch}.json`))}`);
 }
 // GitHub Actions job summary (signing status is part of what reviewers must see).
@@ -664,7 +721,7 @@ if (process.env.GITHUB_STEP_SUMMARY) {
   for (const r of results) {
     const smoke = !r.smoke ? 'not run' : r.smoke.ok ? 'OK' : r.smoke.ran ? (r.smoke.implemented ? 'FAILED' : 'not implemented') : `not run (${r.smoke.error})`;
     const files = r.artifacts.map((x) => `\`${x.path.split('/').pop()}\` (${mb(x.bytes)})`).join('<br>') || (r.ok ? '(dir only)' : 'BUILD FAILED');
-    const nat = !r.nativeCheck ? 'not run' : !r.nativeCheck.ran ? 'skipped' : r.nativeCheck.ok ? `OK (librsvg ${r.nativeCheck.sharp?.rsvg}, ${r.nativeCheck.koreanFont})` : 'FAILED';
+    const nat = !r.nativeCheck ? 'not run' : !r.nativeCheck.ran ? 'skipped' : r.nativeCheck.ok ? `OK (librsvg ${r.nativeCheck.sharp?.rsvg}, ${r.nativeCheck.koreanFont}, pdf-lib + docx)` : 'FAILED';
     lines.push(`| ${r.os}-${r.arch} | ${r.signing.mode} | ${r.signing.notarize === null ? 'n/a' : r.signing.notarize ? 'yes' : 'no'} | ${smoke} | ${nat} | ${files} |`);
     if (r.installTest) lines.push(`| ${r.os}-${r.arch} install test | | | ${r.installTest.smoke?.ok ? 'OK' : 'see log'} | | installed=${r.installTest.installed}, HKCU entry=${r.installTest.perUserUninstallEntry}, uninstalled=${r.installTest.uninstalled} |`);
   }

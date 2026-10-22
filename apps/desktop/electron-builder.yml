@@ -4,7 +4,13 @@
 # the script builds the native helper and bundles first, decides between real signing and an
 # explicitly labelled unsigned/ad-hoc build, and runs the packaged app's --smoke-test.
 
-appId: app.orbitdrop.desktop # placeholder product id ("OrbitDrop" is a working name)
+# Placeholder product id ("OrbitDrop" is a working name). It must also be changed in
+# apps/desktop/src/main/index.ts (Windows AppUserModelID; scripts/package.mjs fails the build when
+# the two differ). Fix it before the first public release: on Windows it seeds the NSIS uninstall
+# key GUID, on macOS it keys privacy permissions and login items, so changing it later breaks
+# in-place upgrades.
+# See docs/packaging.md "제품 ID".
+appId: app.orbitdrop.desktop
 productName: OrbitDrop
 copyright: Copyright © 2026 OrbitDrop contributors
 
@@ -52,6 +58,22 @@ files:
   - "!**/node_modules/pdf-lib/{dist,src,ts3.4}/**"
   - "!**/node_modules/docx/dist/*.{iife.js,umd.cjs}"
   - "!**/node_modules/zod/src/**"
+  # Browser/ESM duplicates of pure-JS dependencies. Node loads each package's "exports"/"main"
+  # (CommonJS: docx dist/index.cjs, pdf-lib cjs/, standard-fonts lib/, upng cjs/, pako lib/,
+  # jszip lib/, xml-js lib/), never these. docx's other entry points (docx/layout, docx/shapes, …)
+  # are not imported; dist/index.mjs stays for a future ESM import("docx"). The packaged
+  # native-module check writes a real PDF (pdf-lib) and DOCX (docx) from the trimmed package.
+  - "!**/node_modules/docx/dist/{layout,shapes,html,charts,math,watermarks}.*"
+  - "!**/node_modules/pdf-lib/es/**"
+  - "!**/node_modules/@pdf-lib/standard-fonts/{dist,es}/**"
+  - "!**/node_modules/@pdf-lib/upng/dist/**"
+  - "!**/node_modules/{pako,jszip}/dist/**"
+  - "!**/node_modules/xml-js/{dist,bin,types}/**"
+  - "!**/node_modules/{nanoid,semver}/bin/**"
+  # Tooling and project documents inside dependencies (licence files are kept).
+  - "!**/node_modules/**/{.eslintrc*,.editorconfig,.codeclimate.yml,tsconfig.json,CHANGES.md,CONTRIBUTING.md,GOVERNANCE.md,SECURITY.md,CODE_OF_CONDUCT.md,sponsors.md}"
+  - "!**/node_modules/readable-stream/doc/**"
+  - "!**/node_modules/tslib/*.html"
   - "!**/node_modules/@types/**"
   - "!**/node_modules/undici-types/**"
   # Keep only the prebuilt native packages of the target: ${platform} is the build host's
@@ -64,9 +86,8 @@ files:
 extraResources:
   - from: ../../THIRD_PARTY_LICENSES.md
     to: THIRD_PARTY_LICENSES.md
-  # Tray / menu-bar icons: main looks in <resources>/tray first (apps/desktop/src/main/app.ts).
-  - from: resources/tray
-    to: tray
+  # Tray / menu-bar icons: main looks in <resources>/tray first (apps/desktop/src/main/app.ts);
+  # each OS gets only the files apps/desktop/src/main/tray/controller.ts loads (mac/win below).
 
 # Keep Chromium's own UI strings for the app's two languages only (Korean default, English).
 electronLanguages:
@@ -76,6 +97,7 @@ electronLanguages:
 # Harden the shipped Electron binary. RunAsNode/NODE_OPTIONS/--inspect are disabled so other
 # processes cannot reuse OrbitDrop's binary (and any permission the user granted it) as a
 # generic Node runtime; the app only loads its own integrity-checked app.asar.
+# scripts/package.mjs reads the fuses back from every package and fails on any difference.
 electronFuses:
   runAsNode: false
   enableCookieEncryption: true
@@ -83,13 +105,22 @@ electronFuses:
   enableNodeCliInspectArguments: false
   enableEmbeddedAsarIntegrityValidation: true
   onlyLoadAppFromAsar: true
-  grantFileProtocolExtraPrivileges: false
+  # Must stay ENABLED while the windows load the UI with loadFile() from file:// inside app.asar
+  # (apps/desktop/src/main/windows/manager.ts). With this fuse disabled, Electron's file://
+  # handler stops reading app.asar (every window fails with ERR_FILE_NOT_FOUND — measured on the
+  # 0.1.0 packages, which shipped blank windows) and outside an asar the module script and CSS
+  # are blocked by CORS. Disable it only after the UI is served from a custom protocol.
+  grantFileProtocolExtraPrivileges: true
   # macOS: re-apply an ad-hoc signature after flipping fuses so builds that skip signing
   # (e.g. pull-request CI) still launch on Apple Silicon. Real signing replaces it.
   resetAdHocDarwinSignature: true
 
-# Verifies the native helper and the native binaries of the target os/arch, prunes foreign
-# architectures and fails the build with a clear message when something is missing.
+# Makes electron-builder's pnpm collector copy the exact dependency versions from the hoisted
+# node_modules tree (it shipped wrong versions of tslib and nanoid before; details in the file).
+beforePack: ./build/before-pack.cjs
+# Verifies the native helper and the native binaries of the target os/arch, the dependency tree
+# inside app.asar, prunes foreign architectures and fails the build with a clear message when
+# something is missing.
 afterPack: ./build/after-pack.cjs # shim → scripts/after-pack.cjs
 
 mac:
@@ -112,14 +143,26 @@ mac:
   # the inherited Electron entitlements; with a Developer ID it also gets a secure timestamp.
   sign: ./build/sign.cjs
   extendInfo:
-    # Menu-bar app: no Dock icon, no main window at launch.
+    # Menu-bar app: no Dock icon, no main window at launch (main also calls app.dock.hide()).
     LSUIElement: true
+    # Electron's template Info.plist asks for camera, microphone, Bluetooth and audio capture.
+    # OrbitDrop uses none of them: every permission request is denied (src/main/security.ts) and
+    # the hardened runtime has no device entitlements. null removes the key (electron-builder 26).
+    NSCameraUsageDescription: null
+    NSMicrophoneUsageDescription: null
+    NSBluetoothAlwaysUsageDescription: null
+    NSBluetoothPeripheralUsageDescription: null
+    NSAudioCaptureUsageDescription: null
   extraResources:
     # Staged by scripts/build-native-mac.mjs. ${arch} is arm64 or x64. Only the helper itself is
     # shipped (no dSYM or other build by-products).
     - from: resources/helper/darwin-${arch}
       to: helper
       filter: ["OrbitDropHelper", "OrbitDropHelper.app/**"]
+    # Menu-bar template icon (Retina variant picked up automatically).
+    - from: resources/tray
+      to: tray
+      filter: ["trayTemplate.png", "trayTemplate@2x.png"]
     # electron-builder's macOS output omits Electron's licence files (they sit next to
     # Electron.app in the upstream zip); ship them inside the bundle. On Windows they are
     # already copied next to OrbitDrop.exe.
@@ -153,6 +196,10 @@ win:
     - from: resources/helper/win32-${arch}
       to: helper
       filter: ["OrbitDropHelper.exe", "*.dll"]
+    # Notification-area icon (tray.png is the fallback the tray controller tries second).
+    - from: resources/tray
+      to: tray
+      filter: ["tray.ico", "tray.png", "tray@2x.png"]
 
 nsis:
   # Assisted, per-user installer: no administrator rights, installation folder can be changed,

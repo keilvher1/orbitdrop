@@ -1,0 +1,1 @@
+No licence text is published with objc_id 0.1.1 (https://static.crates.io/crates/objc_id/objc_id-0.1.1.crate) or in its repository; its metadata declares the licence MIT. Authors named in its metadata: Steven Sheldon.

@@ -1,0 +1,1 @@
+No licence text is published with selectors 0.40.0 (https://static.crates.io/crates/selectors/selectors-0.40.0.crate) or in its repository; its metadata declares the licence MPL-2.0. Authors named in its metadata: The Servo Project Developers.

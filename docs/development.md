@@ -49,24 +49,30 @@ pnpm install
 | 실제 FAT32 볼륨 테스트(macOS 전용, 선택) | `ORBITDROP_FS_TESTS=1 node_modules/.bin/vitest run --root packages/core test/output-fat.test.ts` (디스크 이미지를 만들어 마운트) |
 | 테스트 픽스처 | `pnpm fixtures` = `node scripts/gen-fixtures.mjs [outDir]` |
 | 아이콘 | `node scripts/gen-icons.mjs [--verify]` |
-| 제3자 라이선스 | `node scripts/licenses.mjs [--check]` → `THIRD_PARTY_LICENSES.md` |
+| 제3자 라이선스 | `node scripts/licenses.mjs [--check]` → `THIRD_PARTY_LICENSES.md` (오프라인) |
+| 라이선스 원문 스냅숏 갱신 | `node scripts/licenses-fetch.mjs [--refresh]` (네트워크) → `docs/licenses/upstream/`; `--librsvg-crates`(cargo 필요) → `docs/licenses/librsvg-crates.json` ([packaging.md §7](packaging.md#7-제3자-라이선스-목록)) |
 
 모든 스크립트는 Node `.mjs`라 macOS·Windows에서 같은 명령으로 동작한다(POSIX 셸 문법 없음).
 
 ## 4. 실행 옵션과 환경 변수 (main)
 
-| 옵션 | 의미 |
-|---|---|
-| `--smoke-test` | 창 없이 엔진 probe → helper `ready` 대기(최대 5초) → 생성한 PNG를 실제 작업 파이프라인으로 JPG 변환 → stdout에 `ORBITDROP_SMOKE {…}` 한 줄 → 종료 코드 0/1 |
-| `--smoke-optional-helper` / `ORBITDROP_SMOKE_OPTIONAL_HELPER=1` | helper가 없어도 smoke test 통과(개발 체크아웃용) |
-| `ORBITDROP_HELPER_PATH=<path>` | helper 실행 파일 경로 지정 |
-| `ORBITDROP_DISABLE_HELPER=1` | helper를 띄우지 않음(대체 경로만) |
-| `ORBITDROP_NO_TRAY=1` | 트레이 아이콘 없음 |
-| `ORBITDROP_USER_DATA_DIR=<dir>` | 설정·데이터 폴더(테스트는 임시 폴더) |
-| `ORBITDROP_E2E=1` | 자동화 모드(트레이·helper 없음, 포커스 빼앗지 않음) |
-| `ORBITDROP_DEBUG=1` | 디버그 로그 |
+| 옵션 | 의미 | 패키지된 앱 |
+|---|---|---|
+| `--smoke-test` | 창 없이 엔진 probe → helper `ready` 대기(최대 5초) → 생성한 PNG를 실제 작업 파이프라인으로 JPG 변환(+ PDF→PNG) → stdout에 `ORBITDROP_SMOKE {…}` 한 줄 → 종료 코드 0/1. 창을 열지 않으므로 렌더러 로드는 검사하지 않는다 | 적용 |
+| `--smoke-optional-helper` / `ORBITDROP_SMOKE_OPTIONAL_HELPER=1` | helper가 없어도 smoke test 통과(개발 체크아웃용) | 적용 |
+| `ORBITDROP_DEBUG=1` | 디버그 로그(경로는 여전히 가림) | 적용 |
+| `ORBITDROP_HELPER_PATH=<path>` | helper 실행 파일 경로 지정 | 무시 |
+| `ORBITDROP_DISABLE_HELPER=1` | helper를 띄우지 않음(대체 경로만) | 무시 |
+| `ORBITDROP_NO_TRAY=1` | 트레이 아이콘 없음 | 무시 |
+| `ORBITDROP_USER_DATA_DIR=<dir>` | 설정·데이터 폴더(테스트는 임시 폴더) | 무시 |
+| `ORBITDROP_E2E=1`, `ORBITDROP_E2E_TRAY=1`, `ORBITDROP_E2E_HELPER=1` | 자동화 모드(트레이·helper 없음, 포커스 빼앗지 않음, 테스트 훅) | 무시 |
 
-helper 탐색 순서: `ORBITDROP_HELPER_PATH` → 패키지: `<resources>/helper/OrbitDropHelper[.exe]` →
+패키지된 앱은 `--smoke-test`, `--smoke-optional-helper`, `ORBITDROP_DEBUG`만 따른다. 같은 사용자의 다른 프로세스가 환경 변수를
+심어(`launchctl setenv` 등) 설정·기록 위치를 옮기거나 트레이를 숨기거나 전역 드래그를 끄지 못하게 하기 위함이다
+(`src/main/launch-options.ts`). 패키지된 앱의 작업자(utilityProcess)는 물려받은 `ORBITDROP_*` 변수를 하나도 받지 않는다
+(`ORBITDROP_PDFJS_DIR` 등은 main이 직접 정한다).
+
+helper 탐색 순서: (개발 빌드만) `ORBITDROP_HELPER_PATH` → 패키지: `<resources>/helper/OrbitDropHelper[.exe]` →
 개발: `apps/desktop/resources/helper/<platform>-<arch>/`(`darwin-arm64`, `darwin-x64`, `win32-x64`).
 
 ## 5. 디버깅
