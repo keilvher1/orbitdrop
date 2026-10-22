@@ -116,6 +116,7 @@ struct MainToHelperEnvelope: Decodable {
 
     let strings = try object.object("strings", allowed: [
       "dropHint", "unsupported", "multiFileUnsupported", "fileCount", "unsupportedFolder", "unsupportedNonFile", "unsupportedVirtual",
+      "unsupportedCloud",
     ])
     return HelperConfig(
       enabled: enabled,
@@ -135,7 +136,8 @@ struct MainToHelperEnvelope: Decodable {
         fileCount: try strings.string("fileCount", maxLength: 60),
         unsupportedFolder: try strings.optionalString("unsupportedFolder", maxLength: 60),
         unsupportedNonFile: try strings.optionalString("unsupportedNonFile", maxLength: 60),
-        unsupportedVirtual: try strings.optionalString("unsupportedVirtual", maxLength: 60)
+        unsupportedVirtual: try strings.optionalString("unsupportedVirtual", maxLength: 60),
+        unsupportedCloud: try strings.optionalString("unsupportedCloud", maxLength: 60)
       )
     )
   }

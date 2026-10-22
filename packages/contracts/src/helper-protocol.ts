@@ -133,6 +133,12 @@ export const HelperConfigureSchema = z.strictObject({
     unsupportedFolder: z.string().max(60).optional(),
     unsupportedNonFile: z.string().max(60).optional(),
     unsupportedVirtual: z.string().max(60).optional(),
+    /**
+     * Online-only cloud file (iCloud Drive / File Provider dataless file,
+     * OneDrive Files On-Demand placeholder): its contents are not on this
+     * computer. Helpers fall back to a built-in "download it first" text.
+     */
+    unsupportedCloud: z.string().max(60).optional(),
   }),
 });
 

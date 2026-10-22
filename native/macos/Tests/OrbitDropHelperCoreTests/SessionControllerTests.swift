@@ -822,6 +822,17 @@ final class SessionControllerTests: XCTestCase {
       XCTAssertEqual(h.cancels, [.invalidPayload], "\(locale)")
       XCTAssertTrue(h.drops.isEmpty)
     }
+    // configure's strings.unsupportedCloud replaces the built-in text; an empty one does not.
+    for (configured, shown) in [("Get it from iCloud first", "Get it from iCloud first"), ("", "Download it first")] {
+      var config = DefaultConfig.config(locale: .en)
+      config.strings.unsupportedCloud = configured
+      var c = Harness(config: config)
+      c.beginDrag()
+      c.send(.modifiersChanged([.shift]))
+      c.send(.draggingEntered(items: pdf, point: center, sourceAllowsCopy: true))
+      c.send(.fileInfo(sessionId: "s1", totalBytes: 5_000_000, containsDirectory: false, containsCloudPlaceholder: true))
+      XCTAssertEqual(c.view?.capsule, CapsuleContent(text: shown, style: .reject), "configured \(configured.debugDescription)")
+    }
     // A folder found by the same stat is the more basic reason.
     var f = Harness()
     f.beginDrag()

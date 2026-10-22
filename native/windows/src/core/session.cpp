@@ -570,8 +570,8 @@ void Controller::shutdown() {
 // ------------------------------------------------------------------ render model
 
 const char* cloudPlaceholderText(proto::Locale locale) {
-    // Built in until configure carries a string for it (requested as
-    // strings.unsupportedCloud); same advice as main's CLOUD_PLACEHOLDER error.
+    // Used when configure has no strings.unsupportedCloud; same advice as
+    // main's CLOUD_PLACEHOLDER error.
     return locale == proto::Locale::Ko ? "\xEB\xA8\xBC\xEC\xA0\x80 \xEB\x82\xB4\xEB\xA0\xA4\xEB\xB0\x9B\xEC\x9C\xBC\xEC\x84\xB8\xEC\x9A\x94"  // 먼저 내려받으세요
                                        : "Download it first";
 }
@@ -620,10 +620,17 @@ void Controller::refreshModel(bool push) {
                 case selection::Unsupported::Directory: specific = &c.strings.unsupportedFolder; break;
                 case selection::Unsupported::NoFiles: specific = &c.strings.unsupportedNonFile; break;
                 case selection::Unsupported::VirtualFiles: specific = &c.strings.unsupportedVirtual; break;
+                case selection::Unsupported::CloudPlaceholder: specific = &c.strings.unsupportedCloud; break;
                 default: break;
             }
-            m.capsuleText = specific != nullptr && specific->has_value() && !(*specific)->empty() ? **specific : c.strings.unsupported;
-            if (session_.cls.reason == selection::Unsupported::CloudPlaceholder) m.capsuleText = cloudPlaceholderText(c.locale);
+            const bool hasSpecific = specific != nullptr && specific->has_value() && !(*specific)->empty();
+            if (hasSpecific) {
+                m.capsuleText = **specific;
+            } else if (session_.cls.reason == selection::Unsupported::CloudPlaceholder) {
+                m.capsuleText = cloudPlaceholderText(c.locale);
+            } else {
+                m.capsuleText = c.strings.unsupported;
+            }
             m.capsuleStyle = CapsuleStyle::Reject;
         } else if (session_.hasHit && session_.hit.zone == geo::WheelHit::Zone::Sector) {
             const int i = session_.hit.index;

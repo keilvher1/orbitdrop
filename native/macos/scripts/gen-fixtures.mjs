@@ -256,8 +256,8 @@ function localeStrings(locale) {
   }[locale];
   // The optional, more specific texts (helper-protocol.ts); main may not send them yet.
   const specific = {
-    ko: { unsupportedFolder: '폴더는 지원하지 않음', unsupportedNonFile: '파일이 아닌 항목', unsupportedVirtual: '디스크에 없는 항목' },
-    en: { unsupportedFolder: "Folders aren't supported", unsupportedNonFile: 'Not a file', unsupportedVirtual: 'Not a file on disk' },
+    ko: { unsupportedFolder: '폴더는 지원하지 않음', unsupportedNonFile: '파일이 아닌 항목', unsupportedVirtual: '디스크에 없는 항목', unsupportedCloud: '먼저 내려받으세요' },
+    en: { unsupportedFolder: "Folders aren't supported", unsupportedNonFile: 'Not a file', unsupportedVirtual: 'Not a file on disk', unsupportedCloud: 'Download it first' },
   }[locale];
   let json = {};
   try {
@@ -447,12 +447,16 @@ for (const locale of ['ko', 'en']) {
     delete m.strings.unsupportedFolder;
     delete m.strings.unsupportedNonFile;
     delete m.strings.unsupportedVirtual;
+    delete m.strings.unsupportedCloud;
   });
   mutate('configure: unsupportedFolder 60', (m) => (m.strings.unsupportedFolder = 'f'.repeat(60)));
   mutate('configure: unsupportedFolder 61', (m) => (m.strings.unsupportedFolder = 'f'.repeat(61)));
   mutate('configure: unsupportedNonFile null', (m) => (m.strings.unsupportedNonFile = null));
   mutate('configure: unsupportedVirtual number', (m) => (m.strings.unsupportedVirtual = 1));
   mutate('configure: unsupportedVirtual empty', (m) => (m.strings.unsupportedVirtual = ''));
+  mutate('configure: unsupportedCloud 60 emoji', (m) => (m.strings.unsupportedCloud = '☁️'.repeat(30)));
+  mutate('configure: unsupportedCloud 61', (m) => (m.strings.unsupportedCloud = 'c'.repeat(61)));
+  mutate('configure: unsupportedCloud null', (m) => (m.strings.unsupportedCloud = null));
   mutate('configure: unknown unsupported string key', (m) => (m.strings.unsupportedOther = 'x'));
   mutate('configure: v 2', (m) => (m.v = 2));
   mutate('configure: v string', (m) => (m.v = '1'));

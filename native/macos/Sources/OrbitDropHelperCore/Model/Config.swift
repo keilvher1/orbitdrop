@@ -274,10 +274,13 @@ public struct HelperStrings: Sendable, Equatable {
   public var unsupportedFolder: String?
   public var unsupportedNonFile: String?
   public var unsupportedVirtual: String?
+  /// Online-only cloud file; `HelperConfig.unsupportedText` falls back to `cloudPlaceholderText`.
+  public var unsupportedCloud: String?
 
   public init(
     dropHint: String, unsupported: String, multiFileUnsupported: String, fileCount: String,
-    unsupportedFolder: String? = nil, unsupportedNonFile: String? = nil, unsupportedVirtual: String? = nil
+    unsupportedFolder: String? = nil, unsupportedNonFile: String? = nil, unsupportedVirtual: String? = nil,
+    unsupportedCloud: String? = nil
   ) {
     self.dropHint = dropHint
     self.unsupported = unsupported
@@ -286,6 +289,7 @@ public struct HelperStrings: Sendable, Equatable {
     self.unsupportedFolder = unsupportedFolder
     self.unsupportedNonFile = unsupportedNonFile
     self.unsupportedVirtual = unsupportedVirtual
+    self.unsupportedCloud = unsupportedCloud
   }
 
   /// Center text for an unsupported drag: the specific string when main sent one, else `unsupported`.
@@ -295,14 +299,15 @@ public struct HelperStrings: Sendable, Equatable {
     case .folder?: specific = unsupportedFolder
     case .nonFile?: specific = unsupportedNonFile
     case .virtual?: specific = unsupportedVirtual
-    case .unknownType?, .tooMany?, .cloudPlaceholder?, nil: specific = nil
+    case .cloudPlaceholder?: specific = unsupportedCloud
+    case .unknownType?, .tooMany?, nil: specific = nil
     }
     if let specific, !specific.isEmpty { return specific }
     return unsupported
   }
 
-  /// Built-in text for an online-only cloud file, as the Windows helper shows it, until
-  /// `configure` can carry its own string.
+  /// Built-in text for an online-only cloud file (the Windows helper's wording) when
+  /// `configure` has no `unsupportedCloud`.
   public static func cloudPlaceholderText(_ locale: HelperLocale) -> String {
     switch locale {
     case .ko: return "먼저 내려받으세요"
@@ -366,10 +371,10 @@ public struct HelperConfig: Sendable, Equatable {
     menus.first { $0.key == key }
   }
 
-  /// Center text for an unsupported drag: `strings`, plus the built-in, localized text for an
-  /// online-only cloud file (no configure field for it yet).
+  /// Center text for an unsupported drag: `strings`; an online-only cloud file without
+  /// `strings.unsupportedCloud` gets the built-in, localized text instead of the generic one.
   public func unsupportedText(_ reason: UnsupportedReason?) -> String {
-    if reason == .cloudPlaceholder { return HelperStrings.cloudPlaceholderText(locale) }
+    if reason == .cloudPlaceholder, (strings.unsupportedCloud ?? "").isEmpty { return HelperStrings.cloudPlaceholderText(locale) }
     return strings.unsupportedText(reason)
   }
 

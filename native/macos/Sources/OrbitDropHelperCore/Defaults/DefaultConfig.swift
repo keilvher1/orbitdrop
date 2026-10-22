@@ -114,12 +114,14 @@ public enum DefaultConfig {
     case .ko:
       return HelperStrings(
         dropHint: "여기에 놓기", unsupported: "지원하지 않는 파일", multiFileUnsupported: "한 번에 한 파일만", fileCount: "{n}개 파일",
-        unsupportedFolder: "폴더는 지원하지 않음", unsupportedNonFile: "파일이 아닌 항목", unsupportedVirtual: "디스크에 없는 항목"
+        unsupportedFolder: "폴더는 지원하지 않음", unsupportedNonFile: "파일이 아닌 항목", unsupportedVirtual: "디스크에 없는 항목",
+        unsupportedCloud: "먼저 내려받으세요"
       )
     case .en:
       return HelperStrings(
         dropHint: "Drop here", unsupported: "Not supported", multiFileUnsupported: "One file at a time", fileCount: "{n} files",
-        unsupportedFolder: "Folders aren't supported", unsupportedNonFile: "Not a file", unsupportedVirtual: "Not a file on disk"
+        unsupportedFolder: "Folders aren't supported", unsupportedNonFile: "Not a file", unsupportedVirtual: "Not a file on disk",
+        unsupportedCloud: "Download it first"
       )
     }
   }

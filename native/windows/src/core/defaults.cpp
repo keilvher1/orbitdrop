@@ -251,6 +251,7 @@ std::shared_ptr<proto::Configure> referenceConfigure(proto::Locale locale, Theme
         cfg->strings.unsupportedFolder = std::string("\xED\x8F\xB4\xEB\x8D\x94\xEB\x8A\x94 \xEC\xA7\x80\xEC\x9B\x90\xED\x95\x98\xEC\xA7\x80 \xEC\x95\x8A\xEC\x9D\x8C");  // 폴더는 지원하지 않음
         cfg->strings.unsupportedNonFile = std::string("\xED\x8C\x8C\xEC\x9D\xBC\xEC\x9D\xB4 \xEC\x95\x84\xEB\x8B\x8C \xED\x95\xAD\xEB\xAA\xA9");  // 파일이 아닌 항목
         cfg->strings.unsupportedVirtual = std::string("\xEB\x94\x94\xEC\x8A\xA4\xED\x81\xAC\xEC\x97\x90 \xEC\x97\x86\xEB\x8A\x94 \xED\x95\xAD\xEB\xAA\xA9");  // 디스크에 없는 항목
+        cfg->strings.unsupportedCloud = std::string("\xEB\xA8\xBC\xEC\xA0\x80 \xEB\x82\xB4\xEB\xA0\xA4\xEB\xB0\x9B\xEC\x9C\xBC\xEC\x84\xB8\xEC\x9A\x94");  // 먼저 내려받으세요
     } else {
         cfg->strings.dropHint = "Drop here";
         cfg->strings.unsupported = "Not supported";
@@ -259,6 +260,7 @@ std::shared_ptr<proto::Configure> referenceConfigure(proto::Locale locale, Theme
         cfg->strings.unsupportedFolder = std::string("Folders aren't supported");
         cfg->strings.unsupportedNonFile = std::string("Not a file");
         cfg->strings.unsupportedVirtual = std::string("No file on disk");
+        cfg->strings.unsupportedCloud = std::string("Download it first");
     }
     return cfg;
 }
@@ -362,6 +364,7 @@ std::string configureToJson(const proto::Configure& cfg) {
         {"unsupportedFolder", &cfg.strings.unsupportedFolder},
         {"unsupportedNonFile", &cfg.strings.unsupportedNonFile},
         {"unsupportedVirtual", &cfg.strings.unsupportedVirtual},
+        {"unsupportedCloud", &cfg.strings.unsupportedCloud},
     };
     for (const auto& [key, value] : optionalStrings) {
         if (!value->has_value()) continue;

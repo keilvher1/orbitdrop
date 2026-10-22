@@ -84,8 +84,10 @@ final class HelperProcessTests: XCTestCase {
       stdin.fileHandleForWriting.write(Data((text + "\n").utf8))
     }
 
+    /// Waits are upper bounds (they return as soon as the condition holds), generous so a start-up
+    /// on a loaded machine (parallel builds, other test runs) does not fail a test.
     @discardableResult
-    func waitFor(_ timeout: TimeInterval = 5, _ predicate: ([String: Any]) -> Bool) -> [String: Any]? {
+    func waitFor(_ timeout: TimeInterval = 15, _ predicate: ([String: Any]) -> Bool) -> [String: Any]? {
       let deadline = Date().addingTimeInterval(timeout)
       while Date() < deadline {
         if let hit = messages.first(where: predicate) { return hit }
@@ -94,7 +96,7 @@ final class HelperProcessTests: XCTestCase {
       return nil
     }
 
-    func waitExit(_ timeout: TimeInterval = 5) -> Int32? {
+    func waitExit(_ timeout: TimeInterval = 15) -> Int32? {
       let deadline = Date().addingTimeInterval(timeout)
       while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
       if process.isRunning {

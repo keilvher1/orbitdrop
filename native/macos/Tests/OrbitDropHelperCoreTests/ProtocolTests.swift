@@ -72,6 +72,7 @@ final class ProtocolTests: XCTestCase {
       XCTAssertFalse((config.strings.unsupportedFolder ?? "").isEmpty)
       XCTAssertFalse((config.strings.unsupportedNonFile ?? "").isEmpty)
       XCTAssertFalse((config.strings.unsupportedVirtual ?? "").isEmpty)
+      XCTAssertFalse((config.strings.unsupportedCloud ?? "").isEmpty)
       // Reference order from the recording, as built by buildHelperMenus.
       XCTAssertEqual(config.menu(for: .pdf)?.convert.map(\.actionId), [.convertDocx, .convertJpeg, .convertPng, .convertTxt])
       XCTAssertEqual(config.menu(for: .image(.jpeg))?.convert.map(\.label), ["PNG", "WEBP", "HEIC", "TIFF", "AVIF", "BMP", "PDF", "DOCX"])

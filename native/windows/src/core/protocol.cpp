@@ -415,7 +415,7 @@ bool parseConfigure(Checker& c, const Value& root, Configure& cfg) {
 
     const Value* strings = root.get("strings");
     if (!c.strictObject(strings, "strings", {"dropHint", "unsupported", "multiFileUnsupported", "fileCount"},
-                        {"unsupportedFolder", "unsupportedNonFile", "unsupportedVirtual"})) {
+                        {"unsupportedFolder", "unsupportedNonFile", "unsupportedVirtual", "unsupportedCloud"})) {
         return false;
     }
     const auto optional = [&](const char* key, std::optional<std::string>& out) {
@@ -433,7 +433,8 @@ bool parseConfigure(Checker& c, const Value& root, Configure& cfg) {
            c.string(strings->get("fileCount"), "strings.fileCount", 0, 60, cfg.strings.fileCount) &&
            optional("unsupportedFolder", cfg.strings.unsupportedFolder) &&
            optional("unsupportedNonFile", cfg.strings.unsupportedNonFile) &&
-           optional("unsupportedVirtual", cfg.strings.unsupportedVirtual);
+           optional("unsupportedVirtual", cfg.strings.unsupportedVirtual) &&
+           optional("unsupportedCloud", cfg.strings.unsupportedCloud);
 }
 
 ParseResult failWith(ParseErrorKind kind, std::string detail) {

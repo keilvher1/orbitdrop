@@ -772,6 +772,21 @@ TEST_CASE("session: folders are detected off the UI thread and change the outcom
     CHECK(v.host.folderChecks.empty());
 }
 
+TEST_CASE("session: configure's unsupportedCloud replaces the built-in cloud text") {
+    for (const auto& [configured, shown] : {std::pair<std::string, std::string>{"Get it from OneDrive first", "Get it from OneDrive first"},
+                                            std::pair<std::string, std::string>{"", "Download it first"}}) {
+        auto cfg = std::make_shared<proto::Configure>(*defaults::referenceConfigure(proto::Locale::En));
+        cfg->strings.unsupportedCloud = configured;
+        Driver d;
+        d.ctl.configure(cfg);
+        d.startWheel(800, 500);
+        d.enter(kPdf, 920, 500);
+        d.ctl.fileInfo(d.ctl.sessionId(), facts(false, /*cloudPlaceholder=*/true));
+        CHECK(d.host.model.unsupported);
+        CHECK_EQ(d.host.model.capsuleText, shown);
+    }
+}
+
 TEST_CASE("session: cloud-only placeholders are refused, never read") {
     Driver d;
     d.startWheel(800, 500);

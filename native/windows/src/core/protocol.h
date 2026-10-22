@@ -133,6 +133,7 @@ struct Strings {
     std::optional<std::string> unsupportedFolder;   // a folder is part of the drag
     std::optional<std::string> unsupportedNonFile;  // text, URL or other non-file data
     std::optional<std::string> unsupportedVirtual;  // virtual items without a file on disk
+    std::optional<std::string> unsupportedCloud;    // online-only cloud file (built-in text when absent)
 };
 
 struct Configure {

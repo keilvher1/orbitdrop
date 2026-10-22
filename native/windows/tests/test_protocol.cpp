@@ -307,15 +307,18 @@ TEST_CASE("protocol: optional specific unsupported strings") {
     CHECK(c.strings.unsupportedFolder == std::optional<std::string>("Folders aren't supported"));
     CHECK(c.strings.unsupportedNonFile == std::optional<std::string>("Not a file"));
     CHECK(c.strings.unsupportedVirtual == std::optional<std::string>("No file on disk"));
-    for (const char* key : {"unsupportedFolder", "unsupportedNonFile", "unsupportedVirtual"}) {
+    CHECK(c.strings.unsupportedCloud == std::optional<std::string>("Download it first"));
+    for (const char* key : {"unsupportedFolder", "unsupportedNonFile", "unsupportedVirtual", "unsupportedCloud"}) {
         // Absent: fine (fallback to `unsupported`).
         const auto absent = mutated([&](json::Value& v) { removeMember(*member(v, "strings"), key); });
         EXPECT_OK(absent);
         if (absent.ok()) {
             const auto& cfg = *std::get<std::shared_ptr<const proto::Configure>>(*absent.message);
-            const std::optional<std::string>& field = std::string(key) == "unsupportedFolder"    ? cfg.strings.unsupportedFolder
-                                                      : std::string(key) == "unsupportedNonFile" ? cfg.strings.unsupportedNonFile
-                                                                                                 : cfg.strings.unsupportedVirtual;
+            const std::string k = key;
+            const std::optional<std::string>& field = k == "unsupportedFolder"    ? cfg.strings.unsupportedFolder
+                                                      : k == "unsupportedNonFile" ? cfg.strings.unsupportedNonFile
+                                                      : k == "unsupportedVirtual" ? cfg.strings.unsupportedVirtual
+                                                                                  : cfg.strings.unsupportedCloud;
             CHECK(!field.has_value());
         }
         EXPECT_OK(mutated([&](json::Value& v) { *member(*member(v, "strings"), key) = json::Value::makeString(std::string(60, 'f')); }));
