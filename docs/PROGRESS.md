@@ -204,3 +204,20 @@ five one-line AppleScript apps in the guest); macOS now reserves the name
 and renames (78c83b0), verified in the VM on a never-used Downloads folder.
 Open improvement: show the unsupported reason in the caption below the ring
 too (the drag image can cover the centre capsule).
+
+Follow-ups after the VM run (2026-10-23):
+- macOS: the unsupported reason is repeated in the caption below the ring
+  (7951bd3), verified in the Retina guest with a text drag.
+- Windows: the secondary caption did not exist at all (spec §8); added with
+  the macOS panel rule, hit-shape mask moved into the portable core and
+  tested (57c1cf8). Host tests 99; src/win compile-checked only (checklist
+  item 34 for a real PC).
+- Latest macOS packages: source 7951bd3 (hashes in verification.md); later
+  commits touch Windows code and docs only.
+- Tools to repeat the VM run: scripts/vm/ (64c51ce). The VM `od-sonoma`
+  is stopped, not deleted (~27 GB in ~/.tart) — the user decides.
+
+Current verified state: vitest 1071 passed / 4 skipped; Playwright 39/39;
+electron-verify 36/36; swift test 167 (isolation check fatal); Windows host
+tests 99 + parity + MinGW -Werror; packaged smoke (with the hidden window)
+OK on arm64 and x64; macOS 14.8.7 VM GUI run passed (see verification.md).
