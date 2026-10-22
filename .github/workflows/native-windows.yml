@@ -56,9 +56,9 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -97,7 +97,7 @@ jobs:
           & $dumpbin.FullName /nologo /headers apps/desktop/resources/helper/win32-x64/OrbitDropHelper.exe | Select-String -Pattern 'subsystem|Dynamic base|NX compatible|High Entropy|Guard'
 
       - name: Upload OrbitDropHelper.exe
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: OrbitDropHelper-win32-x64
           path: |
@@ -107,7 +107,7 @@ jobs:
 
       - name: Upload wheel snapshots (Direct2D rendering on Windows)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-helper-snapshots
           path: native/windows/build/msvc-x64/snapshots/*.png
@@ -118,9 +118,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -152,11 +152,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
