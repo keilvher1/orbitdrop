@@ -1,6 +1,6 @@
 # 지원·검증 상태표 (Support matrix)
 
-> 기준일 2026-10-21. 독립 스펙 감사(같은 날) 결과를 반영했다. 단위 테스트·CI·빌드 성공을 "실제 OS GUI 검증됨"으로
+> 기준일 2026-10-23. 독립 스펙 감사(2026-10-21)와 영역별 2차 점검(2026-10-22, `docs/workstreams/hardening-*.md`) 결과를 반영했다. 단위 테스트·CI·빌드 성공을 "실제 OS GUI 검증됨"으로
 > 올리지 않는다. 실제 Finder/Explorer 드래그는 사람이 [verification.md](verification.md)의
 > 절차로 확인해야 하며, 그 전까지 해당 칸은 **GUI 미검증**이다.
 
@@ -25,19 +25,19 @@
 | Intel Mac | — | x64 | **없음** — x64 패키지·헬퍼는 Rosetta 2에서만 실행 확인 |
 | Windows 10/11 | — | x64 | **없음** — Windows 헬퍼는 mingw-w64 교차 컴파일과 호스트 테스트(macOS clang)까지만. CI 워크플로(`windows-latest`)는 구성만 되어 있고 실행 전 |
 
-## 자동 검증 명령 (개발 Mac, 2026-10-21)
+## 자동 검증 명령 (개발 Mac, 2026-10-23)
 
 | 명령 | 결과 |
 |---|---|
-| `node_modules/.bin/vitest run` (contracts·core·processors·desktop·integration) | 77 파일, 902 통과, 1 건너뜀(옵트인 FAT32 테스트, 별도 실행 시 통과) |
-| `cd apps/desktop && ../../node_modules/.bin/playwright test` (빌드된 실제 앱, CDP 클릭 — OS 입력 합성 없음) | 25/25 통과 (오프라인 테스트 포함: http(s) 요청·소켓 0) |
+| `node_modules/.bin/vitest run` (contracts·core·processors·desktop·integration) | 89 파일, 1060 통과, 4 건너뜀(옵트인 FAT32·디스크 가득 참 테스트 — 별도 실행 시 통과) |
+| `cd apps/desktop && ../../node_modules/.bin/playwright test` (빌드된 실제 앱, CDP 클릭 — OS 입력 합성 없음) | 39/39 통과 (오프라인 테스트 포함: http(s) 요청·소켓 0; 숨긴 창 smoke 검사의 성공·실패 경로 포함) |
 | `node apps/desktop/src/renderer/dev/electron-verify.mjs` (실제 앱의 모든 창·편집기, 결과 파일을 디코딩해 크기·픽셀 확인) | 36/36 통과, 콘솔 오류·CSP 위반 없음 |
-| `swift test --package-path native/macos` | 종료 코드 0, Core 86 · Kit 45 · Process 7 (138개). 토큰 변경 뒤 렌더링 테스트 1개가 옛 색을 비교해 실패했던 것을 `98c0ac8`에서 고침 |
-| `node scripts/build-native-win.mjs --core-tests --parity`, `--cross` | 포터블 코어 86개 통과(ASan/UBSan 포함), zod 대조 일치, MinGW `-Werror` 경고 0 — Win32 부분은 컴파일만 |
+| `swift test --package-path native/macos` | 종료 코드 0, Core 89 · Kit 69 · Process 9 (167개). Swift 동시성 격리 검사를 치명 오류로 켠 상태(`SWIFT_UNEXPECTED_EXECUTOR_LOG_LEVEL=2`)에서도 통과 — 2차 점검 중 이 검사로만 드러나는 신호 처리 회귀를 `de7e1d7`에서 고침 |
+| `node scripts/build-native-win.mjs --core-tests --parity`, `--cross` | 포터블 코어 92개 통과(일반 + ASan/UBSan 빌드 각각), zod 대조 5,061줄 + macOS 말뭉치 162줄 일치, MinGW `-Werror` 경고 0 — Win32 부분은 컴파일만 |
 | `node scripts/gen-golden.mjs --check` | 휠 기준값 최신 |
-| `node tests/integration/convert-electron-smoke.mjs` | node / utilityProcess / app.asar 세 모드 통과 |
-| `electron . --smoke-test` (개발 빌드, 실제 arm64 헬퍼) | `ok:true`, helper `ready`, PNG→JPG·PDF→PNG |
-| `node scripts/package.mjs mac --arch all` | arm64·x64 DMG/ZIP(소스 `d4f6d1e`), 패키지 smoke `ok:true` (x64는 Rosetta 2) — 해시는 [verification.md](verification.md#자동-검증-증거) |
+| `node tests/integration/convert-electron-smoke.mjs` | node / utilityProcess / app.asar 세 모드 통과(CCITT·JBIG2·JPX 이미지와 wasm 디코더 로드 확인 포함) |
+| `electron . --smoke-test` (개발 빌드, 실제 arm64 헬퍼) | `ok:true`, helper `ready`, PNG→JPG·PDF→PNG, 숨긴 About 창 렌더링(`window.rendered`) |
+| `node scripts/package.mjs mac --arch all` | arm64·x64 DMG/ZIP(소스 `7faf031`), 패키지 smoke `ok:true`(숨긴 창 렌더링 포함, x64는 Rosetta 2), fuse·의존성 트리 검사 통과 — 해시는 [verification.md](verification.md#자동-검증-증거). 이전 `d4f6d1e` 패키지는 창이 빈 화면이라 폐기 |
 
 ## 패키징·설치
 
@@ -45,7 +45,7 @@
 |---|---|---|---|---|
 | 패키지 생성 (dmg+zip / NSIS) | 자동 검증됨 | 자동 검증됨 | 구현됨(설정만, Windows에서 빌드 안 함) | `node scripts/package.mjs mac --arch all`, [verification.md](verification.md#자동-검증-증거) |
 | 네이티브 바이너리 배치(sharp/libvips/canvas, 대상 아키텍처만) | 자동 검증됨 | 자동 검증됨 | 구현됨(after-pack 검사) | after-pack 훅, `lipo -archs` |
-| 패키지 smoke(엔진 probe, helper `ready`, PNG→JPG·PDF→PNG) | 자동 검증됨 | 자동 검증됨(Rosetta 2) | 구현됨(CI 미실행) | `ORBITDROP_SMOKE {"ok":true…}` |
+| 패키지 smoke(엔진 probe, helper `ready`, PNG→JPG·PDF→PNG, 숨긴 창 렌더링) | 자동 검증됨 | 자동 검증됨(Rosetta 2) | 구현됨(CI 미실행) | `ORBITDROP_SMOKE {"ok":true…,"window":{"rendered":true…}}` |
 | 네이티브 모듈 검사(librsvg 그라데이션·마스크, canvas 로드, 한글 글꼴) | 자동 검증됨 | 자동 검증됨(Rosetta 2) | 구현됨(CI 미실행) | `apps/desktop/build/native-check` |
 | helper 포함(대상 아키텍처, 빈 entitlements, hardened runtime) | 자동 검증됨 | 자동 검증됨 | 구현됨(after-pack 검사) | `codesign -dv`, helper stdio smoke 18/18 |
 | 코드 서명 | 미지원(자격 증명 없음, ad-hoc만, 파일명에 `-unsigned`) | 미지원(동일) | 미지원(미서명) | `build-report-*.json` |

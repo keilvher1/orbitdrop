@@ -152,14 +152,21 @@ pre-installed; report missing ones. Don't `git commit`; the lead commits.
 * Preview images: custom protocol `orbit-preview://p/<token>` (main), CSP allows it.
 * Settings: `app.getPath('userData')/settings.json` (versioned, `migrateSettings`).
 * Smoke test (used by packaging to verify installed builds): the app accepts
-  `--smoke-test`. It starts without windows, probes the engines in a worker, starts
-  the helper and waits up to 5 s for `ready`, converts a generated PNG to JPG and a
-  generated PDF to PNG in a temp folder through the real job pipeline, prints one
-  line `ORBITDROP_SMOKE {"ok":bool,"probe":{…},"helper":{…},"conversion":{…},"pdfConversion":{…}}`
-  to stdout, and exits 0 (ok, which requires both conversions) or 1.
-* Test switches (`ORBITDROP_E2E*`, `ORBITDROP_HELPER_PATH`) work in unpackaged
-  builds only; Playwright E2E runs against `out/` (packaged fuses disable
-  `--inspect` anyway).
+  `--smoke-test`. It probes the engines in a worker, starts the helper and waits
+  up to 5 s for `ready`, converts a generated PNG to JPG and a generated PDF to PNG
+  in a temp folder through the real job pipeline, and opens the About window
+  **hidden** through the real WindowManager (same BrowserWindow options, `loadFile`
+  from app.asar, preload, CSP, IPC; never shown or focused) and requires it to
+  render within 15 s. It prints one line
+  `ORBITDROP_SMOKE {"ok":bool,"probe":{…},"helper":{…},"conversion":{…},"pdfConversion":{…},"window":{"ok":bool,"loaded":…,"rendered":…,"error":…}}`
+  to stdout, and exits 0 (ok, which requires both conversions and the window) or 1.
+  The window check exists because the first 0.1.0 package had blank windows (a fuse
+  blocked `file://` inside app.asar) while the window-less smoke test passed.
+* Test switches (`ORBITDROP_E2E*`, `ORBITDROP_HELPER_PATH`, `ORBITDROP_DISABLE_HELPER`,
+  `ORBITDROP_NO_TRAY`, `ORBITDROP_USER_DATA_DIR`, `ORBITDROP_PDFJS_DIR`) work in
+  unpackaged builds only: packaged builds ignore them, and main does not pass them on
+  to workers ([development.md](development.md)). Playwright E2E runs against `out/`
+  (packaged fuses disable `--inspect` anyway).
 * Preview memory: when the last editor closes, main sends `clearPreviewCaches`
   to the aux worker, which drops its cached decodes.
 

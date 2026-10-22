@@ -146,3 +146,38 @@ Remaining (cannot be done here):
    the user's decision), then the windows-helper.md checklist on a real PC.
 3. Signing/notarization credentials; product id and licence decisions.
 
+
+## Stage 4 — second adversarial pass per area (2026-10-22/23, done)
+
+Five background workstreams, each owning its files, re-checked their area
+against the spec with adversarial inputs and fixed what they found (status
+files `docs/workstreams/hardening-*.md`). All were stopped twice by the
+account session limit and resumed from their transcripts. The lead re-ran
+every check before each commit.
+
+| Workstream | Found and fixed | Commits |
+|---|---|---|
+| windows-helper | 9 defects (quadratic duplicate-key check, admin integrity check, CFG, ANSI virtual files, lone surrogates, …); cloud placeholders refused from attributes | 1f82717 |
+| macos-helper | 10 defects (zod-exact JSON, exit watchdog, screen lock, transparency leak beside the disc, Reduce Transparency, …), then its own signal-handler regression (abort on SIGTERM when Swift's isolation check is fatal) | 63e1be3, de7e1d7 |
+| processors | 12 defects (16-bit + ICC colours up to 57 levels off, CMYK keepMetadata, silent frame loss → FIRST_FRAME_ONLY/FIRST_PAGE_ONLY, truncated JPEGs embedded in PDF/DOCX, stale caches, …) | a9bac2f |
+| packaging | **P0: every window of the installed 0.1.0 app was blank** (file:// fuse off); wrong hoisted dependency versions in app.asar; licence gaps; CI fixes; 10 MB smaller asar | 0615906, b1bd6ea |
+| desktop | 32 defects (OS-level close losing unsaved work, smoke test without a window, IME keys as commands, lifecycle: sleep/lock/second instance/corrupt settings, packaged builds honouring dev switches, a11y and contrast, …) | 7faf031 |
+
+Lead changes: streaming JPEG above 60 Mpx and a 100 Mpx PDF page cap
+(a011e18: 256 Mpx → JPEG peak 3.17 GB → 0.27 GB); `strings.unsupportedCloud`
+in the helper protocol, both helpers and main (b2705cf, 7faf031).
+
+Verification after the pass (dev Mac, macOS 26.6 arm64):
+- vitest 1060 passed / 4 skipped (opt-in); all typechecks clean.
+- Playwright 39/39; electron-verify 36/36, no console errors/CSP violations.
+- swift test 167 (Core 89, Kit 69, Process 9), exit 0, also with
+  `SWIFT_UNEXPECTED_EXECUTOR_LOG_LEVEL=2`.
+- Windows host tests 92 (Release + ASan/UBSan), parity 5,061 + 162-line macOS
+  corpus, MinGW -Werror clean.
+- Re-packaged (source 7faf031): smoke OK on arm64 and x64 with the hidden
+  window rendered; fuses read back; dependency tree 0 problems. Hashes in
+  verification.md. The d4f6d1e packages are withdrawn (blank windows).
+
+Next: real Finder drags in a macOS 14 VM (tart, input through the VM's own
+VNC server — the host's input is never touched), recorded separately from a
+human check on physical hardware.
