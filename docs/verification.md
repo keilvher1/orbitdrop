@@ -168,7 +168,10 @@ EXIF 방향 6, GPS), CMYK JPEG, 3프레임 GIF. 결과 파일은 SSH로 꺼내 �
   **처음에는** 남은 임시 파일을 찾느라 출력 폴더 목록을 읽어 macOS 폴더 접근 대화상자가 떴고, 정리가 10초 제한에 걸려 작업이
   재시도 없이 `OUTPUT_WRITE_FAILED`로 끝났으며 임시 파일 하나가 남았다 → 처리 프로세스가 임시 파일 경로를 미리 알리고 main은 그
   경로만 지우도록 고침(330a892, [permissions.md](permissions.md)). 고친 설치본으로 두 번 다시 확인(저장된 쪽 0개일 때, 8개일 때).
-* VM을 껐다 켜자 OrbitDrop이 로그인 항목으로 자동 실행됨(설정의 "로그인할 때 실행").
+* 로그인할 때 실행: 설정에서 켜고 OrbitDrop을 **종료한 뒤** VM을 다시 시작 → 로그인하자 OrbitDrop이 스스로 실행됨(실행 중이던 앱을
+  되살리는 macOS 창 복원과 구분하려고 먼저 종료). 덧붙여, 미서명(ad-hoc) 빌드를 새 빌드로 바꿔 설치하면 macOS가 코드 서명이 다른
+  앱으로 보고 로그인 항목을 끈다 — OrbitDrop은 시작할 때 이 OS 상태를 따라 설정을 끔으로 표시한다(로그 "launch at login was changed in
+  the system settings"). Developer ID로 서명한 빌드는 업데이트해도 같은 앱으로 남는다.
 
 최종 설치본(소스 `d1ce089`): arm64 DMG sha256 `cabde306267b1f7490b3f3490aadd59e91e5e4f309af8e1381c3e6f5bb6008d6`,
 x64 DMG `5d67e2f438de1f3b0e1bf805b381614a2a04895e21381993152317142ef5c5ad` — 패키지 smoke(숨긴 창 렌더링 포함) 통과, 이 arm64 DMG로 위 1번 재확인.
