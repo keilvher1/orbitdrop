@@ -245,4 +245,44 @@ Found and fixed (each re-verified by reinstalling in the VM):
 
 Packages from d1ce089 (hashes in verification.md). vitest 1081 passed,
 Playwright 39/39, electron-verify 36/36, smoke with window on arm64/x64.
-Next: the same core flow on a macOS 26 guest (image downloading).
+Next (done in Stage 7): the same core flow on a macOS 26 guest.
+
+## Stage 7 — edge cases, crash cleanup, macOS 26 VM (2026-10-24)
+
+Edge cases in the macOS 14.8.7 VM: 108 Mpx PNG → JPG in ~7 s (streaming
+encode); a 248-byte Korean name + suffix → 254-byte output name; 80-page PDF
+→ PNG in 3.1 s; cancelling a 24-page A0 PDF rolls back the pages already
+written.
+
+Found and fixed: killing the processing worker during a Desktop job made main
+list the folder to find leftover temp files. macOS showed the folder-access
+prompt, cleanup hit its 10 s timeout, the job ended OUTPUT_WRITE_FAILED with
+no retry, and one temp file stayed. The worker now reports each temp path
+before writing it (`tempFile` message; AsyncLocalStorage around runJob);
+after a crash main removes exactly those paths plus the committed outputs and
+never lists a folder on macOS (330a892). Re-verified in the VM with 0 and 8
+committed pages. Login item: verified by quitting the app before the VM
+restart (not session restore); an ad-hoc rebuild makes macOS turn the login
+item off, which Settings then shows.
+
+macOS 26.6.2 (25G83) VM (`macos-tahoe-vanilla`, cloned with the
+reference-counted `oci_serve.py --delete-after-serve` to fit the disk): the
+330a892 arm64 DMG passed the video flow (PDF → 3 JPGs → Crop 1:1 → Add
+Background with a background image; the Save button stays on screen), a drop
+beside the ring reaches Finder, a text drag shows "파일이 아님" under the
+ring, JPG → HEIC, worker kill with 0 and 4 committed pages → rollback +
+retry → 24 pages with no prompt, the menu bar menu, Jobs and Settings, and
+the login item across a VM restart. Record: verification.md "가상 머신 핵심
+흐름 점검 — macOS 26.6.2".
+
+Verified state (dev Mac, 2026-10-24): vitest 1085 passed / 4 skipped;
+typecheck clean; Playwright 39/39; electron-verify 36/36 with no console
+errors or CSP violations; swift test 167 (9 + 69 + 89), exit 0. Packages:
+arm64 from 330a892 (the DMG used in both VMs), x64 rebuilt from the same
+code; hashes in verification.md.
+
+Open — decisions for the user: a human check on a physical Mac; a Windows
+PC (the helper is compile- and host-tested only); signing/notarization
+credentials; a GitHub remote and the first CI run; product id, licence and
+the LGPL review of bundled libvips. The VMs od-sonoma and od-tahoe (~27 GB
+each in ~/.tart) are stopped, not deleted.

@@ -12,6 +12,7 @@
 ```sh
 tart clone ghcr.io/cirruslabs/macos-sonoma-vanilla:latest od-sonoma   # macOS 14, 계정 admin / admin
 tart set od-sonoma --cpu 4 --memory 6144 --display 1440x900px          # Retina 시험은 1440x900pt
+tart clone ghcr.io/cirruslabs/macos-tahoe-vanilla:latest od-tahoe      # macOS 26(2026-10-24에 26.6.2), 같은 계정
 ```
 
 회선에 따라 `tart clone`이 매우 느릴 수 있다(2026-10-22 이 저장소의 Mac에서 0.5 MB/s). 그때는 조각을 여러 연결로 받아(조각마다 SHA-256 확인,
@@ -22,6 +23,10 @@ python3 oci_fetch.py <폴더> cirruslabs/macos-sonoma-vanilla latest 10
 python3 oci_serve.py <폴더> cirruslabs/macos-sonoma-vanilla 5005 &
 tart clone --insecure 127.0.0.1:5005/cirruslabs/macos-sonoma-vanilla:latest od-sonoma
 ```
+
+디스크가 빠듯하면 `oci_serve.py`에 `--delete-after-serve`를 붙인다. 조각을 tart에 끝까지 보낸 뒤 지워서 압축본과 풀린 디스크가 동시에
+자리를 차지하지 않는다. 같은 조각을 여러 번 가리키는 매니페스트(빈 영역 조각)는 가리키는 횟수만큼 다 보낸 뒤에만 지운다. clone이 중간에
+실패하면 지워진 조각은 다시 받아야 한다.
 
 ## 2. 실행·설치
 
@@ -53,5 +58,5 @@ venv/bin/python vmctl.py vnc.url "move 1375 405 ; down ; wait 0.3 ; drag 1350 40
 ## 4. 정리
 
 ```sh
-tart stop od-sonoma && tart delete od-sonoma && tart prune --entries caches
+tart stop od-sonoma && tart delete od-sonoma && tart prune --entries caches   # od-tahoe도 같은 방법
 ```

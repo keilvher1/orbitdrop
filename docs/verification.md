@@ -83,11 +83,11 @@
 | 구현 | Swift/AppKit helper: 전역 마우스 모니터 + 보조키 폴링 + 드래그 페이스트보드 changeCount로 후보 감지, 포커스를 빼앗지 않는 NSPanel이 휠이자 드롭 대상, Copy만 수락, 세션당 drop 1회 | C++/Win32: 폴링 관찰(훅·주입 없음), 레이어드 비활성 창(디스크 밖 알파 0), OLE `IDropTarget`(CF_HDROP), Copy 또는 None만 반환 |
 | 권한 실측 | 필요 권한 없음(손쉬운 사용·입력 모니터링 요청 안 함). Esc는 입력 모니터링이 이미 허용된 경우에만 전역 감지 | 해당 없음(권한 대화상자 없음). 관리자 권한 실행 시 UIPI로 일반 탐색기 드래그 불가 |
 | 자동 확인 | 드롭 대상(가짜 `NSDraggingInfo`), 실제 이벤트 순서를 재생하는 관찰자 테스트, 세션 상태 기계, 휠 기준값 전 구간, 패키지 안 helper `ready`·`globalDrag.available: true` | 포터블 코어(세션·좌표·프로토콜) 86개 테스트와 골든 기준값을 macOS 호스트에서 실행. OLE 드롭 테스트는 컴파일만 |
-| **실제 Finder/탐색기 드래그** | **가상 머신에서 통과**(macOS 14.8.7, 아래 [가상 머신 GUI 검증](#가상-머신-gui-검증--macos-1487-2026-10-22)) · 실물 Mac에서 사람이 하는 확인은 **미실시** — 사용자가 `node --import tsx native/macos/scripts/poc-harness.mjs`(`--guided`면 단계별 안내와 자동 판정, 끝에 `RESULT: PASS/FAIL`)로 [macos-helper.md §8](workstreams/macos-helper.md) 24단계를 수행하고 아래 표에 기록(1–20 기존, 21–24는 2차 점검에서 추가: 드래그 중 화면 잠금, 보안 키보드 입력, 배율이 다른 보조 모니터, iCloud 클라우드 전용 파일) | **미실시** — Windows 기기 없음. [windows-helper.md](workstreams/windows-helper.md) 점검표 34항목 |
+| **실제 Finder/탐색기 드래그** | **가상 머신에서 통과**(macOS 14.8.7 — 아래 [가상 머신 GUI 검증](#가상-머신-gui-검증--macos-1487-2026-10-22), macOS 26.6.2 — [핵심 흐름 점검](#가상-머신-핵심-흐름-점검--macos-2662-2026-10-24)) · 실물 Mac에서 사람이 하는 확인은 **미실시** — 사용자가 `node --import tsx native/macos/scripts/poc-harness.mjs`(`--guided`면 단계별 안내와 자동 판정, 끝에 `RESULT: PASS/FAIL`)로 [macos-helper.md §8](workstreams/macos-helper.md) 24단계를 수행하고 아래 표에 기록(1–20 기존, 21–24는 2차 점검에서 추가: 드래그 중 화면 잠금, 보안 키보드 입력, 배율이 다른 보조 모니터, iCloud 클라우드 전용 파일) | **미실시** — Windows 기기 없음. [windows-helper.md](workstreams/windows-helper.md) 점검표 34항목 |
 
 자동 확인으로 대신할 수 없는 핵심 질문은 셋이다. 실제 드래그 중에 전역 마우스 이벤트가 오는지, 드래그 도중 나타난
 패널이 drag-enter를 받는지, 휠 바깥 투명 영역에 놓은 드롭이 아래 Finder 창으로 가는지(§8 9단계). **세 가지 모두 아래 가상
-머신 검증에서 확인됐다.** 실물 Mac에서 사람이 확인하기 전까지 지원표에는 "실제 OS GUI 검증됨"이 아니라 "VM GUI 검증됨"으로 적는다.
+머신 검증(macOS 14.8.7, 26.6.2)에서 확인됐다.** 실물 Mac에서 사람이 확인하기 전까지 지원표에는 "실제 OS GUI 검증됨"이 아니라 "VM GUI 검증됨"으로 적는다.
 
 ### 가상 머신 GUI 검증 — macOS 14.8.7 (2026-10-22)
 
@@ -173,13 +173,39 @@ EXIF 방향 6, GPS), CMYK JPEG, 3프레임 GIF. 결과 파일은 SSH로 꺼내 �
   앱으로 보고 로그인 항목을 끈다 — OrbitDrop은 시작할 때 이 OS 상태를 따라 설정을 끔으로 표시한다(로그 "launch at login was changed in
   the system settings"). Developer ID로 서명한 빌드는 업데이트해도 같은 앱으로 남는다.
 
-최종 설치본(소스 `d1ce089`): arm64 DMG sha256 `cabde306267b1f7490b3f3490aadd59e91e5e4f309af8e1381c3e6f5bb6008d6`,
-x64 DMG `5d67e2f438de1f3b0e1bf805b381614a2a04895e21381993152317142ef5c5ad` — 패키지 smoke(숨긴 창 렌더링 포함) 통과, 이 arm64 DMG로 위 1번 재확인.
+### 가상 머신 핵심 흐름 점검 — macOS 26.6.2 (2026-10-24)
 
-**재현.** 도구와 절차: [scripts/vm/README.md](../scripts/vm/README.md). 요약: `tart clone ghcr.io/cirruslabs/macos-sonoma-vanilla:latest od-sonoma` → `tart run od-sonoma --no-graphics
---vnc-experimental --dir=xfer:<폴더>:ro` → 게스트(admin/admin)에서 DMG 설치 → VNC 클라이언트로 드래그(버튼 누름 → 몇 픽셀씩
-이동 → Shift(또는 Meta+Shift) 누름 → 조각으로 이동 → 놓기). 회선이 느리면 tart가 연결 하나로 받아 매우 느릴 수 있어(이 Mac에서
-0.5 MB/s), 이번에는 이미지 조각을 여러 연결로 받아(해시 확인) 로컬 레지스트리로 넘겼다.
+개발 Mac과 같은 계열인 macOS 26 게스트에서 같은 방법(실제 Finder, 설치본, 게스트 VNC 입력, SSH로 결과 확인)으로 핵심 흐름과
+충돌 처리를 다시 확인했다. 나머지 형식·도구는 같은 코드라 macOS 14 전 기능 점검으로 갈음한다.
+
+| 항목 | 값 |
+|---|---|
+| 게스트 | macOS 26.6.2 (25G83) arm64 |
+| 이미지 | `ghcr.io/cirruslabs/macos-tahoe-vanilla:latest` (manifest `sha256:eeec54bf…`, 24.0 GB), tart 2.41.1 |
+| 자원 | CPU 4 · 메모리 6 GB · 화면 1440×900 px(1×) |
+| 설치본 | arm64 DMG sha256 `2b60660c65d6415e…`(소스 `330a892`, 아래 최종 설치본과 같은 파일), `codesign --verify --deep --strict` 통과, 격리 속성 없음 |
+
+| 항목 | 결과 |
+|---|---|
+| 첫 실행 | 창 없이 메뉴 막대 아이콘, helper `ready … globalDrag=true`(실행 후 0.8초), 권한 대화상자 없음. 첫 알림 때 macOS 알림 허용 배너(옵션 → 허용) |
+| 영상 흐름 | 바탕화면의 3쪽 `report.pdf`를 Shift 드래그 → 휠(DOCX·JPG·PNG·TXT), 메뉴 막대는 계속 Finder → JPG → `report-p001…p003.jpg` 2550×3300(2.6초) → Option+Shift → 자르기 1:1, 상자를 위로 옮겨 적용 → `report-p001 Cropped.jpg` 2550×2550 → 배경 추가에서 **배경 이미지**(파일 대화상자, 이미지가 아닌 파일은 흐리게 표시)를 고르자 미리보기가 줄고 "배경과 함께 저장"은 Dock 위 화면 안에 그대로 → `report-p001 Cropped With Background.png` 2400×2400. 원본 6개 해시 그대로, 임시 파일 0개, **바탕화면 폴더 접근 대화상자 없음** |
+| 휠 옆 투명 영역 | 휠 창 오른쪽 위 모서리(링 밖 약 46 pt) 아래 Finder 폴더가 강조되고 파일이 폴더로 옮겨짐, OrbitDrop 작업 없음. 잠시 뒤 Finder 스프링 로딩으로 폴더 창이 열림 |
+| 텍스트 드래그 | TextEdit에서 고른 글자를 Shift 드래그 → 비활성 휠, 가운데 캡슐과 링 아래 캡션 모두 "파일이 아님", 놓아도 작업·텍스트 조각 파일 없음 |
+| HEIC | `IMG_1234.jpg`(4032×3024, EXIF 방향 6) → `IMG_1234.heic` 3024×4032, `public.heic`(1.7초) |
+| 처리 프로세스 강제 종료 | A0 24쪽 PDF → PNG 중 `kill -9`: ① 저장된 쪽 0개일 때 → 자동 재시도(attempt=2) 24쪽 ② 4쪽 저장 뒤 → 로그 "outputs of an interrupted job removed … removed=4", "temp files … removed=1" → 재시도 24쪽. 두 번 모두 `(2)` 없음, 임시 파일 0개, 폴더 접근 대화상자 없음, 원본 해시 그대로. 쪽은 8402×11878(쪽당 1억 픽셀 제한 → 알림 "크기 제한 때문에 줄였습니다") |
+| 메뉴 막대·창 | 메뉴 전 항목, 작업 창(결과·경고·Finder에서 보기), 설정 창이 그려짐 |
+| 로그인할 때 실행 | 설정에서 켬 → macOS "Login Item Added" 알림 → 메뉴 막대에서 종료 → VM 다시 시작 → 로그인하자 OrbitDrop 실행(helper `ready`까지 3초) → 곧바로 PNG→JPG 드래그 정상 |
+
+macOS 26에서 따로 보지 않은 것: 다크 모드·Retina 2×·여러 파일·Esc(macOS 14에서 확인), 보조 모니터, 화면 잠금.
+
+최종 설치본(소스 `330a892` — 이후 커밋은 문서만): arm64 DMG sha256 `2b60660c65d6415e8a677d155a1a677e90f624898a74a4c558bc528269a779e6`
+(위 macOS 14 경계 상황의 강제 종료 재확인과 macOS 26 점검에 쓴 바로 그 파일). x64는 같은 코드로 다시 만든 패키지다. 해시와 패키지 검사:
+아래 [패키징](#패키징-macos-이-저장소의-개발-mac).
+
+**재현.** 도구와 절차: [scripts/vm/README.md](../scripts/vm/README.md). 요약: `tart clone ghcr.io/cirruslabs/macos-sonoma-vanilla:latest od-sonoma`
+(macOS 26은 `macos-tahoe-vanilla`) → `tart run od-sonoma --no-graphics --vnc-experimental --dir=xfer:<폴더>:ro` → 게스트(admin/admin)에서
+DMG 설치 → VNC 클라이언트로 드래그(버튼 누름 → 몇 픽셀씩 이동 → Shift(또는 Meta+Shift) 누름 → 조각으로 이동 → 놓기). 회선이 느리면
+tart가 연결 하나로 받아 매우 느릴 수 있어(이 Mac에서 0.5 MB/s), 이미지 조각을 여러 연결로 받아(해시 확인) 로컬 레지스트리로 넘겼다.
 
 ---
 
