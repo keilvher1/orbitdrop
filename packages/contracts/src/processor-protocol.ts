@@ -202,6 +202,14 @@ export interface ProcessorRunContext {
    * not write "name (2).ext" next to it.
    */
   readonly onCommitted?: (output: CommittedOutput) => void;
+  /**
+   * Called with each temp file's path right before the job writes it (optional,
+   * added later). The worker host forwards it to main (`tempFile` message), so
+   * after a crash main removes exactly those files instead of listing the
+   * output folder — listing a folder in Desktop/Documents/Downloads makes macOS
+   * ask the user for folder access.
+   */
+  readonly onTempFile?: (path: string) => void;
 }
 
 /** Public API of @orbitdrop/processors. */
@@ -231,6 +239,8 @@ export type ProcessorToMainMessage =
   | { readonly type: 'progress'; readonly jobId: string; readonly progress: JobProgress }
   /** An output the job has committed so far (ProcessorRunContext.onCommitted; added later). */
   | { readonly type: 'committed'; readonly jobId: string; readonly output: CommittedOutput }
+  /** A temp file the job is about to write (ProcessorRunContext.onTempFile; added later). */
+  | { readonly type: 'tempFile'; readonly jobId: string; readonly path: string }
   | { readonly type: 'done'; readonly jobId: string; readonly result: ProcessorResult }
   | { readonly type: 'failed'; readonly jobId: string; readonly error: OrbitErrorInfo }
   | { readonly type: 'cancelled'; readonly jobId: string }

@@ -15,7 +15,7 @@ import {
   type ProcessorResult,
   type ProcessorToMainMessage,
 } from '@orbitdrop/contracts';
-import { cleanupTempFiles } from '@orbitdrop/core/node';
+import { cleanupTempFiles, removeTempFiles } from '@orbitdrop/core/node';
 import { describeError, silentLogger, type Logger } from '../log';
 import { delay } from '../util/concurrency';
 import { publicErrorInfo } from '../util/errors';
@@ -35,10 +35,15 @@ import { newId } from '../util/ids';
  *  - Cancel/timeout: `cancel` is sent; if the worker does not confirm within
  *    the grace period it is killed (and restarted on demand).
  *  - Crash: a worker exiting during a job fails the job with WORKER_CRASHED
- *    (the JobQueue retries once) after its temp files were cleaned up with
- *    `cleanupTempFiles(dir, jobId)` and the outputs it had already committed
+ *    (the JobQueue retries once) after the outputs it had already committed
  *    (reported as `committed` messages) were removed again — only files whose
- *    device, inode and size still match, nothing else. Both finish before the
+ *    device, inode and size still match, nothing else — and its temp files were
+ *    removed: exactly the paths it reported (`tempFile` messages), plus, except
+ *    on macOS, a sweep of the output folders (`cleanupTempFiles`) for a file it
+ *    created just before dying. macOS asks the user for folder access when an
+ *    app lists Desktop/Documents/Downloads (seen in the macOS 14 VM: the prompt
+ *    blocked the cleanup until it timed out, so the job failed instead of being
+ *    retried), so there the reported paths are all main removes. Both finish before the
  *    retry starts, because the retry reuses the job id as temp-file tag and
  *    must find the output names free (no "page-p001 (2).jpg"); if the output
  *    folder does not answer within `cleanupTimeoutMs` the slot is freed anyway
@@ -79,7 +84,7 @@ export interface ProcessorPoolOptions {
   readonly previewTimeoutMs?: number;
   readonly inspectTimeoutMs?: number;
   readonly probeTimeoutMs?: number;
-  /** Remove temp files a crashed/killed job left behind. */
+  /** Sweep the output folders for temp files a crashed/killed job left behind (default: not on macOS, see above). */
   readonly cleanup?: (dirs: readonly string[], jobId: string) => Promise<void>;
   /** Longest wait for that cleanup before the worker slot is reused anyway. */
   readonly cleanupTimeoutMs?: number;
@@ -94,6 +99,8 @@ interface ActiveJob {
   readonly dirs: readonly string[];
   /** Outputs the worker reported as committed (removed again if the job does not finish normally). */
   readonly committed: CommittedOutput[];
+  /** Temp files the worker reported before writing them (removed if it dies). */
+  readonly tempFiles: string[];
   readonly onProgress: (progress: JobProgress) => void;
   readonly resolve: (result: ProcessorResult) => void;
   readonly reject: (error: Error) => void;
@@ -157,6 +164,8 @@ export function outputDirsOf(job: ProcessorJob): string[] {
 }
 
 async function defaultCleanup(dirs: readonly string[], jobId: string): Promise<void> {
+  // No folder listing on macOS (TCC folder-access prompt); the reported temp paths cover it there.
+  if (process.platform === 'darwin') return;
   await Promise.all(dirs.map((dir) => cleanupTempFiles(dir, jobId).catch(() => 0)));
 }
 
@@ -279,6 +288,7 @@ export class ProcessorPool {
         jobId: job.jobId,
         dirs: outputDirsOf(job),
         committed: [],
+        tempFiles: [],
         onProgress: ctx.onProgress,
         resolve,
         reject,
@@ -583,6 +593,7 @@ export class ProcessorPool {
         return;
       case 'progress':
       case 'committed':
+      case 'tempFile':
       case 'done':
       case 'failed':
       case 'cancelled': {
@@ -594,6 +605,10 @@ export class ProcessorPool {
         }
         if (message.type === 'committed') {
           active.committed.push(message.output);
+          return;
+        }
+        if (message.type === 'tempFile') {
+          active.tempFiles.push(message.path);
           return;
         }
         if (message.type === 'done') {
@@ -686,8 +701,10 @@ export class ProcessorPool {
     const cleanup = this.options.cleanup ?? defaultCleanup;
     // Committed outputs first (their names must be free for the retry), then the job's temp files.
     const finished = rollbackCommitted(active.committed)
-      .then((removed) => {
+      .then(async (removed) => {
         if (removed > 0) this.log.info('outputs of an interrupted job removed', { jobId: active.jobId, removed });
+        const temps = await removeTempFiles(active.tempFiles, active.jobId);
+        if (temps > 0) this.log.info('temp files of an interrupted job removed', { jobId: active.jobId, removed: temps });
         return cleanup(active.dirs, active.jobId);
       })
       .then(

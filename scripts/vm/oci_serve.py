@@ -1,20 +1,33 @@
 """Serve a downloaded OCI image (see oci_fetch.py) as a minimal read-only registry on 127.0.0.1.
 
-Usage: oci_serve.py <dir> [repo] [port]
+Usage: oci_serve.py <dir> [repo] [port] [--delete-after-serve]
 Then: tart clone --insecure 127.0.0.1:<port>/<repo>:latest <name>
+
+--delete-after-serve removes each disk layer once it has been sent completely as many times
+as the manifest references it (identical chunks — all-zero ones — share one blob that tart
+requests once per layer), so the compressed copy and tart's decompressed disk never both
+take space (for a nearly full disk; if the clone fails, the image has to be downloaded again).
 """
+import collections
 import hashlib
+import json
 import os
 import re
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-DIR = sys.argv[1]
-REPO = sys.argv[2] if len(sys.argv) > 2 else 'cirruslabs/macos-sonoma-vanilla'
-PORT = int(sys.argv[3]) if len(sys.argv) > 3 else 5005
+ARGS = [a for a in sys.argv[1:] if not a.startswith('--')]
+DELETE_AFTER_SERVE = '--delete-after-serve' in sys.argv
+DIR = ARGS[0]
+REPO = ARGS[1] if len(ARGS) > 1 else 'cirruslabs/macos-sonoma-vanilla'
+PORT = int(ARGS[2]) if len(ARGS) > 2 else 5005
 MANIFEST = open(os.path.join(DIR, 'manifest.json'), 'rb').read()
 MANIFEST_DIGEST = 'sha256:' + hashlib.sha256(MANIFEST).hexdigest()
 MANIFEST_TYPE = 'application/vnd.oci.image.manifest.v1+json'
+# How many more complete transfers of each blob the manifest calls for (for --delete-after-serve).
+REMAINING = collections.Counter(l['digest'] for l in json.loads(MANIFEST)['layers'])
+REMAINING_LOCK = threading.Lock()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -73,6 +86,14 @@ class Handler(BaseHTTPRequestHandler):
                         break
                     self.wfile.write(chunk)
                     left -= len(chunk)
+            if DELETE_AFTER_SERVE and left == 0 and first == 0 and last == size - 1 and size > (1 << 20):
+                self.wfile.flush()
+                with REMAINING_LOCK:
+                    REMAINING[m.group(2)] -= 1
+                    last_reference = REMAINING[m.group(2)] <= 0
+                if last_reference:
+                    os.remove(file)
+                    sys.stderr.write('served and removed %s\n' % m.group(2)[:19])
             return
         return self.send_bytes(404, b'{}', 'application/json')
 

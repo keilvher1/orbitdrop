@@ -83,8 +83,11 @@ describe('JobManager with the processor pool', () => {
       if (message.type !== 'run') return;
       attempts += 1;
       if (attempts === 1) {
-        // Simulate a crash in the middle of writing: a tagged temp file is left behind.
-        void writeFile(makeTempPath(dir, 'photo.jpg', message.job.jobId), 'partial').then(() => worker.exit(139));
+        // Simulate a crash in the middle of writing: a tagged temp file is left behind. It was reported
+        // first, like the worker host does (ProcessorRunContext.onTempFile), so main removes exactly it.
+        const temp = makeTempPath(dir, 'photo.jpg', message.job.jobId);
+        worker.emit({ type: 'tempFile', jobId: message.job.jobId, path: temp });
+        void writeFile(temp, 'partial').then(() => worker.exit(139));
         return;
       }
       void readdir(dir).then((names) => {

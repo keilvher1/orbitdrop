@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomBytes } from 'node:crypto';
 import { link, lstat, open, readdir, rename, stat, unlink } from 'node:fs/promises';
 import { basename, join } from 'node:path';
@@ -107,6 +108,27 @@ export function makeTempPath(dir: string, desiredName: string, tag: string): str
   const { base, ext } = splitName(desiredName);
   const hint = tempBaseHint(base);
   return join(dir, `${TEMP_FILE_PREFIX}${safeTag(tag)}.${randomBytes(4).toString('hex')}${hint === '' ? '' : `.${hint}`}${ext}`);
+}
+
+const tempFileReporter = new AsyncLocalStorage<(tempPath: string) => void>();
+
+/**
+ * Run `fn` with `report` called for every temp file this module creates within it (before
+ * anything is written to the file) — the processor host forwards them to main, which removes
+ * exactly those files after a worker crash instead of listing the output folder.
+ */
+export function withTempFileReporter<T>(report: (tempPath: string) => void, fn: () => T): T {
+  return tempFileReporter.run(report, fn);
+}
+
+function reportTempFile(tempPath: string): void {
+  const report = tempFileReporter.getStore();
+  if (!report) return;
+  try {
+    report(tempPath);
+  } catch {
+    // reporting is best effort; the write goes ahead
+  }
 }
 
 /** Whether `name` (a file name, not a path) is a temp file of this module, optionally of one tag. */
@@ -293,6 +315,7 @@ export async function assertWritableDir(dir: string, tag: string): Promise<void>
     throw mapFsError(error);
   }
   const probe = makeTempPath(dir, 'write-check.tmp', tag);
+  reportTempFile(probe);
   try {
     const handle = await open(probe, 'wx');
     await handle.close();
@@ -320,6 +343,7 @@ export async function writeOutput(
   options: CommitOptions = {},
 ): Promise<string> {
   const tempPath = makeTempPath(dir, desiredName, tag);
+  reportTempFile(tempPath);
   try {
     signal?.throwIfAborted();
     await write(tempPath);
@@ -333,7 +357,32 @@ export async function writeOutput(
   }
 }
 
-/** After a worker crash: remove temp files of `tag` left in `dir`. Returns how many were removed. */
+/**
+ * After a worker crash: remove temp files of `tag` left in `dir`. Returns how many were removed.
+ * Lists the folder, which on macOS asks the user for access in Desktop/Documents/Downloads —
+ * prefer removeTempFiles with the paths the worker reported (withTempFileReporter).
+ */
+/**
+ * After a worker crash: remove the temp files it reported (withTempFileReporter) — only names
+ * this module makes for `tag`, only regular files; one already committed or discarded is
+ * simply gone. Returns how many were removed. Never lists a folder.
+ */
+export async function removeTempFiles(paths: readonly string[], tag: string): Promise<number> {
+  let removed = 0;
+  for (const path of new Set(paths)) {
+    if (!isTempFileName(basename(path), tag)) continue;
+    try {
+      const info = await lstat(path);
+      if (!info.isFile()) continue;
+      await unlink(path);
+      removed += 1;
+    } catch {
+      // already gone or not removable: leave it
+    }
+  }
+  return removed;
+}
+
 export async function cleanupTempFiles(dir: string, tag: string): Promise<number> {
   let removed = 0;
   let entries: string[];

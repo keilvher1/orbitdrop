@@ -40,8 +40,11 @@ decisions are kept apart in `docs/requirements.md`.
   `packages/contracts/src/processor-protocol.ts`). Messages:
   `MainToProcessorMessage` / `ProcessorToMainMessage`. One job at a time per
   worker; pool size = `settings.processing.concurrency`. A crash fails the job
-  with `WORKER_CRASHED` (JobQueue retries once), restarts the worker and runs
-  `cleanupTempFiles(dir, jobId)`.
+  with `WORKER_CRASHED` (JobQueue retries once), restarts the worker, rolls back
+  the outputs it had committed (`committed` messages) and removes the temp files
+  it had reported (`tempFile` messages, `removeTempFiles`); the folder sweep
+  `cleanupTempFiles(dir, jobId)` runs too, except on macOS (listing a protected
+  folder triggers the folder-access prompt).
 * **Renderer**: one React bundle; each window asks `getWindowContext()` to know
   what to show. Never receives absolute paths; works with ids.
 
@@ -96,7 +99,9 @@ monitor (Per-Monitor DPI Aware v2).
   ask for folder access ([permissions.md](permissions.md)) — with an exclusive
   create + copy fallback, free
   name `name (2).ext`… Never overwrites. Temp files are tagged with the job id and
-  cleaned on failure/cancel/crash.
+  cleaned on failure/cancel (by the worker) and after a crash (by main: the exact paths the
+  worker reported through `ProcessorRunContext.onTempFile`; on macOS main never lists the
+  output folder, which would make macOS ask for Desktop/Documents/Downloads access).
 * Naming (`packages/core/src/naming.ts`): `Page 001.pdf → Page 001.jpg`,
   multi-page `report-p001.jpg`, tools `photo Cropped.jpg`,
   `photo Cropped With Background.png`.

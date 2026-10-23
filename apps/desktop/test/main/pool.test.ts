@@ -430,6 +430,33 @@ describe('outputs committed by a job that does not finish', () => {
     expect((await readdir(dir)).sort()).toEqual(pages);
   });
 
+  it('a crash removes exactly the temp files the worker reported, without the folder sweep', async () => {
+    // The sweep (cleanup) is not injected here: on macOS the default does not list the folder at all.
+    const { pool } = makePool(
+      (message, worker) => {
+        if (message.type !== 'run') return;
+        const { jobId } = message.job;
+        void (async () => {
+          const reported = join(dir, `.orbitdrop.${jobId}.0a1b2c3d.page.jpg`);
+          worker.emit({ type: 'tempFile', jobId, path: reported });
+          await writeFile(reported, 'half a page');
+          // Reported but never created (died first), another job's temp file, and a user file with a
+          // temp-like name that was not reported: only the first one may go.
+          worker.emit({ type: 'tempFile', jobId, path: join(dir, `.orbitdrop.${jobId}.ffffffff.never.jpg`) });
+          await writeFile(join(dir, '.orbitdrop.other.12345678.x.jpg'), 'other job');
+          worker.emit({ type: 'tempFile', jobId, path: join(dir, '.orbitdrop.other.12345678.x.jpg') });
+          await writeFile(join(dir, 'notes.txt'), 'user');
+          worker.emit({ type: 'tempFile', jobId, path: join(dir, 'notes.txt') });
+          worker.exit(139);
+        })();
+      },
+      { cleanup: undefined },
+    );
+    const crashed = await pool.run(job('tmp'), { signal: controller().signal, onProgress: () => undefined }).catch((error: unknown) => error);
+    expect(crashed).toMatchObject({ code: 'WORKER_CRASHED' }); // cleanup finished in time: retryable
+    expect((await readdir(dir)).sort()).toEqual(['.orbitdrop.other.12345678.x.jpg', 'notes.txt']);
+  });
+
   it('leaves a committed file alone once it is not the same file any more', async () => {
     const { pool } = makePool((message, worker) => {
       if (message.type !== 'run') return;

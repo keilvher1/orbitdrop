@@ -1,8 +1,9 @@
-import { stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readdir, stat } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import sharp from 'sharp';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CommittedOutput, ProcessorJob } from '@orbitdrop/contracts';
+import { isTempFileName } from '@orbitdrop/core/node';
 import { runJob } from '../src';
 import { OutputLedger } from '../src/convert/common';
 import { inputFor, jobFor, makeTempDir, removeDir, writeFixture } from './helpers/tools-fixtures';
@@ -64,5 +65,27 @@ describe('commit reports', () => {
     const result = await runJob(job, { signal: new AbortController().signal, onProgress: () => undefined, onCommitted: (output) => reported.push(output) });
     expect(result.outputs).toHaveLength(3);
     expect(reported.map((r) => r.path).sort()).toEqual(result.outputs.map((o) => o.path).sort());
+  });
+
+  it('runJob reports each temp file (ProcessorRunContext.onTempFile) before writing it, for convert and tool jobs', async () => {
+    const { PDFDocument } = await import('pdf-lib');
+    const doc = await PDFDocument.create();
+    for (let i = 0; i < 2; i += 1) doc.addPage([72, 72]);
+    const pdf = await writeFixture(dir, 'two.pdf', await doc.save());
+    const convert: ProcessorJob = { ...jobFor('tool.crop', await inputFor(pdf), {}), jobId: 'job_temps', actionId: 'convert.png', options: { dpi: 150 } };
+    const temps: string[] = [];
+    const converted = await runJob(convert, { signal: new AbortController().signal, onProgress: () => undefined, onTempFile: (path) => temps.push(path) });
+    expect(converted.outputs).toHaveLength(2);
+    // The write-check probe plus one temp file per page, all named for this job, all gone afterwards.
+    expect(temps.length).toBeGreaterThanOrEqual(3);
+    expect(temps.every((path) => isTempFileName(basename(path), 'job_temps'))).toBe(true);
+    expect((await readdir(dir)).filter((name) => isTempFileName(name))).toEqual([]);
+
+    const source = await writeFixture(dir, 'small.png', await sharp({ create: { width: 20, height: 10, channels: 3, background: '#996633' } }).png().toBuffer());
+    const tool: ProcessorJob = { ...jobFor('tool.crop', await inputFor(source), { rect: { x: 0, y: 0, width: 10, height: 10 }, aspect: 'free', outputFormat: 'input', flattenBackground: '#FFFFFF' }), jobId: 'job_tool' };
+    const toolTemps: string[] = [];
+    await runJob(tool, { signal: new AbortController().signal, onProgress: () => undefined, onTempFile: (path) => toolTemps.push(path) });
+    expect(toolTemps.length).toBeGreaterThanOrEqual(2);
+    expect(toolTemps.every((path) => isTempFileName(basename(path), 'job_tool'))).toBe(true);
   });
 });

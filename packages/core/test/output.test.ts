@@ -13,6 +13,8 @@ import {
   isTempFileName,
   makeTempPath,
   mapFsError,
+  removeTempFiles,
+  withTempFileReporter,
   writeOutput,
 } from '../src/node';
 
@@ -264,5 +266,46 @@ describe('mapFsError', () => {
     expect(read('EIO')).toBe('READ_PERMISSION_DENIED');
     expect(mapFsError('weird').detail).toBe('weird');
     expect(mapFsError(fsError('EPERM')).toInfo().retryable).toBe(true);
+  });
+});
+
+describe('temp file reporting (crash cleanup without listing the folder)', () => {
+  it('reports every temp file before it is written, inside withTempFileReporter only', async () => {
+    const reported: string[] = [];
+    const seenWhenReported: boolean[] = [];
+    const result = await withTempFileReporter(
+      (path) => {
+        reported.push(path);
+        seenWhenReported.push(false);
+      },
+      async () => {
+        await assertWritableDir(dir, 'job7');
+        return writeOutput(dir, 'r.png', 'job7', async (tmp) => {
+          seenWhenReported[seenWhenReported.length - 1] = reported.includes(tmp);
+          await writeFile(tmp, 'x');
+        });
+      },
+    );
+    expect(reported).toHaveLength(2); // the write-check probe and the output's temp file
+    expect(reported.every((path) => isTempFileName(basename(path), 'job7'))).toBe(true);
+    expect(seenWhenReported.at(-1)).toBe(true);
+    expect(await readFile(result, 'utf8')).toBe('x');
+    // Outside the scope nothing is reported.
+    await writeOutput(dir, 's.png', 'job8', (tmp) => writeFile(tmp, 'y'));
+    expect(reported).toHaveLength(2);
+  });
+
+  it('removeTempFiles removes only regular files named as temp files of that tag', async () => {
+    const mine = join(dir, '.orbitdrop.job9.0123abcd.page.jpg');
+    const other = join(dir, '.orbitdrop.job10.0123abcd.page.jpg');
+    const user = join(dir, 'page.jpg');
+    const folder = join(dir, '.orbitdrop.job9.89abcdef.dir');
+    await writeFile(mine, '1');
+    await writeFile(other, '2');
+    await writeFile(user, '3');
+    await mkdir(folder);
+    const removed = await removeTempFiles([mine, mine, other, user, folder, join(dir, '.orbitdrop.job9.deadbeef.gone.jpg')], 'job9');
+    expect(removed).toBe(1);
+    expect((await readdir(dir)).sort()).toEqual(['.orbitdrop.job10.0123abcd.page.jpg', '.orbitdrop.job9.89abcdef.dir', 'page.jpg']);
   });
 });

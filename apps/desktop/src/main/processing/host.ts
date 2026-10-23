@@ -124,6 +124,8 @@ async function handle(message: MainToProcessorMessage): Promise<void> {
           onProgress: (p) => progress.push(p),
           // Main keeps the list: if this process dies before `done`, main removes these files itself.
           onCommitted: (output) => send({ type: 'committed', jobId: job.jobId, output }),
+          // Exact temp paths, so main's crash cleanup never has to list the folder (macOS folder-access prompt).
+          onTempFile: (path) => send({ type: 'tempFile', jobId: job.jobId, path }),
         });
         progress.flush();
         // Resolved means the outputs were committed: report them even if a cancel arrived meanwhile.
