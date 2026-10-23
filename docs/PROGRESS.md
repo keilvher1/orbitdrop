@@ -275,11 +275,27 @@ retry → 24 pages with no prompt, the menu bar menu, Jobs and Settings, and
 the login item across a VM restart. Record: verification.md "가상 머신 핵심
 흐름 점검 — macOS 26.6.2".
 
-Verified state (dev Mac, 2026-10-24): vitest 1085 passed / 4 skipped;
+The x64 DMG under Rosetta 2 in the same guest (Rosetta installed there):
+PDF → JPG, Crop, Add Background and HEIC work through real Finder drags,
+also with the CPU saturated. Found and fixed, each re-verified in the guest:
+- first launch of the x64 build waits ~1 min 40 s for translation; the
+  first engine probe hit its 30 s limit, the worker restarted and every
+  action was disabled for another 30 s, and nothing pointed to the arm64
+  build → probe limit 90 s (service 120 s); on Apple silicon a 'translated'
+  startup notice (notification, Settings › General) and "x64 (Rosetta 2)"
+  in About (c12378d). Open: one drag during that first launch showed no
+  wheel *after* the re-probe had succeeded; not reproduced since (debug
+  relaunch, re-signed cold launch with 8 drags, saturated CPU). Likely the
+  first-ever Rosetta translation of system frameworks; needs a fresh guest;
+- clicking any notification also opened the Drop Zone: macOS sends a reopen
+  ~140 ms after the click → ReopenFilter drops a reopen within 3 s of a
+  notification click (0a4eef3).
+
+Verified state (dev Mac, 2026-10-24): vitest 1091 passed / 4 skipped;
 typecheck clean; Playwright 39/39; electron-verify 36/36 with no console
-errors or CSP violations; swift test 167 (9 + 69 + 89), exit 0. Packages:
-arm64 from 330a892 (the DMG used in both VMs), x64 rebuilt from the same
-code; hashes in verification.md.
+errors or CSP violations; swift test 167 (9 + 69 + 89), exit 0. Final
+packages from 0a4eef3 (arm64 and x64; both DMGs installed in the macOS 26
+guest for a last check); hashes in verification.md.
 
 Open — decisions for the user: a human check on a physical Mac; a Windows
 PC (the helper is compile- and host-tested only); signing/notarization

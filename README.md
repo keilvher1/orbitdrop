@@ -11,15 +11,15 @@
 
 <p align="center"><img src="apps/desktop/build/icon.png" width="128" alt="OrbitDrop icon"></p>
 
-## 상태 (2026-10-21)
+## 상태 (2026-10-24)
 
 **개발 중.** 기능별·OS별 상태는 [docs/support-matrix.md](docs/support-matrix.md)가 기준입니다.
 
 | 영역 | 상태 |
 |---|---|
-| macOS 패키지 (arm64, x64) | dmg/zip 생성, helper·sharp/libvips·@napi-rs/canvas가 대상 아키텍처로 포함, ad-hoc 서명, DMG 안의 앱으로 smoke test(helper `ready`, PNG→JPEG, PDF→PNG) **자동 검증됨**(개발 Mac, x64는 Rosetta 2). 코드 서명·공증 자격 증명 없음 → **미서명** 산출물. **주의**: 0.1.0 패키지(소스 d4f6d1e)는 Electron fuse 설정 때문에 설치본의 창이 열리지 않는다(`ERR_FILE_NOT_FOUND`, smoke test는 창을 열지 않아 놓침) — 설정은 고쳤고 재패키징이 필요하다([docs/workstreams/hardening-packaging.md](docs/workstreams/hardening-packaging.md)) |
+| macOS 패키지 (arm64, x64) | dmg/zip 생성, helper·sharp/libvips·@napi-rs/canvas가 대상 아키텍처로 포함, ad-hoc 서명, DMG 안의 앱으로 smoke test(helper `ready`, PNG→JPEG, PDF→PNG, 숨긴 창 렌더링) **자동 검증됨**(개발 Mac, x64는 Rosetta 2). 코드 서명·공증 자격 증명 없음 → **미서명** 산출물. 최신 패키지의 해시: [verification.md](docs/verification.md#패키징-macos-이-저장소의-개발-mac). 예전 0.1.0 패키지(소스 d4f6d1e: 빈 창, 7faf031: 보호 폴더 권한 대화상자)는 쓰지 않는다 |
 | Windows 패키지 (x64) | NSIS 사용자별 설치 프로그램 설정·CI(빌드, smoke, 무인 설치/제거) 작성, **아직 Windows에서 실행되지 않음** |
-| 실제 Finder/Explorer 전역 드래그 | 네이티브 helper 구현됨(macOS는 권한 없이 동작하는 관찰 방식), **실제 OS GUI 검증 전** — [verification.md](docs/verification.md) 절차 |
+| 실제 Finder/Explorer 전역 드래그 | 네이티브 helper 구현됨(macOS는 권한 없이 동작하는 관찰 방식). macOS는 **가상 머신에서 실제 Finder로 검증**(macOS 14.8.7 전 기능, 26.6.2 핵심 흐름, x64는 Rosetta 2) — 실물 Mac에서 사람이 하는 확인과 Windows는 아직 · [verification.md](docs/verification.md) |
 | 변환·편집 엔진 | sharp(libvips), PDF.js + @napi-rs/canvas, pdf-lib, docx — 패키지 안에서 엔진 probe와 PNG→JPG 작업 파이프라인 확인 |
 
 미서명 빌드는 로컬 테스트용이며 파일 이름에 `-unsigned`가 붙습니다. Gatekeeper/SmartScreen을 끄는 방법은
@@ -45,7 +45,7 @@
 
 ## 요구 사항
 
-* 사용: **macOS 14 이상**(Apple Silicon; Intel x64 산출물은 별도 검증 상태) · **Windows 11 x64**(사용자별 설치, 관리자 권한 불필요).
+* 사용: **macOS 14 이상**(Apple Silicon; Intel x64 산출물은 Intel 실기 미검증) · **Windows 11 x64**(사용자별 설치, 관리자 권한 불필요).
   Electron 44 자체는 macOS 13+, Windows 10+를 지원하지만 OrbitDrop의 검증 대상은 위와 같습니다([ADR-10](docs/decisions.md#adr-10-최소-os-버전)).
 * 개발: Node.js 22.12+(24 권장), pnpm 11, macOS helper는 Xcode/Swift 6, Windows helper는 Visual Studio C++ + CMake.
 
@@ -58,7 +58,9 @@
 
 **macOS (14 이상)**
 
-* 설치: DMG를 열어 `OrbitDrop.app`을 `Applications`로 끌어 놓고 실행합니다. 창 없이 메뉴 막대에 아이콘이 나타납니다(Dock 아이콘 없음).
+* 설치: Apple 실리콘 Mac은 `…-mac-arm64-…`, Intel Mac은 `…-mac-x64-…` DMG를 씁니다. DMG를 열어 `OrbitDrop.app`을 `Applications`로
+  끌어 놓고 실행합니다. 창 없이 메뉴 막대에 아이콘이 나타납니다(Dock 아이콘 없음). Apple 실리콘에서 x64를 실행하면 Rosetta 2로
+  동작하지만 첫 실행이 느리고, OrbitDrop이 arm64 설치본을 쓰라고 알려 줍니다.
 * 제거: 메뉴 막대 아이콘 → 종료 → `/Applications/OrbitDrop.app`을 휴지통으로. 설정에서 "로그인 시 실행"을 켰다면 먼저 끄거나
   시스템 설정 › 일반 › 로그인 항목에서 지웁니다. 손쉬운 사용·입력 모니터링을 허용했다면 시스템 설정 › 개인정보 보호 및 보안의
   해당 목록에서 OrbitDrop을 지웁니다.

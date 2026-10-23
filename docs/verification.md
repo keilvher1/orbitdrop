@@ -195,12 +195,31 @@ EXIF 방향 6, GPS), CMYK JPEG, 3프레임 GIF. 결과 파일은 SSH로 꺼내 �
 | 처리 프로세스 강제 종료 | A0 24쪽 PDF → PNG 중 `kill -9`: ① 저장된 쪽 0개일 때 → 자동 재시도(attempt=2) 24쪽 ② 4쪽 저장 뒤 → 로그 "outputs of an interrupted job removed … removed=4", "temp files … removed=1" → 재시도 24쪽. 두 번 모두 `(2)` 없음, 임시 파일 0개, 폴더 접근 대화상자 없음, 원본 해시 그대로. 쪽은 8402×11878(쪽당 1억 픽셀 제한 → 알림 "크기 제한 때문에 줄였습니다") |
 | 메뉴 막대·창 | 메뉴 전 항목, 작업 창(결과·경고·Finder에서 보기), 설정 창이 그려짐 |
 | 로그인할 때 실행 | 설정에서 켬 → macOS "Login Item Added" 알림 → 메뉴 막대에서 종료 → VM 다시 시작 → 로그인하자 OrbitDrop 실행(helper `ready`까지 3초) → 곧바로 PNG→JPG 드래그 정상 |
+| **x64 설치본(Rosetta 2)** | 게스트에 Rosetta 2를 설치하고 x64 DMG를 설치(실행 파일·helper 모두 x86_64). macOS가 "Support Ending for Intel-based Apps" 알림을 띄움. 첫 실행은 앱을 연 뒤 약 1분 40초가 지나서야 시작됨(세 번 1:38–1:43, 그동안 Rosetta의 `oahd-helper`가 CPU 98%로 번역). 이후 PDF→JPG 3쪽 → 자르기 1:1(2550×2550) → 배경 추가(1941×2400 PNG) → JPG→HEIC(3024×4032) 모두 실제 Finder 드래그로 정상, CPU를 꽉 채운 상태(부하 평균 8, CPU 4개)에서도 휠·드롭 정상. 최종 설치본: 시작 알림 "Apple 실리콘용 OrbitDrop을 설치하세요", 정보 창 "macOS · x64(Rosetta 2) · 설치본" |
+| 알림 클릭 | 작업 완료 알림 → 결과 파일이 선택된 Finder 창, 설정 초기화 알림 → 설정 창(경고 표시). 다른 창은 열리지 않음(아래 발견 2 이후). 실행 중인 앱을 다시 열면(`open -a`) Drop Zone |
 
-macOS 26에서 따로 보지 않은 것: 다크 모드·Retina 2×·여러 파일·Esc(macOS 14에서 확인), 보조 모니터, 화면 잠금.
+**이 점검에서 찾아 고친 것** (각각 고친 설치본을 이 게스트에 다시 설치해 확인):
+1. **x64 설치본의 느린 첫 실행(Rosetta 2)**: Rosetta를 막 설치한 게스트의 첫 실행에서 엔진 점검이 30초 제한에 걸려 처리 프로세스를 다시
+   시작했고, 다시 점검할 때까지 30초 동안 모든 동작이 비활성이었다. 이 Mac에 맞는 설치본을 알려 주는 안내도 없었다 → 엔진 점검 제한을
+   90초(전체 120초)로 늘리고, Apple 실리콘에서 x64 빌드가 실행되면 시작 알림·설정 › 일반 안내·정보 창 표시로 arm64 설치본을 안내
+   (c12378d). 고친 설치본의 첫 실행 두 번은 점검이 한 번에 끝났지만(앱 시작부터 20–28초), 그때는 Rosetta 번역 캐시가 이미 있어서 맨 처음
+   상황을 그대로 다시 만든 것은 아니다.
+   **원인을 확정하지 못한 것**: 이 첫 실행 동안 드래그 두 번에 휠이 뜨지 않았다. 첫 번째는 점검이 끝나기 전이라 설명이 되지만(helper가 아직
+   설정을 받지 못함), 두 번째(8:54 PM)는 다시 한 점검이 성공한 뒤였다. 그 시각에도 Rosetta가 Electron 프레임워크를 번역하느라 CPU를 다 쓰고
+   있었고, Rosetta를 갓 설치해 helper가 쓰는 시스템 프레임워크도 처음 번역되던 중이었을 가능성이 있다. 그 뒤로는 — 디버그 기록을 켠 다시
+   실행, 앱 서명을 바꿔 앱 번역을 다시 하게 한 첫 실행(드래그 8번), CPU를 꽉 채운 상태 — 점검이 끝난 뒤의 드래그에서 휠이 매번 떴다.
+   다시 보려면 Rosetta가 없는 새 게스트가 필요하다.
+2. **알림을 누르면 Drop Zone도 열림**: 작업 완료 알림을 누르면 Finder에 결과가 선택되면서 Drop Zone 창이 함께 떴다. macOS가 알림 클릭 뒤
+   약 140 ms에 앱 다시 열기(`activate`)를 보내고, 다시 열기는 Drop Zone을 여는 동작이었다 → 알림 클릭 뒤 3초 안의 다시 열기는 무시(0a4eef3).
+   Finder·Spotlight·Launchpad에서 다시 열면 그대로 Drop Zone.
 
-최종 설치본(소스 `330a892` — 이후 커밋은 문서만): arm64 DMG sha256 `2b60660c65d6415e8a677d155a1a677e90f624898a74a4c558bc528269a779e6`
-(위 macOS 14 경계 상황의 강제 종료 재확인과 macOS 26 점검에 쓴 바로 그 파일). x64는 같은 코드로 다시 만든 패키지다. 해시와 패키지 검사:
-아래 [패키징](#패키징-macos-이-저장소의-개발-mac).
+macOS 26에서 따로 보지 않은 것: 다크 모드·Retina 2×·여러 파일·Esc(macOS 14에서 확인), 보조 모니터, 화면 잠금, Intel 실기(x64는
+Apple 실리콘의 Rosetta 2에서만).
+
+최종 설치본(소스 `0a4eef3`): arm64 DMG sha256 `d994495f576de3d054e569af783270bb1f7011b55bbde91463f6ea96660d62fb`, x64 DMG
+`68d40625b8295ce3390b7f7ee28feb62a89b51af5ed08fbea189598887bf243a` — 이 두 파일을 macOS 26 게스트에 설치해 실제 Finder 드래그 변환·알림
+클릭(arm64)과 Rosetta 안내·변환(x64)을 마지막으로 확인했다. 위 점검의 대부분은 그 전 설치본(`330a892`, arm64 `2b60660c…`)으로 했고,
+그 뒤 바뀐 것은 위 발견 1·2뿐이다. 해시와 패키지 검사: 아래 [패키징](#패키징-macos-이-저장소의-개발-mac).
 
 **재현.** 도구와 절차: [scripts/vm/README.md](../scripts/vm/README.md). 요약: `tart clone ghcr.io/cirruslabs/macos-sonoma-vanilla:latest od-sonoma`
 (macOS 26은 `macos-tahoe-vanilla`) → `tart run od-sonoma --no-graphics --vnc-experimental --dir=xfer:<폴더>:ro` → 게스트(admin/admin)에서
@@ -215,7 +234,7 @@ tart가 연결 하나로 받아 매우 느릴 수 있어(이 Mac에서 0.5 MB/s)
 
 환경: macOS 26.6 (25G72) arm64, Xcode 27.1, Node 24.7.0, pnpm 11.27.1, electron-builder 26.15.3, Electron 44.9.0.
 
-명령: `node scripts/package.mjs mac --arch all` (2026-10-23 07:05 CST, 소스 커밋 `d1ce089` — 미커밋 변경 없음, 건너뛴 단계 없음: 라이선스 목록 재생성 → 아이콘 검증 →
+명령: `node scripts/package.mjs mac --arch all` (2026-10-24 05:45 CST, 소스 커밋 `0a4eef3` — 미커밋 변경 없음, 건너뛴 단계 없음: 라이선스 목록 재생성 → 아이콘 검증 →
 `scripts/build-native.mjs mac`로 helper 빌드·서명·stdio smoke → `electron-vite build`(현재 소스) → before-pack(의존성 수집기 보정) → arm64·x64 electron-builder →
 after-pack 검사(의존성 트리 포함) → DMG 안의 앱으로 smoke test(숨긴 창 렌더링 포함) → 네이티브 모듈 검사). 종료 코드 0, 미완료 항목 없음. 산출물은 **미서명(ad-hoc)** 이며
 이름에 `-unsigned`가 붙는다.
@@ -228,9 +247,9 @@ after-pack 검사(의존성 트리 포함) → DMG 안의 앱으로 smoke test(�
 
 | 항목 | macOS arm64 | macOS x64 |
 |---|---|---|
-| DMG | `apps/desktop/release/OrbitDrop-0.1.0-mac-arm64-unsigned.dmg` 135.4 MB, sha256 `cabde306267b1f7490b3f3490aadd59e91e5e4f309af8e1381c3e6f5bb6008d6` | `apps/desktop/release/OrbitDrop-0.1.0-mac-x64-unsigned.dmg` 144.2 MB, sha256 `5d67e2f438de1f3b0e1bf805b381614a2a04895e21381993152317142ef5c5ad` |
-| ZIP | `…-mac-arm64-unsigned.zip` 135.1 MB, sha256 `675d3be2ac7e3f37749963ce542994116f4868be6323327fc75b2660cf71d5e1` | `…-mac-x64-unsigned.zip` 144.0 MB, sha256 `ab6f8d20b69e5ac6d82655eeb952ede3e0999635de1c0c9cf8b818ab6c31f7b4` |
-| 빌드 보고서 | `build-report-darwin-arm64.json` (`source.commit` d1ce089…, `dirty: false`) | `build-report-darwin-x64.json` |
+| DMG | `apps/desktop/release/OrbitDrop-0.1.0-mac-arm64-unsigned.dmg` 135.4 MB, sha256 `d994495f576de3d054e569af783270bb1f7011b55bbde91463f6ea96660d62fb` | `apps/desktop/release/OrbitDrop-0.1.0-mac-x64-unsigned.dmg` 144.3 MB, sha256 `68d40625b8295ce3390b7f7ee28feb62a89b51af5ed08fbea189598887bf243a` |
+| ZIP | `…-mac-arm64-unsigned.zip` 135.1 MB, sha256 `2a328b94fcdd3641446246c7c743f69a1ef574d9f3aa106df47e8d9746e2ab0f` | `…-mac-x64-unsigned.zip` 144.0 MB, sha256 `fe17a3bf26a3dbac7928b774f52c157b8d80043d75630ccbfeee41e9b31253d8` |
+| 빌드 보고서 | `build-report-darwin-arm64.json` (`source.commit` 0a4eef3…, `dirty: false`) | `build-report-darwin-x64.json` |
 | 앱 크기(설치 시) | 320.2 MB | 333.9 MB |
 | `app.asar` / `app.asar.unpacked` | 14.2 MB (1,041 항목 — 브라우저·ESM 중복 빌드 제외) / 45 MB | 14.2 MB (1,041 항목) / 52 MB |
 | Info.plist | `CFBundleIdentifier=app.orbitdrop.desktop`, `LSUIElement=true`, `LSMinimumSystemVersion=14.0`, `ElectronAsarIntegrity` 있음, 개인정보 사용 설명 키 없음(`usageDescriptions: []`) | 동일 |
@@ -248,13 +267,13 @@ after-pack 검사(의존성 트리 포함) → DMG 안의 앱으로 smoke test(�
 | Resources | `THIRD_PARTY_LICENSES.md`, `LICENSE.electron.txt`, `LICENSES.chromium.html`, `tray/trayTemplate{,@2x}.png`, `ko.lproj`, `en.lproj` | 동일 |
 | DMG 읽기 전용 마운트 | `Applications → /Applications`, `OrbitDrop.app`; 내부 앱 `codesign --verify` valid | 동일 |
 | 의존성 트리(after-pack, Node 해석 방식) | 35개 패키지, 42개 의존성, 문제 0 (`nanoid` 6.0.2, `tslib` 1.14.1 — 이전 패키지는 2건 어긋남) | 동일 |
-| smoke test (DMG 안의 앱을 직접 실행) | 종료 0, `helper.ready: true`, **숨긴 About 창 렌더링 296 ms** | `arch -x86_64`(Rosetta 2) 종료 0, `helper.ready: true`, 창 렌더링 6.7초 |
+| smoke test (DMG 안의 앱을 직접 실행) | 종료 0, `helper.ready: true`, **숨긴 About 창 렌더링 329 ms** | `arch -x86_64`(Rosetta 2) 종료 0, `helper.ready: true`, 창 렌더링 6.7초 |
 | 네이티브 모듈 검사 | librsvg 2.63.2 / libvips 8.18.7, 그라데이션·둥근 모서리 마스크 정상, canvas `app.asar.unpacked`에서 로드, Apple SD Gothic Neo 한글, 패키지 안의 pdf-lib로 PDF 1쪽·docx로 DOCX 생성 | 동일(Rosetta 2) |
 
 패키지된 앱의 smoke test 출력(arm64, 한 줄):
 
 ```text
-ORBITDROP_SMOKE {"ok":true,"version":"0.1.0","platform":"darwin","arch":"arm64","packaged":true,"durationMs":1219,"probe":{"ok":true,"decode":["jpeg","png","webp","gif","tiff","avif","heic","bmp","pdf"],"encode":["jpeg","png","webp","gif","tiff","avif","heic","bmp","pdf","docx","txt"],"pdfRender":true,"pdfText":true,"enabledActions":["convert.jpeg","convert.png","convert.webp","convert.heic","convert.tiff","convert.avif","convert.bmp","convert.pdf","convert.docx","convert.txt","tool.compress","tool.metadata","tool.edit","tool.annotate","tool.addBackground","tool.crop","tool.redact"],"errors":[]},"helper":{"ok":true,"required":true,"found":true,"source":"packaged","ready":true,"version":"0.1.0","globalDrag":{"available":true,"reason":null},"error":null},"conversion":{"ok":true,"actionId":"convert.jpeg","state":"completed","width":64,"height":48,"bytes":865,"ms":210,"error":null},"pdfConversion":{"ok":true,"actionId":"convert.png","state":"completed","width":300,"height":150,"bytes":1395,"ms":246,"error":null},"window":{"ok":true,"view":"about","ms":296,"loaded":true,"preload":true,"rendered":true,"shown":false,"error":null,"consoleErrors":[]}}
+ORBITDROP_SMOKE {"ok":true,"version":"0.1.0","platform":"darwin","arch":"arm64","packaged":true,"durationMs":1436,"probe":{"ok":true,"decode":["jpeg","png","webp","gif","tiff","avif","heic","bmp","pdf"],"encode":["jpeg","png","webp","gif","tiff","avif","heic","bmp","pdf","docx","txt"],"pdfRender":true,"pdfText":true,"enabledActions":["convert.jpeg","convert.png","convert.webp","convert.heic","convert.tiff","convert.avif","convert.bmp","convert.pdf","convert.docx","convert.txt","tool.compress","tool.metadata","tool.edit","tool.annotate","tool.addBackground","tool.crop","tool.redact"],"errors":[]},"helper":{"ok":true,"required":true,"found":true,"source":"packaged","ready":true,"version":"0.1.0","globalDrag":{"available":true,"reason":null},"error":null},"conversion":{"ok":true,"actionId":"convert.jpeg","state":"completed","width":64,"height":48,"bytes":865,"ms":215,"error":null},"pdfConversion":{"ok":true,"actionId":"convert.png","state":"completed","width":300,"height":150,"bytes":1395,"ms":255,"error":null},"window":{"ok":true,"view":"about","ms":329,"loaded":true,"preload":true,"rendered":true,"shown":false,"error":null,"consoleErrors":[]}}
 ```
 
 x64(Rosetta 2)도 같은 내용(`"arch":"x64"`, `helper.ready: true`, `window.rendered: true`)이다. 의미:

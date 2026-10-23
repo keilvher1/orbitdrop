@@ -57,7 +57,7 @@ UI를 `loadFile()`로 `app.asar` 안에서 여는 동안 `GrantFileProtocolExtra
 | 대상 | 파일 (`apps/desktop/release/`) | 비고 |
 |---|---|---|
 | macOS arm64 | `OrbitDrop-<ver>-mac-arm64[-unsigned].dmg`, `.zip` | 최소 macOS 14.0 |
-| macOS x64 | `OrbitDrop-<ver>-mac-x64[-unsigned].dmg`, `.zip` | 최소 macOS 14.0, Intel 실기 검증은 별도 기록 |
+| macOS x64 | `OrbitDrop-<ver>-mac-x64[-unsigned].dmg`, `.zip` | 최소 macOS 14.0, Intel 실기 검증은 별도 기록. Apple 실리콘에서 실행하면 Rosetta 2로 동작하지만 첫 실행이 느리고(가상 머신에서 약 1분 40초), 앱이 시작 알림·설정·정보 창으로 arm64 설치본을 안내한다 |
 | Windows x64 | `OrbitDrop-<ver>-win-x64[-unsigned]-setup.exe` | NSIS, 사용자별 설치 |
 
 universal 바이너리는 만들지 않는다(네이티브 모듈과 helper를 아키텍처별로 검증하기 위해).
