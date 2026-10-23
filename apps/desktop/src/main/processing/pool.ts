@@ -459,9 +459,15 @@ export class ProcessorPool {
     return this.auxRequest<ImageInfo>('inspect', requestId, { type: 'inspect', requestId, input, limits }, this.options.inspectTimeoutMs ?? 30_000);
   }
 
+  /**
+   * The probe is the first thing a fresh worker does: the first one after an install loads every engine
+   * from a cold disk (and on Windows past the virus scanner), and the x64 build under Rosetta 2 also waits
+   * for translation — over 30 s in a macOS 26 VM, where the old 30 s limit failed it once, restarted the
+   * worker and left every action disabled for another 30 s. Hence far more time than inspect.
+   */
   probe(): Promise<EngineProbe> {
     const requestId = newId('rq');
-    return this.auxRequest<EngineProbe>('probe', requestId, { type: 'probe', requestId }, this.options.probeTimeoutMs ?? 30_000);
+    return this.auxRequest<EngineProbe>('probe', requestId, { type: 'probe', requestId }, this.options.probeTimeoutMs ?? 90_000);
   }
 
   private async auxRequest<T>(

@@ -102,6 +102,8 @@ export interface AppInfo {
   readonly node: string;
   readonly packaged: boolean;
   readonly locale: 'ko' | 'en';
+  /** Added later: present (true) when this x64 build runs under Rosetta 2 on an Apple silicon Mac. */
+  readonly translated?: true;
   /** Added by the hardening pass: problems main handled at startup that the user should know about. */
   readonly notices?: readonly StartupNotice[];
 }
@@ -110,13 +112,17 @@ export interface AppInfo {
  * Added by the hardening pass. settingsReset: settings.json could not be used
  * (corrupt or unreadable), the defaults apply; historyReset: the same for the
  * job history (history.json), which starts empty. The unusable file is kept
- * next to the original as `backup`.
+ * next to the original as `backup`. translated (added later): the x64 build
+ * runs under Rosetta 2 on an Apple silicon Mac — it works, but the arm64 build
+ * starts faster and macOS is ending support for Intel apps.
  */
-export interface StartupNotice {
-  readonly code: 'settingsReset' | 'historyReset';
-  /** File name (no folder) of the kept copy, or null when it could not be moved. */
-  readonly backup: string | null;
-}
+export type StartupNotice =
+  | {
+      readonly code: 'settingsReset' | 'historyReset';
+      /** File name (no folder) of the kept copy, or null when it could not be moved. */
+      readonly backup: string | null;
+    }
+  | { readonly code: 'translated' };
 
 export type HelperStatus =
   | { readonly state: 'disabled' }

@@ -83,6 +83,8 @@
   "notify.historyReset.title": "Job history was cleared",
   "notify.historyReset.body": "The job history file could not be read, so the history starts empty. The old file was kept in the same folder as {file}.",
   "notify.historyReset.bodyNoBackup": "The job history file could not be read, so the history starts empty.",
+  "notify.translated.title": "Install OrbitDrop for Apple silicon",
+  "notify.translated.body": "The Intel (x64) build of OrbitDrop is running under Rosetta 2. This Mac needs the Apple silicon (arm64) build.",
   "startup.dataDir.title": "OrbitDrop cannot start",
   "startup.dataDir.body": "The app data folder is not writable:\n{path}\n\nCheck the folder’s permissions, then open OrbitDrop again.",
   "error.UNSUPPORTED_FORMAT": "This file type is not supported",

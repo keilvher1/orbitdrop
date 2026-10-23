@@ -27,7 +27,8 @@ export class CapabilityService {
   constructor(
     private readonly probe: () => Promise<EngineProbe>,
     private readonly log: Logger = silentLogger,
-    private readonly timeoutMs = 45_000,
+    // Longer than the pool's own probe limit (90 s), which restarts a stuck worker first.
+    private readonly timeoutMs = 120_000,
   ) {}
 
   /** Current snapshot, waiting for the first probe if needed. */

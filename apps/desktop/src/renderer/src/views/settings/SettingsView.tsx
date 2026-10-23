@@ -265,9 +265,15 @@ function intCommit(min: number, max: number, send: (value: number) => void) {
 
 // ---------------------------------------------------------------------- panels
 
+function startupNoticeText(notice: StartupNotice, t: Translator): string {
+  if (notice.code === 'translated') return t('settings.notice.translated');
+  return notice.backup !== null ? t(`settings.notice.${notice.code}`, { file: notice.backup }) : t(`settings.notice.${notice.code}.noBackup`);
+}
+
 /**
  * Problems main handled at startup (AppInfo.notices): a settings or history
- * file that could not be used was kept aside and replaced by defaults.
+ * file that could not be used was kept aside and replaced by defaults, or the
+ * x64 build runs under Rosetta 2 on an Apple silicon Mac.
  */
 function StartupNotices() {
   const { orbit, t } = useEnv();
@@ -288,7 +294,7 @@ function StartupNotices() {
     <>
       {notices.map((notice) => (
         <Notice key={notice.code} tone="warning" live="off">
-          {notice.backup !== null ? t(`settings.notice.${notice.code}`, { file: notice.backup }) : t(`settings.notice.${notice.code}.noBackup`)}
+          {startupNoticeText(notice, t)}
         </Notice>
       ))}
     </>

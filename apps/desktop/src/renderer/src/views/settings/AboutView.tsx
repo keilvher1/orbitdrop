@@ -62,7 +62,11 @@ export function AboutContent() {
           <div className="about-details tabular">
             <p>{t('about.runtime', { electron: info.electron, chrome: info.chrome, node: info.node })}</p>
             <p>
-              {t('about.platform', { platform: PLATFORM_NAMES[info.platform] ?? info.platform, arch: info.arch })} ·{' '}
+              {t('about.platform', {
+                platform: PLATFORM_NAMES[info.platform] ?? info.platform,
+                arch: info.translated === true ? t('about.archTranslated', { arch: info.arch }) : info.arch,
+              })}{' '}
+              ·{' '}
               {info.packaged ? t('about.packaged') : t('about.devBuild')}
             </p>
           </div>

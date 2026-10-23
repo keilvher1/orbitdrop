@@ -199,5 +199,16 @@ describe('Settings › General: startup notices', () => {
     renderWithEnv(<SettingsView />, { orbit });
     await waitFor(() => expect(orbit.getAppInfo).toHaveBeenCalled());
     expect(screen.queryByText(/읽을 수 없어/)).toBeNull();
+    expect(screen.queryByText(/Rosetta 2/)).toBeNull();
+  });
+
+  it('points to the Apple silicon build when the x64 build runs under Rosetta 2', async () => {
+    // Seen in the macOS 26 VM: the x64 DMG on Apple silicon works, but its first launch waits for translation
+    // and macOS warns that Intel apps will stop opening. Settings says which build this Mac needs.
+    const orbit = createFakeOrbit();
+    const info = await orbit.getAppInfo();
+    orbit.getAppInfo.mockResolvedValue({ ...info, arch: 'x64', translated: true, notices: [{ code: 'translated' }] });
+    renderWithEnv(<SettingsView />, { orbit });
+    expect(await screen.findByText(koUi['settings.notice.translated'])).toBeTruthy();
   });
 });

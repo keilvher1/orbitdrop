@@ -87,6 +87,11 @@ export interface AppPaths {
 const INPUT_EXTENSIONS = [...IMAGE_FORMATS.flatMap((f) => FORMAT_INFO[f].extensions), ...FORMAT_INFO.pdf.extensions].map((ext) => ext.slice(1));
 const IMAGE_EXTENSIONS = IMAGE_FORMATS.flatMap((f) => FORMAT_INFO[f].extensions).map((ext) => ext.slice(1));
 
+/** The x64 macOS build running under Rosetta 2 on Apple silicon (an arm64 build exists for that Mac). */
+function runningTranslated(): boolean {
+  return process.platform === 'darwin' && app.runningUnderARM64Translation === true;
+}
+
 /**
  * E2E only (ORBITDROP_E2E=1, unpackaged builds — see test-hooks.ts): decides
  * what happens before a job attempt reaches the processor pool, so tests can
@@ -249,6 +254,13 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
     // An unusable settings/history file was kept aside and replaced by defaults: the user is told (startUi).
     if (this.settings.loadIssue) this.startupNotices.push({ code: 'settingsReset', backup: this.settings.loadIssue.backup });
     if (this.history.loadIssue) this.startupNotices.push({ code: 'historyReset', backup: this.history.loadIssue.backup });
+    // The x64 build on an Apple silicon Mac (a wrong download): it works under Rosetta 2, but the first launch
+    // waits for translation and macOS is ending Intel app support — point the user to the arm64 build. Not on
+    // Windows: there is no arm64 Windows build to switch to.
+    if (runningTranslated()) {
+      this.startupNotices.push({ code: 'translated' });
+      this.log.warn('x64 build running under Rosetta 2 on Apple silicon; the arm64 build is the right one here');
+    }
     // Before the first worker is forked: workers get ORBITDROP_IMAGEIO_HELPER, so the engine
     // probe can see the helper's ImageIO codecs (HEIC on macOS).
     await this.locateHelperBinary();
@@ -515,6 +527,7 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
       node: process.versions.node,
       packaged: app.isPackaged,
       locale: this.settings.get().locale,
+      ...(runningTranslated() ? { translated: true as const } : {}),
       ...(this.startupNotices.length > 0 ? { notices: [...this.startupNotices] } : {}),
     };
   }
@@ -782,13 +795,17 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
 
   /**
    * Settings or history could not be used and were reset (the old file is
-   * kept aside): one notification per problem (click: Settings, which lists
-   * them too — AppInfo.notices). Notifications switched off: Settings only.
+   * kept aside), or the x64 build runs under Rosetta 2: one notification per
+   * notice (click: Settings, which lists them too — AppInfo.notices).
+   * Notifications switched off: Settings only.
    */
   private announceStartupNotices(): void {
     if (!this.settings.get().notifications) return;
-    for (const { code, backup } of this.startupNotices) {
-      const body = backup !== null ? this.t(`notify.${code}.body`, { file: backup }) : this.t(`notify.${code}.bodyNoBackup`);
+    for (const notice of this.startupNotices) {
+      const { code } = notice;
+      let body: string;
+      if (code === 'translated') body = this.t('notify.translated.body');
+      else body = notice.backup !== null ? this.t(`notify.${code}.body`, { file: notice.backup }) : this.t(`notify.${code}.bodyNoBackup`);
       this.showNotification(this.t(`notify.${code}.title`), body, () => this.windows?.open('settings'));
     }
   }

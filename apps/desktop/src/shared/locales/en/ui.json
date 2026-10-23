@@ -337,6 +337,7 @@
   "settings.notice.settingsReset.noBackup": "The settings file could not be read, so the defaults apply.",
   "settings.notice.historyReset": "The job history file could not be read, so the history started empty. The old file was kept in the app data folder as {file}.",
   "settings.notice.historyReset.noBackup": "The job history file could not be read, so the history started empty.",
+  "settings.notice.translated": "The Intel (x64) build of OrbitDrop is running under Rosetta 2. This Mac needs the Apple silicon (arm64) build — it starts faster, and macOS is ending support for Intel apps.",
   "settings.pdfDpi": "PDF → image resolution",
   "settings.dpi": "{dpi} DPI",
   "settings.location": "Save location",
@@ -400,6 +401,7 @@
   "about.version": "Version {version}",
   "about.runtime": "Electron {electron} · Chromium {chrome} · Node {node}",
   "about.platform": "{platform} · {arch}",
+  "about.archTranslated": "{arch} (Rosetta 2)",
   "about.devBuild": "Development build",
   "about.packaged": "Installed build"
 }

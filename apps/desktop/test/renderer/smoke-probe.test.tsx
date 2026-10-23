@@ -82,3 +82,18 @@ describe('smoke test window probe', () => {
     expect(judgeWindow(probe(), '0.1.0')).toEqual({ rendered: false, error: null });
   });
 });
+
+describe('About', () => {
+  it('names the architecture, marking an x64 build that runs under Rosetta 2', async () => {
+    const native = renderWithEnv(<AboutView />);
+    expect(await screen.findByText(/macOS · arm64 ·/)).toBeTruthy();
+    expect(screen.queryByText(/Rosetta 2/)).toBeNull();
+    native.unmount();
+
+    const orbit = createFakeOrbit();
+    const info = await orbit.getAppInfo();
+    orbit.getAppInfo.mockResolvedValue({ ...info, arch: 'x64', translated: true });
+    renderWithEnv(<AboutView />, { orbit });
+    expect(await screen.findByText(/macOS · x64\(Rosetta 2\) ·/)).toBeTruthy();
+  });
+});
