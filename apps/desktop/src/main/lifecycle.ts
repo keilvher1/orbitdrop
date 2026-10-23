@@ -33,6 +33,8 @@ export interface QuitAppLike extends EmitterLike {
 
 export interface LifecycleTarget {
   showDropZone(): void | Promise<void>;
+  /** macOS reopen ('activate'); the target decides whether it means the Drop Zone (see ReopenFilter). */
+  reopened(): void;
   /** Candidate file paths from the OS; the target validates them (FileRegistry) before anything else. */
   openPaths(paths: readonly string[]): void | Promise<void>;
 }
@@ -104,7 +106,48 @@ export function installInstanceHandlers(
     else void target.showDropZone();
   });
   // macOS reopens the running app (Finder, Spotlight, Launchpad) instead of starting a second process.
-  if (options.platform === 'darwin') app.on('activate', () => void target.showDropZone());
+  if (options.platform === 'darwin') app.on('activate', () => target.reopened());
+}
+
+/**
+ * macOS sends the running app a reopen ('activate') when the user opens it again from Finder,
+ * Spotlight or Launchpad — and also right after the user clicks one of its notifications (about
+ * 140 ms after the click in a macOS 26 VM), so every notification click opened the Drop Zone next
+ * to what the click itself opened. Only the first kind should open it: a reopen within `windowMs`
+ * of a notification click is dropped, and a reopen waits `delayMs` in case the click comes second.
+ */
+export class ReopenFilter {
+  private lastClick = Number.NEGATIVE_INFINITY;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(
+    private readonly open: () => void,
+    private readonly options: { readonly windowMs: number; readonly delayMs: number; readonly now: () => number } = {
+      windowMs: 3000,
+      delayMs: 250,
+      now: () => Date.now(),
+    },
+  ) {}
+
+  notificationClicked(): void {
+    this.lastClick = this.options.now();
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+  }
+
+  reopened(): void {
+    if (this.afterClick()) return;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      if (!this.afterClick()) this.open();
+    }, this.options.delayMs);
+    this.timer.unref?.();
+  }
+
+  private afterClick(): boolean {
+    return this.options.now() - this.lastClick < this.options.windowMs;
+  }
 }
 
 /**

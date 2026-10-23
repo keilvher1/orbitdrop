@@ -53,7 +53,7 @@ import { IpcRouter, type IpcMainLike } from './ipc/router';
 import { JobManager, type JobRecordView } from './jobs/manager';
 import { SubmissionService, type SubmitContext } from './jobs/submission';
 import type { LaunchOptions } from './launch-options';
-import type { LifecycleTarget, PowerTarget } from './lifecycle';
+import { ReopenFilter, type LifecycleTarget, type PowerTarget } from './lifecycle';
 import { closeLogSink, configureLogSink, createLogger, describeError, type Logger } from './log';
 import { applyLoginItem, loginItemToAdopt, type LoginItems } from './login-item';
 import { Notifier, needsAnotherFolder } from './notifications';
@@ -138,6 +138,8 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
   private accessibilityNotification: number | null = null;
   /** Problems handled at startup that the user is told about (notification + Settings). */
   readonly startupNotices: StartupNotice[] = [];
+  /** macOS follows a notification click with a reopen: that one must not open the Drop Zone. */
+  private readonly reopenFilter = new ReopenFilter(() => void this.showDropZone());
   private markStarted: () => void = () => undefined;
   /** Resolves once startUi() finished (windows, IPC, tray, helper started). */
   readonly started = new Promise<void>((resolve) => {
@@ -371,7 +373,13 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
   async showDropZone(): Promise<void> {
     await this.started;
     if (this.quitting) return;
+    this.log.debug('drop zone requested (second launch or reopen)');
     this.windows?.open('dropzone');
+  }
+
+  /** macOS reopen: the Drop Zone, unless the reopen only followed a click on one of our notifications. */
+  reopened(): void {
+    this.reopenFilter.reopened();
   }
 
   /**
@@ -872,11 +880,19 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
     const release = (): void => {
       this.liveNotifications.delete(notification);
     };
+    // Lifecycle at debug level (never the texts: they name files).
+    notification.on('show', () => this.log.debug('notification shown', { id: notification.id }));
+    notification.on('failed', (_event, error) => this.log.warn('notification failed', { id: notification.id, error: String(error).slice(0, 200) }));
     notification.on('click', () => {
+      this.log.debug('notification clicked', { id: notification.id });
+      this.reopenFilter.notificationClicked();
       release();
       onClick();
     });
-    notification.on('close', release);
+    notification.on('close', () => {
+      this.log.debug('notification closed', { id: notification.id });
+      release();
+    });
     notification.show();
     if (this.liveNotifications.size > 20) {
       const oldest = this.liveNotifications.values().next().value;

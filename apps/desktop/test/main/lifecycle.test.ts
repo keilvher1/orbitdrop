@@ -7,6 +7,7 @@ import { appMenuTemplate } from '../../src/main/app-menu';
 import { OUTPUT_EXTENSIONS, isOpenableOutput } from '../../src/main/files/outputs';
 import {
   OpenFileQueue,
+  ReopenFilter,
   dataDirWritable,
   filePathsFromArgv,
   installInstanceHandlers,
@@ -111,7 +112,7 @@ describe('files on a command line', () => {
 
   it('a second launch with files opens them (validated by the target); without files it shows the Drop Zone', () => {
     const app = new FakeApp();
-    const target = { showDropZone: vi.fn(), openPaths: vi.fn() };
+    const target = { showDropZone: vi.fn(), reopened: vi.fn(), openPaths: vi.fn() };
     installInstanceHandlers(app as unknown as EmitterLike, target, { platform: 'win32', appPath: 'C:\\app', cwd: () => '/fallback' });
     app.emit('second-instance', {}, ['OrbitDrop.exe', '--flag', 'photo.png'], '/Users/me/Desktop');
     expect(target.openPaths).toHaveBeenCalledWith([resolve('/Users/me/Desktop', 'photo.png')]);
@@ -122,14 +123,68 @@ describe('files on a command line', () => {
     expect(target.openPaths).toHaveBeenLastCalledWith([resolve('/fallback', 'x.png')]);
     app.emit('activate', {}, false);
     expect(target.showDropZone).toHaveBeenCalledTimes(2); // 'activate' is a macOS reopen only
+    expect(target.reopened).not.toHaveBeenCalled();
   });
 
-  it('macOS: re-opening the running app (activate) shows the Drop Zone', () => {
+  it('macOS: re-opening the running app (activate) goes to the target as a reopen', () => {
     const app = new FakeApp();
-    const target = { showDropZone: vi.fn(), openPaths: vi.fn() };
+    const target = { showDropZone: vi.fn(), reopened: vi.fn(), openPaths: vi.fn() };
     installInstanceHandlers(app as unknown as EmitterLike, target, { platform: 'darwin', appPath: '/app', cwd: () => '/' });
     app.emit('activate', {}, false);
-    expect(target.showDropZone).toHaveBeenCalledTimes(1);
+    expect(target.reopened).toHaveBeenCalledTimes(1);
+    expect(target.showDropZone).not.toHaveBeenCalled();
+  });
+});
+
+describe('macOS reopen after a notification click', () => {
+  afterEach(() => vi.useRealTimers());
+
+  function filter() {
+    vi.useFakeTimers();
+    const open = vi.fn();
+    const reopen = new ReopenFilter(open, { windowMs: 3000, delayMs: 250, now: () => Date.now() });
+    return { open, reopen };
+  }
+
+  it('a plain reopen (Finder, Spotlight, Launchpad) opens the Drop Zone after a short wait', () => {
+    const { open, reopen } = filter();
+    reopen.reopened();
+    expect(open).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(250);
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it('the reopen macOS sends right after a notification click is dropped (seen: 140 ms later)', () => {
+    const { open, reopen } = filter();
+    reopen.notificationClicked();
+    vi.advanceTimersByTime(140);
+    reopen.reopened();
+    vi.advanceTimersByTime(1000);
+    expect(open).not.toHaveBeenCalled();
+    // Later the user really re-opens the app: that one counts again.
+    vi.advanceTimersByTime(3000);
+    reopen.reopened();
+    vi.advanceTimersByTime(250);
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it('also when the click arrives second, inside the wait', () => {
+    const { open, reopen } = filter();
+    reopen.reopened();
+    vi.advanceTimersByTime(100);
+    reopen.notificationClicked();
+    vi.advanceTimersByTime(1000);
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('several reopens in a row open it once', () => {
+    const { open, reopen } = filter();
+    reopen.reopened();
+    reopen.reopened();
+    vi.advanceTimersByTime(100);
+    reopen.reopened();
+    vi.advanceTimersByTime(250);
+    expect(open).toHaveBeenCalledTimes(1);
   });
 });
 
