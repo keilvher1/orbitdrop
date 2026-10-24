@@ -297,6 +297,12 @@ errors or CSP violations; swift test 167 (9 + 69 + 89), exit 0. Final
 packages from 0a4eef3 (arm64 and x64; both DMGs installed in the macOS 26
 guest for a last check); hashes in verification.md.
 
+Review of c12378d/0a4eef3 (done by the lead; the review agent stopped on the
+account's weekly limit): no correctness bugs. Follow-up: a stuck probe now
+fails after up to 110 s (20 s worker start + 90 s), so packaging's smoke-test
+kill moved from 120 s to 180 s and a broken package still prints its report
+(scripts/package.mjs only — the app in the 0a4eef3 packages is unchanged).
+
 Open — decisions for the user: a human check on a physical Mac; a Windows
 PC (the helper is compile- and host-tested only); signing/notarization
 credentials; a GitHub remote and the first CI run; product id, licence and

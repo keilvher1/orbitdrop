@@ -28,7 +28,8 @@
 //   --skip-smoke        do not launch the packaged app (also skips the native-module check)
 //   --allow-incomplete  continue when the native helper or the --smoke-test mode is missing
 //                       (artifacts are labelled "-incomplete"); for pipeline testing only
-//   --smoke-timeout <s> seconds before the smoke test is killed (default 120)
+//   --smoke-timeout <s> seconds before the smoke test is killed (default 180: more than the app's own
+//                       120 s limit for the engine probe, so a stuck probe still prints its report)
 //   --install-test      Windows: silently install the NSIS package per-user into a temp folder,
 //                       check the HKCU uninstall entry, smoke-test the installed exe, uninstall
 import { spawn, spawnSync } from 'node:child_process';
@@ -66,7 +67,7 @@ const opts = {
   skipSmoke: flag('skip-smoke'),
   allowIncomplete: flag('allow-incomplete'),
   installTest: flag('install-test'),
-  smokeTimeoutMs: Number(option('smoke-timeout', '120')) * 1000,
+  smokeTimeoutMs: Number(option('smoke-timeout', '180')) * 1000,
 };
 
 const errors = []; // always fatal
