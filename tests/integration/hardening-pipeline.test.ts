@@ -109,7 +109,9 @@ describe('pipeline hardening: names, paths, caches, parity', () => {
     expect(new Set(outputs).size).toBe(20);
     for (const out of outputs) {
       expect(utf8(basename(out))).toBeLessThanOrEqual(MAX_NAME_BYTES);
-      expect((await sharp(out).metadata()).width).toBe(8);
+      // Read through Node (like the processors do): libvips opens a path with the plain Win32 API,
+      // which cannot reach paths over MAX_PATH (260) — and these are ~320 characters on Windows.
+      expect((await sharp(await readFile(out)).metadata()).width).toBe(8);
     }
     expect(await temps(sub)).toEqual([]);
   });
