@@ -2,7 +2,8 @@
 
 **파일을 드래그하고 → 보조키를 누르면 → 커서 옆에 원형 메뉴가 나타나고 → 형식이나 도구 위에 놓으면 →
 원본 옆에 결과 파일이 생기는** 로컬 파일 변환·편집 데스크톱 앱입니다(Windows 11 x64, macOS 14+).
-모든 처리는 내 컴퓨터에서만 일어나며 원본은 이동·덮어쓰기·삭제되지 않습니다.
+변환과 편집은 모두 내 컴퓨터에서 일어나며 원본은 이동·덮어쓰기·삭제되지 않습니다. 파일을 밖으로 보내는 기능은 직접 켜는
+**Claude 분석**(선택 기능, 본인의 Anthropic API 키 필요) 하나뿐입니다.
 
 > A local file converter/editor: drag a file in Finder or Explorer, hold Shift, drop it on a ring
 > sector (JPG, PNG, CROP, ADD BG, …) and the result is written next to the original. Free and open
@@ -58,15 +59,21 @@ Windows에서 Alt+Shift는 입력 언어 전환 단축키와 겹쳐 기본값으
 * **도움말**(메뉴 막대 / 알림 영역 메뉴): 사용법 · OrbitDrop 웹사이트 · 문제 신고(GitHub 새 이슈, 앱 버전·OS 버전·아키텍처만 미리
   채우고 파일 이름·경로는 넣지 않음) · 로그 폴더 열기. 정보 창의 **진단 정보 복사**는 버전·빌드·OS·아키텍처·드래그 도우미 상태·엔진
   요약과 경로를 다시 가린 최근 로그 200줄을 클립보드에 복사합니다. 설정 › 일반에는 데이터 폴더 열기와 설정 초기화가 있습니다.
-* **개인정보**: 파일은 이 컴퓨터에서만 처리되고 어디로도 보내지 않습니다. 계정과 텔레메트리가 없습니다. OrbitDrop이 네트워크를 쓰는
-  곳은 **업데이트 확인** 하나뿐입니다: 실행 1분 뒤와 6시간마다 GitHub Releases(`github.com/keilvher1/orbitdrop`)에서 새 버전을
+* **개인정보**: 변환과 편집은 이 컴퓨터에서만 처리되고 파일을 어디로도 보내지 않습니다. 계정과 텔레메트리가 없습니다. OrbitDrop이
+  네트워크를 쓰는 곳은 **업데이트 확인**과, 직접 켜는 **Claude 분석** 두 가지입니다. Claude 분석은 처음에 꺼져 있고, 설정 ›
+  Claude 분석에서 켜고 본인의 API 키를 넣은 뒤 휠의 "Claude 분석"에 놓은 파일만 이 컴퓨터에서 Anthropic API로 바로 보냅니다
+  (이미지는 긴 변 1568픽셀 이하 사본, PDF는 파일 그대로, 파일 이름·보고서 언어·적어 둔 추가 요청 포함). API 키는 OS 보안
+  저장소로 암호화해 이 컴퓨터에만 두며 설정 파일·로그·작업 기록에 남기지 않습니다. 자세히: [개인정보 처리방침](https://keilvher1.github.io/orbitdrop/privacy/#claude-analysis).
+  업데이트 확인은 실행 1분 뒤와 6시간마다 GitHub Releases(`github.com/keilvher1/orbitdrop`)에서 새 버전을
   확인하고, 있으면 내려받아 종료할 때 설치합니다. GitHub에는 IP 주소 같은 일반 접속 정보와 이 운영체제용 업데이트 파일 요청만
   전달되며, 기기 식별자·파일·사용 기록은 보내지 않습니다. 설정 › 일반 › "업데이트 자동 확인", 환영 창, Windows 설치 프로그램의
   같은 상자(무인 설치는 `/NOUPDATECHECK`)로 끌 수 있습니다(정보 창의 "지금 확인"은 그대로 동작). 자세히: [packaging.md §9](docs/packaging.md#9-자동-업데이트). 충돌 보고서(crash dump)는 앱 데이터
   폴더의 `Crashpad`에만 저장되고 업로드하지 않습니다. 작업 기록(`history.json`)은 최근 파일 이름을 이 컴퓨터에만 보관하며 작업 창의
   "끝난 작업 지우기"로 지울 수 있습니다.
 
-> Privacy: files never leave your computer. The only network use is the update check against GitHub Releases (60 s after launch,
+> Privacy: conversions and edits never send your files anywhere. The network is used only by the update check and, if you turn it
+> on with your own Anthropic API key, Claude analysis, which sends just the files you drop on "ANALYZE" straight to the Anthropic API.
+> The update check asks GitHub Releases (60 s after launch,
 > then every 6 h; turn it off in Settings › General, the welcome window, or the Windows installer's privacy step / `/NOUPDATECHECK`). GitHub sees standard connection details such as your IP address and which update
 > file is requested — no device ID, files or usage data. Crash dumps stay on your computer.
 
