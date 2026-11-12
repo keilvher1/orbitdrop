@@ -58,6 +58,8 @@ private:
     IDWriteTextFormat* format(const std::wstring& family, float size, int weight, proto::Locale locale);
     void drawText(const std::wstring& text, const D2D1_RECT_F& box, float size, int weight, const proto::Color& color,
                   bool wrap, const std::wstring& family, proto::Locale locale, float minScale);
+    void drawCapsuleText(const std::string& utf8, const D2D1_RECT_F& box, float size, int weight, const proto::Color& color,
+                         proto::Locale locale, float minScale);
     ID2D1SolidColorBrush* brush(const proto::Color& c);
 
     ComPtr<ID2D1Factory> d2d_;

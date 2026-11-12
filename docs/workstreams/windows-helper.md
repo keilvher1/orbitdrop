@@ -64,6 +64,7 @@ native/windows/
                 with the caption strip, caption pill and the hit-shape mask
     selection   port of selection.ts menuKeyForPaths + payload classification
     wheel_layout  sector outlines (constant gaps, rounded corners) for the renderer
+    text_wrap   line breaks for the centre capsule at spaces only (keep-all, as on macOS)
     session     DragSessionController
     helper_core protocol dispatch, NDJSON line splitter
     defaults    reference configure (tokens, menus) for snapshots/tests
@@ -291,7 +292,12 @@ source's coordinate space, which is virtualised for DPI-unaware sources.
   - Fonts: Segoe UI Variable Text, else Segoe UI. Hangul comes through DirectWrite system fallback.
   - Icons come from Segoe Fluent Icons, else Segoe MDL2 Assets: compress U+E73F, metadata U+E8EC,
     edit U+E9E9, annotate U+E70F, background U+E8B9, crop U+E7A8, redact U+ED1A.
-  - Labels shrink to fit, then get an ellipsis. Reasons wrap in the capsule.
+  - Labels shrink to fit, then get an ellipsis. Reasons wrap in the capsule **at spaces only**
+    (`core/text_wrap`, like the macOS `CapsuleLayout.wrap` and CSS `word-break: keep-all`), shrinking
+    1 DIP at a time and re-wrapping; only at the smallest size may DirectWrite break inside a word that
+    is still too wide. DirectWrite's own wrapping breaks between any two Hangul syllables: the GitHub
+    runner GUI test (2026-11-12) showed "파일이 아님" as "파일이 아" / "님", and the helper's own snapshot
+    "먼저 내려받으세요" as "먼저 내려" / "받으세요" (fixed; `test_text_wrap.cpp`).
 * **Alpha mask** (`coords::applyHitShape`, portable and unit-tested on the exact code the
   renderer runs): after drawing, every disc pixel and every pixel of the visible caption pill
   gets alpha ≥ 1, and every other pixel gets alpha 0: the square's corners and the strip
@@ -406,7 +412,7 @@ source's coordinate space, which is virtualised for DPI-unaware sources.
 
 | Where | Command | What it does |
 |---|---|---|
-| any OS | `node scripts/build-native-win.mjs --core-tests [--parity] [--no-asan]` | host compiler, 99 tests incl. all golden sections and the design-token drift check (`--require-golden`), then the same tests under ASan + UBSan on macOS/Linux (UBSan findings are fatal); `--parity` = zod cross-check (needs `node_modules/tsx`) |
+| any OS | `node scripts/build-native-win.mjs --core-tests [--parity] [--no-asan]` | host compiler, 103 tests incl. all golden sections and the design-token drift check (`--require-golden`), then the same tests under ASan + UBSan on macOS/Linux (UBSan findings are fatal); `--parity` = zod cross-check (needs `node_modules/tsx`) |
 | macOS/Linux | `node scripts/build-native-win.mjs --cross` | MinGW-w64 build, warnings as errors, DLL import allowlist, stages a stripped exe + `BUILD_INFO.txt` (UNVERIFIED) |
 | Windows | `node scripts/build-native-win.mjs` | MSVC x64 `/MT` (preset `msvc-x64`), core tests, OLE glue tests, `stdio-smoke.mjs` (pipes, ready/ping/errors/EOF exit + 15 PNG snapshots incl. folder/cloud/virtual/non-file texts and the caption below/above, with capsule and caption assertions), stages exe + `BUILD_INFO.txt` |
 | CMake directly | `cmake --preset host-tests && cmake --build --preset host-tests && ctest --preset host-tests` | also `host-tests-asan`, `mingw-x64`, `msvc-x64`, `ninja-msvc-x64` |
@@ -438,7 +444,9 @@ source's coordinate space, which is virtualised for DPI-unaware sources.
 
 ### Evidence from this machine (macOS 26.6 arm64, Apple clang 21, MinGW-w64 14 / GCC 16.2)
 
-* `orbitdrop-core-tests --require-golden`: 99 tests, 0 failures (2026-10-23, with the
+* `orbitdrop-core-tests --require-golden`: 103 tests, 0 failures, also under ASan + UBSan
+  (2026-11-12, with the capsule's keep-all line breaking; MinGW `-Werror` build clean too).
+  Before: 99 tests (2026-10-23, with the
   secondary caption; 92 before it, 86 before the hardening pass). This includes every section
   of `tests/fixtures/wheel-golden.json`: derived 4, hitTest 2,185 (incl. 5 non-finite),
   placeWheel 260, isArmed 25, selection 42, fileCount 10, coords.win 302 (the reference

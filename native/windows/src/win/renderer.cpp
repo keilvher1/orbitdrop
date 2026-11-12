@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "core/jsmath.h"
+#include "core/text_wrap.h"
 #include "core/wheel_layout.h"
 
 namespace od::win {
@@ -192,6 +193,55 @@ void Renderer::drawText(const std::wstring& text, const D2D1_RECT_F& box, float 
     }
 }
 
+void Renderer::drawCapsuleText(const std::string& utf8, const D2D1_RECT_F& box, float size, int weight, const proto::Color& color,
+                               proto::Locale locale, float minScale) {
+    // Centre texts can be reasons of several words. Lines break at spaces only (text::wrapWords,
+    // like the macOS helper's CapsuleLayout): DirectWrite's own wrapping may break between any two
+    // Hangul syllables ("파일이 아" / "님"). The font shrinks 1 DIP at a time, re-wrapping at each
+    // size, until the lines fit; only at the smallest size may DirectWrite break inside a word that
+    // is still too wide, and text that is still too tall ends with an ellipsis.
+    const float w = std::max(1.0f, box.right - box.left);
+    const float h = std::max(1.0f, box.bottom - box.top);
+    const float minSize = std::max(1.0f, size * minScale);
+    ComPtr<IDWriteTextLayout> layout;
+    for (float s = size;; s = std::max(minSize, s - 1.0f)) {
+        IDWriteTextFormat* fmt = format(textFamily_, s, weight, locale);
+        if (fmt == nullptr) return;
+        const auto fits = [&](const std::string& line) {
+            const std::wstring wide = utf8ToWide(line);
+            ComPtr<IDWriteTextLayout> probe;
+            if (FAILED(dwrite_->CreateTextLayout(wide.c_str(), static_cast<UINT32>(wide.size()), fmt, 100000.0f, h,
+                                                 probe.put()))) {
+                return false;
+            }
+            probe->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+            DWRITE_TEXT_METRICS m{};
+            return SUCCEEDED(probe->GetMetrics(&m)) && m.widthIncludingTrailingWhitespace <= w;
+        };
+        const std::vector<std::string> lines = text::wrapWords(utf8, fits);
+        if (lines.empty()) return;
+        const std::wstring joined = utf8ToWide(text::joinLines(lines));
+        layout.reset();
+        if (FAILED(dwrite_->CreateTextLayout(joined.c_str(), static_cast<UINT32>(joined.size()), fmt, w, h, layout.put()))) return;
+        // The lines from wrapWords fit, so WRAP only acts on a single word wider than the box.
+        layout->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
+        DWRITE_TEXT_METRICS tm{};
+        const bool measured = SUCCEEDED(layout->GetMetrics(&tm));
+        if (measured && tm.lineCount == lines.size() && tm.widthIncludingTrailingWhitespace <= w && tm.height <= h) break;
+        if (s <= minSize) {
+            if (!measured || tm.height > h) {
+                DWRITE_TRIMMING trimming{DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0};
+                ComPtr<IDWriteInlineObject> ellipsis;
+                if (SUCCEEDED(dwrite_->CreateEllipsisTrimmingSign(fmt, ellipsis.put()))) layout->SetTrimming(&trimming, ellipsis.get());
+            }
+            break;
+        }
+    }
+    if (ID2D1SolidColorBrush* b = brush(color)) {
+        target_->DrawTextLayout(D2D1::Point2F(box.left, box.top), layout.get(), b, D2D1_DRAW_TEXT_OPTIONS_CLIP);
+    }
+}
+
 bool Renderer::render(const session::RenderModel& m, const coords::WheelFrame& f) {
     caption_.reset();  // a render that fails before drawing leaves no pill from the previous frame
     if (!d2d_ || !f.valid) return false;
@@ -343,8 +393,7 @@ bool Renderer::draw(const session::RenderModel& m, const coords::WheelFrame& f) 
             if (ID2D1SolidColorBrush* b = brush(t.wheelRing)) target_->DrawRoundedRectangle(rr, b, 1.5f);
         }
         const D2D1_RECT_F tb = D2D1::RectF(-cw / 2 + ch / 4, -ch / 2 + 2, cw / 2 - ch / 4, ch / 2 - 2);
-        drawText(utf8ToWide(m.capsuleText), tb, static_cast<float>(t.capsuleTextSize), m.tokens.labelWeight, t.capsuleText, true,
-                 textFamily_, m.locale, 0.55f);
+        drawCapsuleText(m.capsuleText, tb, static_cast<float>(t.capsuleTextSize), m.tokens.labelWeight, t.capsuleText, m.locale, 0.55f);
     }
 
     drawCaption(m, f);
