@@ -12,6 +12,11 @@ name: windows-gui
 on:
   push:
     branches: [ci/windows-gui]
+    # Documentation-only pushes (the run's own record) do not need a new run.
+    paths-ignore:
+      - 'docs/**'
+      - 'site/**'
+      - '**/*.md'
   workflow_dispatch:
     inputs:
       reuse_app_run:

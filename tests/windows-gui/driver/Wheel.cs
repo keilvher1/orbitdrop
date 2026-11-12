@@ -19,6 +19,7 @@ internal sealed class SharedGeometry
     public double CaptionHeight { get; private init; }
     public string DropHint { get; private init; } = "";
     public string NotAFile { get; private init; } = "";
+    public string WelcomeTitle { get; private init; } = "";
     public Dictionary<string, List<(string actionId, string label)>> Menus { get; } = new();
 
     public static SharedGeometry Load(string path)
@@ -39,6 +40,7 @@ internal sealed class SharedGeometry
             CaptionHeight = strip.GetProperty("height").GetDouble(),
             DropHint = strings.GetProperty("dropHint").GetString() ?? "",
             NotAFile = strings.GetProperty("unsupportedNonFile").GetString() ?? "",
+            WelcomeTitle = strings.TryGetProperty("welcomeTitle", out JsonElement welcome) ? welcome.GetString() ?? "" : "",
         };
         foreach (JsonProperty menu in root.GetProperty("menus").EnumerateObject())
         {

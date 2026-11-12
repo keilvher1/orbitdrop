@@ -51,7 +51,9 @@ internal static class Suite
     {
         public SharedGeometry G { get; init; } = null!;
         public MainLog AppLog { get; init; } = null!;
-        public ExplorerWindow Explorer { get; set; } = null!;
+        public ExplorerWindow? Explorer { get; set; }
+        /// <summary>The Explorer window of the drag cases (opened after the startup case).</summary>
+        public ExplorerWindow Ex => Explorer ?? throw new InvalidOperationException("the Explorer window is not open yet");
         public string Folder { get; init; } = "";
         public Native.POINT Activation { get; set; }
         public Native.RECT Work { get; set; }
@@ -148,6 +150,9 @@ internal static class Suite
             ctx.Hashes[name] = Sha256(target);
         }
         ShowFileExtensions();
+        // The first case looks at the fresh start itself (the first-run welcome window opens on an empty desktop).
+        ctx.ReadyLine = ready;
+        RunCase(results, ctx, "startup", "Fresh start of the installed app: welcome window (closed with Esc), helper ready, global drag available", Startup);
         ctx.Explorer = ExplorerWindow.Open(folder, work0, TimeSpan.FromSeconds(20));
         ctx.Explorer.Activate();
         environment["explorer"] = $"pid {ctx.Explorer.Pid}, integrity {Native.IntegrityOfProcess(ctx.Explorer.Pid)}, window {ctx.Explorer.Rect}";
@@ -157,8 +162,6 @@ internal static class Suite
         environment["activationPoint"] = ctx.Activation.ToString();
         Shots.Take("00-explorer", "Explorer on the test folder (before the cases)");
 
-        ctx.ReadyLine = ready;
-        RunCase(results, ctx, "startup", "Fresh start of the installed app: no window, helper ready, global drag available", Startup);
         RunCase(results, ctx, "pdf-to-jpg", "PDF → JPG: Explorer drag, Shift, drop on JPG (Shift held through the drop)", PdfToJpg);
         RunCase(results, ctx, "jpg-to-png", "JPG → PNG: 8-sector image menu, drop on PNG (top)", JpgToPng);
         RunCase(results, ctx, "escape", "Esc during the drag cancels: wheel gone, no output", Escape);
@@ -173,7 +176,7 @@ internal static class Suite
         environment["failedSendInputCalls"] = Input.FailedSends;
         try
         {
-            ctx.Explorer.Close();
+            ctx.Explorer?.Close();
         }
         catch
         {
@@ -195,7 +198,7 @@ internal static class Suite
         try
         {
             if (Wheel.Visible()) result.Add("no wheel on screen before the case", false, Wheel.Title());
-            ctx.Explorer.Activate();
+            ctx.Explorer?.Activate();
             body(ctx, result);
         }
         catch (Exception error)
@@ -223,7 +226,7 @@ internal static class Suite
     /// <summary>Mouse down on the file in Explorer, move past the drag threshold (Explorer starts its OLE drag) and carry it to the activation point.</summary>
     private static bool StartFileDrag(Context ctx, CaseResult c, string file)
     {
-        System.Windows.Rect? rect = ctx.Explorer.FindItem(file, TimeSpan.FromSeconds(10));
+        System.Windows.Rect? rect = ctx.Ex.FindItem(file, TimeSpan.FromSeconds(10));
         if (!c.Add($"'{file}' found in Explorer (UI Automation)", rect != null, rect?.ToString() ?? "not in the items view")) return false;
         Native.POINT p = ItemPoint(rect!.Value);
         Input.Glide(p.X, p.Y, 250);
@@ -341,7 +344,7 @@ internal static class Suite
         if (wheel == null) return;
         if (c.Id == "pdf-to-jpg")
         {
-            c.Add("Explorer keeps the focus while the wheel is shown", Native.GetForegroundWindow() == ctx.Explorer.Hwnd,
+            c.Add("Explorer keeps the focus while the wheel is shown", Native.GetForegroundWindow() == ctx.Ex.Hwnd,
                 $"foreground {Native.ClassName(Native.GetForegroundWindow())}");
         }
         if (releaseShiftFirst)
@@ -363,7 +366,7 @@ internal static class Suite
         SourceUnchanged(ctx, c, source);
         int drops = Drops(ctx, logStart);
         c.Add("main.log: exactly one 'drop accepted'", drops == 1, $"{drops}");
-        ctx.Explorer.FindItem(output, TimeSpan.FromSeconds(5));
+        ctx.Ex.FindItem(output, TimeSpan.FromSeconds(5));
         c.Shot($"{prefix}-3-result", $"{c.Id}: '{output}' next to '{source}' in Explorer");
     }
 
@@ -378,26 +381,54 @@ internal static class Suite
         Process[] helpers = Process.GetProcessesByName("OrbitDropHelper");
         c.Add("one OrbitDropHelper.exe process", helpers.Length == 1, $"{helpers.Length}");
         var appPids = new HashSet<uint>(apps.Select(p => (uint)p.Id));
-        List<string> windows = Native.TopLevelWindows()
+        List<IntPtr> AppWindows() => Native.TopLevelWindows()
             .Where(h => Native.IsWindowVisible(h) && appPids.Contains(Native.WindowPid(h)))
-            .Select(h =>
-            {
-                Native.GetWindowRect(h, out Native.RECT r);
-                return $"{Native.ClassName(h)} '{Native.WindowText(h)}' {r}";
-            })
-            .Where(text => !text.EndsWith(" 0x0]", StringComparison.Ordinal))
+            .Where(h => Native.GetWindowRect(h, out Native.RECT r) && r.Width > 0 && r.Height > 0)
             .ToList();
-        c.Add("no OrbitDrop window on screen after the start (tray app)", windows.Count == 0, windows.Count == 0 ? "none" : string.Join("; ", windows));
+        string Describe(IEnumerable<IntPtr> handles) => string.Join("; ", handles.Select(h =>
+        {
+            Native.GetWindowRect(h, out Native.RECT r);
+            return $"{Native.ClassName(h)} '{Native.WindowText(h)}' {r}";
+        }));
+        // A first run (no settings file yet) shows the welcome window until it is closed once; nothing else.
+        IntPtr welcome = IntPtr.Zero;
+        var watch = Stopwatch.StartNew();
+        while (welcome == IntPtr.Zero && watch.Elapsed < TimeSpan.FromSeconds(15))
+        {
+            welcome = AppWindows().FirstOrDefault(h => Native.WindowText(h) == ctx.G.WelcomeTitle);
+            if (welcome == IntPtr.Zero) Thread.Sleep(250);
+        }
+        List<IntPtr> others = AppWindows().Where(h => h != welcome).ToList();
+        c.Add($"first run: the welcome window '{ctx.G.WelcomeTitle}' opens", welcome != IntPtr.Zero,
+            welcome == IntPtr.Zero ? $"not within 15 s; windows: {Describe(AppWindows())}" : Describe(new[] { welcome }));
+        c.Add("no other OrbitDrop window on screen (tray app)", others.Count == 0, others.Count == 0 ? "none" : Describe(others));
+        if (welcome != IntPtr.Zero)
+        {
+            c.Shot("1-welcome", "startup: first-run welcome window");
+            // Close it as a user would: bring it to the front with a click on its title bar, then Esc.
+            Native.SetForegroundWindow(welcome);
+            Native.GetWindowRect(welcome, out Native.RECT wr);
+            Input.Click((wr.Left + wr.Right) / 2, wr.Top + 14);
+            Thread.Sleep(400);
+            Input.Tap(Native.VK_ESCAPE);
+            var closing = Stopwatch.StartNew();
+            while (Native.IsWindow(welcome) && Native.IsWindowVisible(welcome) && closing.Elapsed < TimeSpan.FromSeconds(5)) Thread.Sleep(100);
+            bool closed = !Native.IsWindow(welcome) || !Native.IsWindowVisible(welcome);
+            c.Add("Esc closes the welcome window", closed, $"{closing.ElapsedMilliseconds} ms");
+            Thread.Sleep(1500);
+            List<IntPtr> after = AppWindows();
+            c.Add("no OrbitDrop window left on screen", after.Count == 0, after.Count == 0 ? "none" : Describe(after));
+        }
         if (helpers.Length > 0)
         {
             string helperLevel = Native.IntegrityOfProcess((uint)helpers[0].Id);
-            string explorerLevel = Native.IntegrityOfProcess(ctx.Explorer.Pid);
+            string explorerLevel = Native.IntegrityOfProcess(Native.WindowPid(Native.GetShellWindow()));
             c.Add("the helper runs at Explorer's integrity level (no UIPI block)", helperLevel == explorerLevel, $"helper {helperLevel}, Explorer {explorerLevel}");
         }
         IntPtr wheel = Wheel.FindWindow();
         c.Add("the wheel window exists, hidden, owned by the helper", wheel != IntPtr.Zero && !Native.IsWindowVisible(wheel) && helpers.Any(p => (uint)p.Id == Native.WindowPid(wheel)),
             wheel == IntPtr.Zero ? "no OrbitDropWheelWindow" : $"ex-style 0x{Native.GetWindowLongPtr(wheel, Native.GWL_EXSTYLE).ToInt64():X}");
-        c.Shot("1-desktop", "startup: OrbitDrop running (tray only), Explorer on the test folder");
+        c.Shot("2-desktop", "startup: OrbitDrop running (tray only)");
     }
 
     private static void PdfToJpg(Context ctx, CaseResult c) =>
@@ -447,7 +478,7 @@ internal static class Suite
 
         // A transparent corner of the wheel's window (outside the disc, inside the window square),
         // over empty space in the source folder's own view: Explorer gets the drop there and does nothing.
-        var items = ctx.Explorer.Items().Select(i => i.rect).ToList();
+        var items = ctx.Ex.Items().Select(i => i.rect).ToList();
         Native.POINT? spot = null;
         foreach ((int dx, int dy) in new[] { (-1, 1), (1, 1), (-1, -1), (1, -1) })
         {
@@ -465,7 +496,7 @@ internal static class Suite
         Input.Glide(corner.X, corner.Y, 300, 6);
         Thread.Sleep(400);
         IntPtr under = Native.GetAncestor(Native.WindowFromPoint(corner), Native.GA_ROOT);
-        c.Add("the corner is click-through (WindowFromPoint → Explorer, not the wheel)", under == ctx.Explorer.Hwnd,
+        c.Add("the corner is click-through (WindowFromPoint → Explorer, not the wheel)", under == ctx.Ex.Hwnd,
             $"{Native.ClassName(under)} '{Native.WindowText(under)}'");
         IntPtr onDisc = Native.GetAncestor(Native.WindowFromPoint(wheel.SectorCenter(1, 4)), Native.GA_ROOT);
         c.Add("the disc itself is the wheel's (WindowFromPoint on a sector)", onDisc == wheel.Hwnd, Native.ClassName(onDisc));
@@ -629,7 +660,7 @@ internal static class Suite
         List<string> drops = ctx.AppLog.Since(logStart, "drop accepted");
         var sessions = drops.Select(l => MainLog.Field(l, "sessionId")).Distinct().ToList();
         c.Add("main.log: two 'drop accepted' from two sessions", drops.Count == 2 && sessions.Count == 2, $"{drops.Count} drops, sessions {string.Join(", ", sessions)}");
-        ctx.Explorer.FindItem("rapid-a.jpg", TimeSpan.FromSeconds(5));
+        ctx.Ex.FindItem("rapid-a.jpg", TimeSpan.FromSeconds(5));
         c.Shot("rapid-drops-3-result", "rapid-drops: rapid-a.jpg and rapid-b.jpg in Explorer");
     }
 

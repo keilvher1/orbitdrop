@@ -4,15 +4,17 @@
 //
 //   node --import tsx tests/windows-gui/geometry.mjs <out.json>
 import { readFileSync, writeFileSync } from 'node:fs';
-import { ACTIONS, DEFAULT_SETTINGS, DEFAULT_WHEEL_GEOMETRY, baseMenuOrder } from '../../packages/contracts/src/index.ts';
+import { ACTIONS, DEFAULT_WHEEL_GEOMETRY, baseMenuOrder, defaultSettingsFor } from '../../packages/contracts/src/index.ts';
 
+// A first run on Windows starts from these settings (main: defaultSettingsFor(process.platform)).
+const DEFAULT_SETTINGS = defaultSettingsFor('win32');
 const locale = DEFAULT_SETTINGS.locale;
 const menu = (key, mode) => baseMenuOrder(key, mode).map((actionId) => ({ actionId, label: ACTIONS[actionId].wheelLabel[locale] }));
 // The centre texts main sends in `configure.strings` (the helper also puts the current one in the wheel window's title).
 const messages = JSON.parse(readFileSync(new URL(`../../apps/desktop/src/shared/locales/${locale}/main.json`, import.meta.url), 'utf8'));
 
 const data = {
-  source: 'packages/contracts (DEFAULT_WHEEL_GEOMETRY, DEFAULT_SETTINGS, baseMenuOrder)',
+  source: "packages/contracts (DEFAULT_WHEEL_GEOMETRY, defaultSettingsFor('win32'), baseMenuOrder)",
   locale,
   // What main sends in `configure` for default settings (apps/desktop/src/main/helper/configure.ts).
   geometry: { ...DEFAULT_WHEEL_GEOMETRY, diameter: DEFAULT_SETTINGS.globalDrag.wheelDiameter },
@@ -26,6 +28,8 @@ const data = {
   strings: {
     dropHint: messages['helper.dropHint'],
     unsupportedNonFile: messages['helper.unsupportedNonFile'],
+    // Title of the first-run welcome window (main: windowTitle → 'window.welcome').
+    welcomeTitle: messages['window.welcome'],
   },
 };
 
