@@ -222,7 +222,7 @@
       <li class="card"><h3>업로드 없음</h3><p>파일 내용과 이름을 어디에도 보내지 않습니다. 인터넷에 연결되어 있지 않아도 모든 변환과 편집이 됩니다.</p></li>
       <li class="card"><h3>계정 없음</h3><p>가입도 로그인도 없습니다.</p></li>
       <li class="card"><h3>원격 분석 없음</h3><p>사용 통계나 충돌 보고서를 보내지 않습니다. 설정, 작업 기록, 로그는 내 컴퓨터에만 저장됩니다.</p></li>
-      <li class="card"><h3>업데이트 확인만 온라인</h3><p>네트워크를 쓰는 곳은 선택 사항인 업데이트 확인 하나뿐입니다. 이때 GitHub에 앱 버전을 보냅니다.</p></li>
+      <li class="card"><h3>업데이트 확인만 온라인</h3><p>네트워크를 쓰는 곳은 선택 사항인 업데이트 확인 하나뿐입니다. 이때 GitHub은 앱 버전과 IP 주소 같은 일반적인 접속 정보를 받습니다.</p></li>
     </ul>
     <a class="more-link" href="privacy/">개인정보 처리방침 전문 보기</a>
   </div>
@@ -240,16 +240,16 @@
         <ul>
           <li>macOS 14 Sonoma 이상</li>
           <li>Apple silicon(arm64)용과 Intel(x64)용 설치 파일이 따로 있습니다.</li>
-          <li>macOS 14와 macOS 26 가상 머신(Apple silicon)의 실제 Finder에서 드래그부터 변환·편집까지 확인했습니다.</li>
-          <li>Intel용은 Apple silicon Mac의 Rosetta 2에서만 확인했고, Intel Mac에서는 아직 확인하지 않았습니다.</li>
+          <li>macOS 14와 macOS 26 가상 머신(Apple silicon)의 실제 Finder에서 드래그부터 변환·편집까지 확인했습니다. 실물 Mac에서 사람이 확인한 기록은 아직 없습니다.</li>
+          <li>Intel용은 Apple silicon의 Rosetta 2에서만 확인했고, Intel Mac에서는 아직 확인하지 않았습니다.</li>
         </ul>
       </div>
       <div class="card">
         <div class="title-row"><h3>Windows</h3><span class="badge badge-beta">베타</span></div>
         <ul>
           <li>Windows 11 x64</li>
-          <li>현재 사용자용으로 설치되며 관리자 권한이 필요 없습니다.</li>
-          <li>실제 Windows PC에서는 아직 확인하지 않았습니다. <a href="#faq-windows">왜 베타인가요?</a></li>
+          <li>현재 사용자용으로 설치하도록 만들어져 관리자 권한을 요구하지 않습니다.</li>
+          <li>아직 실제 Windows PC에서 실행해 보지 않았습니다. 설치 프로그램도 전역 드래그도 확인 전입니다. <a href="#faq-windows">왜 베타인가요?</a></li>
           <li>Windows on ARM과 Linux는 지원하지 않습니다.</li>
         </ul>
       </div>
@@ -296,7 +296,7 @@
     <p class="dl-which"><strong>Apple silicon인지 Intel인지 모르겠다면</strong> Apple 메뉴 › 이 Mac에 관하여를 여세요. ‘칩’ 항목에 Apple M1 같은 이름이 있으면 Apple silicon, ‘프로세서’ 항목에 Intel이 있으면 Intel입니다.</p>
     <div class="verify card">
       <h3>내려받은 파일 확인하기 (SHA-256)</h3>
-      <p>파일이 중간에 바뀌지 않았는지 확인하려면 아래 명령의 결과를 릴리스의 <code>SHA256SUMS.txt</code>에서 같은 파일 이름 줄의 값과 비교하세요. 두 값이 같아야 합니다.</p>
+      <p>릴리스에 <code>SHA256SUMS.txt</code>가 있으면, 아래 명령으로 계산한 값을 그 파일에서 같은 파일 이름 줄의 값과 비교해 파일이 중간에 바뀌지 않았는지 확인할 수 있습니다. 두 값이 같아야 합니다.</p>
       <div class="verify-steps">
         <div>
           <h4>macOS — 터미널</h4>
@@ -307,7 +307,7 @@
           <pre><code>Get-FileHash "$env:USERPROFILE\Downloads\OrbitDrop-*-setup.exe" -Algorithm SHA256</code></pre>
         </div>
       </div>
-      <p data-role="sums"><code>SHA256SUMS.txt</code>는 <a href="https://github.com/keilvher1/orbitdrop/releases">GitHub Releases</a>의 각 릴리스에 함께 올라옵니다.</p>
+      <p data-role="sums">릴리스에 <code>SHA256SUMS.txt</code>가 있으면 여기에 링크가 나타납니다. <a href="https://github.com/keilvher1/orbitdrop/releases">GitHub Releases</a>에서도 볼 수 있습니다.</p>
     </div>
   </div>
 </section>
@@ -334,8 +334,8 @@
       <details id="faq-first-launch">
         <summary>처음 실행하면 어떻게 되나요?</summary>
         <div class="answer">
-          <p>macOS에서는 DMG를 열어 OrbitDrop을 응용 프로그램 폴더로 끌어 놓은 뒤 실행합니다. Windows에서는 설치 프로그램을 실행하면 현재 사용자용으로 설치되고(기본 위치 <code>%LOCALAPPDATA%\Programs\OrbitDrop</code>), 관리자 권한을 묻지 않습니다.</p>
-          <p>실행해도 창은 열리지 않습니다. 메뉴 막대(Windows는 작업 표시줄의 알림 영역)에 OrbitDrop 아이콘이 나타나면 준비된 것입니다. 바로 파일을 끌며 <kbd>Shift</kbd>를 눌러 보세요. 설정은 아이콘 메뉴의 <strong>설정…</strong>에 있고, ‘로그인 시 실행’은 처음에 꺼져 있습니다.</p>
+          <p>macOS에서는 DMG를 열어 OrbitDrop을 응용 프로그램 폴더로 끌어 놓은 뒤 실행합니다. Windows 설치 프로그램은 현재 사용자용으로 설치하도록(기본 위치 <code>%LOCALAPPDATA%\Programs\OrbitDrop</code>) 만들어져 관리자 권한을 묻지 않습니다. 다만 Windows에서는 아직 실행해 보지 않았습니다(베타).</p>
+          <p>실행해도 창은 열리지 않습니다. 메뉴 막대(Windows는 작업 표시줄의 알림 영역)에 OrbitDrop 아이콘이 나타나면 준비된 것입니다. 바로 파일을 끌며 <kbd>Shift</kbd>를 눌러 보세요. 설정은 아이콘 메뉴의 <strong>설정…</strong>에 있고, ‘로그인할 때 OrbitDrop 실행’은 처음에 꺼져 있습니다.</p>
           <p>Apple silicon Mac에서 Intel용을 실행하면 Rosetta 2가 번역하느라 첫 실행이 오래 걸리고(가상 머신에서 약 1분 40초), Apple silicon용을 설치하라는 알림이 뜹니다.</p>
         </div>
       </details>
@@ -353,11 +353,11 @@
           <ol>
             <li>메뉴 막대 아이콘에서 <strong>종료</strong>를 고릅니다.</li>
             <li>응용 프로그램 폴더의 OrbitDrop을 휴지통으로 옮깁니다.</li>
-            <li>‘로그인 시 실행’을 켰다면 시스템 설정 › 일반 › 로그인 항목에서도 지웁니다. 손쉬운 사용이나 입력 모니터링 목록에 직접 넣었다면 시스템 설정 › 개인정보 보호 및 보안에서 지웁니다.</li>
+            <li>‘로그인할 때 OrbitDrop 실행’을 켰다면 시스템 설정 › 일반 › 로그인 항목에서도 지웁니다. 손쉬운 사용이나 입력 모니터링 목록에 직접 넣었다면 시스템 설정 › 개인정보 보호 및 보안에서 지웁니다.</li>
           </ol>
           <p>설정(<code>settings.json</code>), 작업 기록(<code>history.json</code>), 로그(<code>logs/main.log</code>), 캐시는 앱을 지워도 남습니다. 필요하면 직접 지우세요: <code>~/Library/Application Support/OrbitDrop</code>, <code>~/Library/Preferences/io.github.keilvher1.orbitdrop.plist</code></p>
           <h3>Windows</h3>
-          <p>설정 › 앱 › 설치된 앱 › OrbitDrop › 제거(또는 설치 폴더의 <code>Uninstall OrbitDrop.exe</code>). 설치 폴더, 바로 가기, 제거 항목, 로그인 시 실행 항목이 지워집니다.</p>
+          <p>설정 › 앱 › 설치된 앱 › OrbitDrop › 제거(또는 설치 폴더의 <code>Uninstall OrbitDrop.exe</code>). 제거 프로그램은 설치 폴더, 바로 가기, 제거 항목, 로그인할 때 실행하는 시작 항목을 지웁니다.</p>
           <p>사용자 데이터 <code>%APPDATA%\OrbitDrop</code>(설정, 작업 기록, 로그, 캐시)은 남습니다. 함께 지우려면 그 폴더를 직접 지우거나 다음 명령으로 제거하세요(기본 설치 위치 기준).</p>
           <pre><code>"%LOCALAPPDATA%\Programs\OrbitDrop\Uninstall OrbitDrop.exe" --delete-app-data</code></pre>
           <p>변환·편집 결과 파일은 원본 옆에 저장되므로 앱을 지워도 그대로 남습니다.</p>
@@ -366,7 +366,7 @@
       <details id="faq-windows">
         <summary>Windows 판은 왜 베타인가요?</summary>
         <div class="answer">
-          <p>Windows에서 탐색기 파일을 끌며 휠을 띄우는 전역 드래그를 아직 실제 Windows PC에서 확인하지 못했기 때문입니다. 코드와 설치 프로그램은 준비되어 있지만, Windows용 드래그 도우미는 지금까지 교차 컴파일과 자동 테스트로만 확인했습니다. macOS 판은 macOS 14와 macOS 26 가상 머신의 실제 Finder에서 드래그부터 변환·편집까지 확인했습니다.</p>
+          <p>Windows 판은 아직 실제 Windows에서 실행해 보지 않았기 때문입니다. 설치 프로그램 설정과 Windows용 드래그 도우미 코드는 있지만, 도우미는 macOS에서 교차 컴파일해 공통 부분만 자동 테스트했고, 설치 프로그램은 Windows에서 아직 만들어 보지 않았습니다. 그래서 탐색기에서 파일을 끌며 휠을 띄우는 전역 드래그도 실제 PC에서 확인하지 못했습니다. macOS 판은 macOS 14와 macOS 26 가상 머신의 실제 Finder에서 드래그부터 변환·편집까지 확인했습니다.</p>
           <ul>
             <li>OrbitDrop과 탐색기 중 한쪽만 관리자 권한으로 실행하면 드래그를 받을 수 없습니다.</li>
             <li>HEIC 변환은 Windows에서 지원하지 않습니다.</li>

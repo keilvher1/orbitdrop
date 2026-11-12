@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://api.github.com; base-uri 'none'; form-action 'none'">
 <title>OrbitDrop — drag, press Shift, drop to convert</title>
-<meta name="description" content="Drag a file in Finder or File Explorer, press Shift and a radial wheel appears next to the pointer. Drop the file on a format and the result is saved next to the original. Free, open source (MIT) and fully local.">
+<meta name="description" content="Drag a file in Finder or File Explorer, press Shift and a radial wheel appears next to the pointer. Drop the file on a format and the result is saved next to the original. Free, open source (MIT), and your files never leave your computer.">
 <link rel="canonical" href="https://keilvher1.github.io/orbitdrop/en/">
 <link rel="alternate" hreflang="ko" href="https://keilvher1.github.io/orbitdrop/">
 <link rel="alternate" hreflang="en" href="https://keilvher1.github.io/orbitdrop/en/">
@@ -23,7 +23,7 @@
 <meta property="og:locale" content="en_US">
 <meta property="og:locale:alternate" content="ko_KR">
 <meta property="og:title" content="OrbitDrop — drag, press Shift, drop to convert">
-<meta property="og:description" content="Press Shift while dragging a file and a radial wheel appears next to the pointer. Drop it on a format and the result appears next to the original. Free, open source, and everything stays on your computer.">
+<meta property="og:description" content="Press Shift while dragging a file and a radial wheel appears next to the pointer. Drop it on a format and the result appears next to the original. Free, open source, and your files stay on your computer.">
 <meta property="og:url" content="https://keilvher1.github.io/orbitdrop/en/">
 <meta property="og:image" content="https://keilvher1.github.io/orbitdrop/assets/og-en.png">
 <meta property="og:image:width" content="1200">
@@ -222,7 +222,7 @@
       <li class="card"><h3>No upload</h3><p>File contents and names are never sent anywhere. Every conversion and edit works without an internet connection.</p></li>
       <li class="card"><h3>No account</h3><p>Nothing to sign up for, nothing to sign in to.</p></li>
       <li class="card"><h3>No telemetry</h3><p>No usage statistics, no crash reports. Settings, job history and logs stay on your computer.</p></li>
-      <li class="card"><h3>Only the update check goes online</h3><p>The single network use is an optional update check, which sends the app version to GitHub.</p></li>
+      <li class="card"><h3>Only the update check goes online</h3><p>The single network use is an optional update check: GitHub receives the app version and normal connection data such as your IP address.</p></li>
     </ul>
     <a class="more-link" href="privacy/">Read the full privacy statement</a>
   </div>
@@ -240,7 +240,7 @@
         <ul>
           <li>macOS 14 Sonoma or later</li>
           <li>Separate installers for Apple silicon (arm64) and Intel (x64).</li>
-          <li>Checked from drag to result in the real Finder on macOS 14 and macOS 26 virtual machines (Apple silicon).</li>
+          <li>Checked from drag to result in the real Finder on macOS 14 and macOS 26 virtual machines (Apple silicon). No one has checked it on a physical Mac yet.</li>
           <li>The Intel build has only been checked under Rosetta 2 on Apple silicon, not yet on an Intel Mac.</li>
         </ul>
       </div>
@@ -248,8 +248,8 @@
         <div class="title-row"><h3>Windows</h3><span class="badge badge-beta">Beta</span></div>
         <ul>
           <li>Windows 11 x64</li>
-          <li>Installs for the current user; no administrator rights needed.</li>
-          <li>Not yet checked on a real Windows PC. <a href="#faq-windows">Why beta?</a></li>
+          <li>The installer is built to install for the current user, without administrator rights.</li>
+          <li>Not yet run on a real Windows PC: neither the installer nor the global drag has been checked. <a href="#faq-windows">Why beta?</a></li>
           <li>Windows on ARM and Linux are not supported.</li>
         </ul>
       </div>
@@ -296,7 +296,7 @@
     <p class="dl-which"><strong>Not sure which Mac you have?</strong> Open Apple menu › About This Mac. If “Chip” shows a name like Apple M1, choose Apple silicon; if “Processor” shows Intel, choose Intel.</p>
     <div class="verify card">
       <h3>Check the download (SHA-256)</h3>
-      <p>To make sure the file was not changed on the way, compare the output of the command below with the line for the same file name in the release’s <code>SHA256SUMS.txt</code>. The two values must match.</p>
+      <p>If the release includes <code>SHA256SUMS.txt</code>, you can make sure the file was not changed on the way: compare the output of the command below with the line for the same file name in that file. The two values must match.</p>
       <div class="verify-steps">
         <div>
           <h4>macOS — Terminal</h4>
@@ -307,7 +307,7 @@
           <pre><code>Get-FileHash "$env:USERPROFILE\Downloads\OrbitDrop-*-setup.exe" -Algorithm SHA256</code></pre>
         </div>
       </div>
-      <p data-role="sums">Every release on <a href="https://github.com/keilvher1/orbitdrop/releases">GitHub Releases</a> carries its <code>SHA256SUMS.txt</code>.</p>
+      <p data-role="sums">When a release includes <code>SHA256SUMS.txt</code>, a link to it appears here. You can also find it on <a href="https://github.com/keilvher1/orbitdrop/releases">GitHub Releases</a>.</p>
     </div>
   </div>
 </section>
@@ -334,8 +334,8 @@
       <details id="faq-first-launch">
         <summary>What happens on first launch?</summary>
         <div class="answer">
-          <p>On macOS, open the DMG, drag OrbitDrop to the Applications folder and launch it. On Windows, run the installer: it installs for the current user (by default in <code>%LOCALAPPDATA%\Programs\OrbitDrop</code>) without asking for administrator rights.</p>
-          <p>No window opens. When the OrbitDrop icon appears in the menu bar (the notification area of the taskbar on Windows), it is ready: drag a file and press <kbd>Shift</kbd>. Settings are under <strong>Settings…</strong> in the icon’s menu; “launch at login” is off at first.</p>
+          <p>On macOS, open the DMG, drag OrbitDrop to the Applications folder and launch it. On Windows, the installer is built to install for the current user (by default in <code>%LOCALAPPDATA%\Programs\OrbitDrop</code>) without asking for administrator rights; it has not been run on Windows yet (beta).</p>
+          <p>No window opens. When the OrbitDrop icon appears in the menu bar (the notification area of the taskbar on Windows), it is ready: drag a file and press <kbd>Shift</kbd>. Settings are under <strong>Settings…</strong> in the icon’s menu; “Open OrbitDrop at login” is off at first.</p>
           <p>The interface starts in Korean. To switch to English, open the icon’s menu and choose <strong>설정…</strong> (Settings) › <strong>일반</strong> (General) › <strong>언어</strong> (Language) › English.</p>
           <p>Running the Intel build on an Apple silicon Mac makes the first launch slow while Rosetta 2 translates it (about 1 minute 40 seconds in a virtual machine), and OrbitDrop then suggests installing the Apple silicon build.</p>
         </div>
@@ -354,11 +354,11 @@
           <ol>
             <li>Choose <strong>Quit</strong> from the menu-bar icon.</li>
             <li>Move OrbitDrop from the Applications folder to the Trash.</li>
-            <li>If you turned on “launch at login”, also remove it in System Settings › General › Login Items. If you added OrbitDrop to Accessibility or Input Monitoring yourself, remove it in System Settings › Privacy &amp; Security.</li>
+            <li>If you turned on “Open OrbitDrop at login”, also remove it in System Settings › General › Login Items. If you added OrbitDrop to Accessibility or Input Monitoring yourself, remove it in System Settings › Privacy &amp; Security.</li>
           </ol>
           <p>Settings (<code>settings.json</code>), job history (<code>history.json</code>), logs (<code>logs/main.log</code>) and caches stay after the app is removed. Delete them yourself if you like: <code>~/Library/Application Support/OrbitDrop</code> and <code>~/Library/Preferences/io.github.keilvher1.orbitdrop.plist</code>.</p>
           <h3>Windows</h3>
-          <p>Settings › Apps › Installed apps › OrbitDrop › Uninstall (or <code>Uninstall OrbitDrop.exe</code> in the install folder). This removes the install folder, the shortcuts, the uninstall entry and the launch-at-login entry.</p>
+          <p>Settings › Apps › Installed apps › OrbitDrop › Uninstall (or <code>Uninstall OrbitDrop.exe</code> in the install folder). The uninstaller removes the install folder, the shortcuts, the uninstall entry and the start-at-login entry.</p>
           <p>Your data in <code>%APPDATA%\OrbitDrop</code> (settings, job history, logs, caches) is kept. To remove it as well, delete that folder or uninstall with this command (default install location):</p>
           <pre><code>"%LOCALAPPDATA%\Programs\OrbitDrop\Uninstall OrbitDrop.exe" --delete-app-data</code></pre>
           <p>Converted and edited files are saved next to the originals, so they stay when you remove the app.</p>
@@ -367,7 +367,7 @@
       <details id="faq-windows">
         <summary>Why is the Windows version a beta?</summary>
         <div class="answer">
-          <p>Because the global drag — opening the wheel while you drag a file in File Explorer — has not been checked on a real Windows PC yet. The code and the installer are ready, but the Windows drag helper has so far only been checked with cross-compiled builds and automated tests. The macOS version was checked from drag to result in the real Finder on macOS 14 and macOS 26 virtual machines.</p>
+          <p>Because the Windows version has not been run on Windows yet. The installer configuration and the Windows drag helper exist, but the helper has only been cross-compiled on macOS, with automated tests for its shared parts, and the installer has not yet been built on Windows. So the global drag — opening the wheel while you drag a file in File Explorer — has not been checked on a real PC either. The macOS version was checked from drag to result in the real Finder on macOS 14 and macOS 26 virtual machines.</p>
           <ul>
             <li>If only one of OrbitDrop and File Explorer runs as administrator, drags between them are blocked.</li>
             <li>HEIC conversion is not supported on Windows.</li>
