@@ -56,6 +56,14 @@ const ORBIT_API_KEYS = [
   'onUpdateStateChanged',
   'checkForUpdates',
   'restartToUpdate',
+  'getWindowNotice',
+  'reportRendererError',
+  'copyDiagnostics',
+  'openLogFolder',
+  'openDataFolder',
+  'resetSettings',
+  'openLicense',
+  'restartHelper',
 ];
 
 test.describe.configure({ mode: 'serial' });
