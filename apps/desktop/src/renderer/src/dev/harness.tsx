@@ -10,7 +10,7 @@ import { createMockOrbit, scenarioFromQuery } from './mockOrbit';
  *   /dev/index.html                              → gallery of scenarios
  *   /dev/index.html?view=picker&menu=jpg&mode=tools
  *   /dev/index.html?view=editor&tool=crop        (crop, addBackground, compress, metadata, edit, annotate, redact, pdf)
- *   /dev/index.html?view=jobs | settings | dropzone | about
+ *   /dev/index.html?view=jobs | settings | dropzone | about   (&update=idle|checking|downloading|downloaded|upToDate|error|unsupported)
  * Common: lang=ko|en, platform=darwin|win32, helper=<HelperStatus state>,
  * rm / hc = system|on|off, latency=<ms>, shot=1 (no toasts, for screenshots).
  */
@@ -51,6 +51,8 @@ const GALLERY: readonly { readonly group: string; readonly links: readonly (read
       ['Settings (needs permission)', 'view=settings&helper=needsPermission'],
       ['Drop Zone', 'view=dropzone'],
       ['About', 'view=about'],
+      ['About (update downloaded)', 'view=about&update=downloaded'],
+      ['About (update: development build)', 'view=about&update=unsupported'],
     ],
   },
 ];
