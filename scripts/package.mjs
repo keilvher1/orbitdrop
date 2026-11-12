@@ -530,12 +530,16 @@ function inspectWin(result, appDir) {
 
 /**
  * Resources/app-update.yml (electron-updater's configuration, from electron-builder.yml `publish`)
- * and Resources/build-info.json (scripts/after-pack.cjs) must be in every package.
+ * and Resources/build-info.json (scripts/after-pack.cjs) must be in every package (a --dir app folder
+ * gets no app-update.yml: electron-builder writes it for installable targets only).
  */
 function inspectUpdateFiles(result, resources, a) {
   const ins = result.inspection;
   const updateConfig = join(resources, 'app-update.yml');
-  if (existsSync(updateConfig)) {
+  if (opts.dir) {
+    // electron-builder writes app-update.yml only for runs with dmg/zip (macOS) or NSIS (Windows) targets.
+    ins.updateConfig = existsSync(updateConfig) ? 'present (--dir build)' : 'not written for --dir builds (only with dmg/zip or NSIS targets)';
+  } else if (existsSync(updateConfig)) {
     const config = yaml().load(readFileSync(updateConfig, 'utf8')) ?? {};
     ins.updateConfig = { provider: config.provider, owner: config.owner, repo: config.repo, updaterCacheDirName: config.updaterCacheDirName, publisherName: config.publisherName ?? null };
     const wanted = builderYml.publish ?? {};

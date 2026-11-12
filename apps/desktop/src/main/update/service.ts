@@ -22,8 +22,15 @@ import type { UpdateSupport } from './support';
 
 export const FIRST_CHECK_DELAY_MS = 60_000;
 export const CHECK_INTERVAL_MS = 6 * 60 * 60_000;
-/** A check that has not finished after this long is given up (shown as a network problem). */
+/**
+ * A check that has not finished after this long is given up (shown as a network problem). Electron's
+ * `net` requests that electron-updater makes have no timeout of their own, so a stalled connection
+ * would otherwise hang the check forever; the stalled updater instance is dropped and the next
+ * check starts with a new one.
+ */
 export const CHECK_WATCHDOG_MS = 5 * 60_000;
+/** A download without any progress for this long is given up the same way. */
+export const DOWNLOAD_STALL_MS = 10 * 60_000;
 /** A manual check this soon after a successful one answers from the last result. */
 export const MANUAL_CHECK_MIN_INTERVAL_MS = 10_000;
 export const RESTART_POLL_MS = 1000;
@@ -51,13 +58,15 @@ export interface UpdaterDriver {
   quitAndInstall(): void;
   /** Windows: the NSIS installer stops a still-running app about a second after it starts, so OrbitDrop shuts down first. */
   readonly shutdownBeforeInstall: boolean;
+  /** Given up (stalled): stop reporting events; the service creates a new driver for the next check. */
+  dispose?(): void;
 }
 
 export type UpdaterDriverFactory = (events: UpdaterEvents) => Promise<UpdaterDriver>;
 
 /** What a restart right now would interrupt. */
 export interface WorkInProgress {
-  /** Jobs queued or running. */
+  /** Jobs queued or running, and files handed over that are still being validated or submitted (no job yet). */
   readonly jobs: number;
   /** Open editor and format-picker windows. */
   readonly windows: number;
@@ -105,6 +114,7 @@ export class UpdateService {
   private checkToken: symbol | null = null;
   private checkTimer: Timer | null = null;
   private watchdog: Timer | null = null;
+  private stallTimer: Timer | null = null;
   private restartPoll: ReturnType<typeof setInterval> | null = null;
   private restartFallback: Timer | null = null;
   private idleSince: number | null = null;
@@ -200,6 +210,7 @@ export class UpdateService {
     this.disposed = true;
     this.clearCheckTimer();
     this.clearWatchdog();
+    this.clearStallTimer();
     this.stopRestartPoll();
     this.unsubscribeSettings?.();
     this.unsubscribeSettings = null;
@@ -233,20 +244,27 @@ export class UpdateService {
     this.log.info('checking for an update', { origin });
     const token = Symbol('check');
     this.checkToken = token;
-    const run = this.performCheck(token);
-    this.inFlight = run;
+    // Settles when the check ends or when the watchdog gives up on it (a stalled request never ends).
+    let settle!: () => void;
+    const done = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    this.inFlight = done;
+    this.performCheck(token).then(settle, settle);
     this.watchdog = setTimeout(() => {
       this.watchdog = null;
       if (this.checkToken !== token) return;
       this.checkToken = null;
       this.inFlight = null;
       this.log.warn('update check did not finish; given up');
+      this.abandonDriver();
       this.lastCheckedAt = this.now();
       this.setPhase({ state: 'error', error: 'network' });
       this.scheduleNext();
+      settle();
     }, CHECK_WATCHDOG_MS);
     this.watchdog.unref?.();
-    return run;
+    return done;
   }
 
   private async performCheck(token: symbol): Promise<void> {
@@ -266,6 +284,19 @@ export class UpdateService {
         this.scheduleNext();
       }
     }
+  }
+
+  /**
+   * Drop the current driver (a stalled electron-updater instance keeps returning its pending check
+   * and could report it much later): it stops reporting, and the next check creates a new one.
+   */
+  private abandonDriver(): void {
+    const abandoned = this.driverPromise;
+    this.driverPromise = null;
+    abandoned?.then(
+      (driver) => driver.dispose?.(),
+      () => undefined,
+    );
   }
 
   private driver(): Promise<UpdaterDriver> {
@@ -289,6 +320,7 @@ export class UpdateService {
       this.lastCheckedAt = this.now();
       this.log.info('update available', { version });
       this.setPhase({ state: 'available', version });
+      this.armStallTimer();
     },
     notAvailable: () => {
       this.noUpdate();
@@ -296,6 +328,7 @@ export class UpdateService {
     progress: (percent) => {
       const phase = this.phase;
       if (phase.state !== 'available' && phase.state !== 'downloading') return;
+      this.armStallTimer(); // any progress counts, also within the same whole percent
       const rounded = Number.isFinite(percent) ? Math.min(100, Math.max(0, Math.floor(percent))) : 0;
       if (phase.state === 'downloading' && phase.percent === rounded) return;
       this.setPhase({ state: 'downloading', version: phase.version, percent: rounded });
@@ -304,6 +337,7 @@ export class UpdateService {
       if (this.phase.state === 'downloaded' && this.phase.version === version) return;
       this.log.info('update downloaded; installed when OrbitDrop quits', { version });
       this.clearCheckTimer();
+      this.clearStallTimer();
       this.setPhase({ state: 'downloaded', version, restartPending: false });
       if (!this.announced.has(version)) {
         this.announced.add(version);
@@ -340,6 +374,7 @@ export class UpdateService {
       return;
     }
     const kind = classifyUpdateError(error);
+    this.clearStallTimer();
     this.lastCheckedAt = this.now();
     if (kind === 'noRelease') {
       this.log.info('no release to update to', { detail: describeError(error) });
@@ -351,6 +386,26 @@ export class UpdateService {
     this.setPhase({ state: 'error', error: kind });
     // A failed download happens after its check finished: keep the schedule going.
     this.scheduleNext();
+  }
+
+  private armStallTimer(): void {
+    this.clearStallTimer();
+    this.stallTimer = setTimeout(() => {
+      this.stallTimer = null;
+      const state = this.phase.state;
+      if (state !== 'available' && state !== 'downloading') return;
+      this.log.warn('update download stalled; given up');
+      this.abandonDriver();
+      this.lastCheckedAt = this.now();
+      this.setPhase({ state: 'error', error: 'network' });
+      this.scheduleNext();
+    }, DOWNLOAD_STALL_MS);
+    this.stallTimer.unref?.();
+  }
+
+  private clearStallTimer(): void {
+    if (this.stallTimer) clearTimeout(this.stallTimer);
+    this.stallTimer = null;
   }
 
   /** The next automatic check, CHECK_INTERVAL_MS from now — unless one is running or already planned. */
@@ -442,7 +497,11 @@ export class UpdateService {
     this.log.error('the update could not be installed', { error: describeError(error) });
     if (this.shutDown) {
       // Windows: OrbitDrop already shut down for the installer — start this version again.
-      this.deps.relaunch();
+      try {
+        this.deps.relaunch();
+      } catch (relaunchError) {
+        this.log.error('could not start OrbitDrop again', { error: describeError(relaunchError) });
+      }
       return;
     }
     this.lastCheckedAt = this.now();

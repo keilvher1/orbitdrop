@@ -127,6 +127,8 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
   readonly updates: UpdateService;
   /** What the package was built from (Resources/build-info.json); null in development runs. */
   private readonly build: BuildSummary | null;
+  /** Files handed over (drop, Drop Zone, Open File, the OS) still being validated or submitted: no job yet. */
+  private intake = 0;
   private router: IpcRouter<WindowRecord> | null = null;
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
   /** Windows: re-reads the OS animation setting (no change event exists). */
@@ -226,7 +228,7 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
           spawn: (path) => this.spawnHelper(path),
           configure: () => this.helperConfigure(),
           enabled: () => this.settings.get().globalDrag.enabled,
-          onDrop: (drop) => this.handleDrop(drop),
+          onDrop: (drop) => this.tracked(() => this.handleDrop(drop)),
           onStatus: (status) => this.onHelperStatus(status),
           log: createLogger('helper'),
         });
@@ -235,7 +237,7 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
       resourcesPath: paths.resourcesPath,
       settings: this.settings,
       work: () => ({
-        jobs: this.jobs.list().filter((job) => !TERMINAL_JOB_STATES.has(job.state)).length,
+        jobs: this.jobs.list().filter((job) => !TERMINAL_JOB_STATES.has(job.state)).length + this.intake,
         windows: (this.windows?.list('editor').length ?? 0) + (this.windows?.list('picker').length ?? 0),
         drag: this.helper?.dragInProgress ?? false,
       }),
@@ -251,6 +253,16 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
       this.windows?.broadcast(IPC_CHANNELS.updateStateChanged, state);
       this.tray?.refresh();
     });
+  }
+
+  /** Counts `work` as intake while it runs (a restart to update waits for it; update/service.ts). */
+  private async tracked<T>(work: () => Promise<T>): Promise<T> {
+    this.intake += 1;
+    try {
+      return await work();
+    } finally {
+      this.intake -= 1;
+    }
   }
 
   /** JobManager's runner: the processor pool (an E2E script may act on the attempt first). */
@@ -434,7 +446,7 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
     const anchor = screen.getCursorScreenPoint();
     try {
       await this.capabilities.get(); // selections are built with the probed capabilities
-      const selection = await this.files.registerPaths(paths.slice(0, MAX_SELECTION_FILES), 'openDialog');
+      const selection = await this.tracked(() => this.files.registerPaths(paths.slice(0, MAX_SELECTION_FILES), 'openDialog'));
       if (this.quitting) return;
       this.windows?.openPicker(selection.selectionId, 'convert', anchor);
     } catch (error) {
@@ -512,7 +524,7 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
         const paths = await this.showOpenFiles(parent);
         return paths.length === 0 ? null : this.files.registerPaths(paths, 'openDialog');
       },
-      registerDroppedPaths: (paths) => this.files.registerPaths(paths, 'dropZone'),
+      registerDroppedPaths: (paths) => this.tracked(() => this.files.registerPaths(paths, 'dropZone')),
       selection: (selectionId) => {
         const selection = this.files.getSelection(selectionId);
         if (!selection) throw new OrbitError('INTERNAL', 'Unknown or expired selection');
@@ -628,7 +640,7 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
     try {
       const paths = await this.showOpenFiles(null);
       if (paths.length === 0) return;
-      const selection = await this.files.registerPaths(paths, 'openDialog');
+      const selection = await this.tracked(() => this.files.registerPaths(paths, 'openDialog'));
       this.windows?.openPicker(selection.selectionId, 'convert', anchor);
     } catch (error) {
       this.log.error('open file failed', { error: describeError(error) });

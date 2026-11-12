@@ -39,6 +39,8 @@ OrbitDrop은 GitHub 저장소 [keilvher1/orbitdrop](https://github.com/keilvher1
 
 1. `apps/desktop/package.json`의 `version`을 올린다(semver). 업데이트는 **더 높은 버전**만 받으므로 반드시 올라가야 한다.
    `0.2.0-beta.1` 같은 프리릴리스 버전은 GitHub에서 pre-release로 공개하며, 정식 버전 설치본은 프리릴리스를 받지 않는다.
+   프리릴리스 이름은 `-alpha.N`/`-beta.N`만 쓴다: 그런 설치본은 더 새 프리릴리스와 정식 버전으로 넘어가지만, 다른 이름(`-rc.N` 등)은
+   electron-updater가 별도 채널로 다뤄 같은 이름의 프리릴리스만 따라가고 정식 버전으로는 넘어가지 않는다.
 2. 변경 내용을 문서(PROGRESS.md 등)에 적고 커밋한다.
 3. 검사: `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test`, `node scripts/licenses.mjs --check`,
    그리고 Mac에서 Playwright E2E와 `electron-verify`(창이 열리므로 사람이 있는 데스크톱에서).
@@ -105,8 +107,9 @@ build report(`apps/desktop/release/build-report-darwin-*.json`)는 공증 ID를 
       정보 창에 버전과 커밋, 설정 › 일반의 "업데이트 자동 확인"
 - [ ] Windows 11: 설치·실행·제거(미서명이면 SmartScreen 경고가 정상), 정보 창
 - [ ] 릴리스 노트(초안의 자동 문구를 다듬는다), LGPL 소스 제공 방식([packaging.md](packaging.md#lgplmpl-소스-제공--결정-필요))
-- [ ] (선택) 업데이트 경로 시험: 초안은 업데이트에 보이지 않으므로, 큰 변경 전에는 `v0.2.0-rc.1`, `v0.2.0-rc.2`를 pre-release로 공개해
-      rc.1 설치본이 rc.2로 업데이트되는지 본다(정식 버전 설치본은 pre-release를 받지 않는다)
+- [ ] (선택) 업데이트 경로 시험: 초안은 업데이트에 보이지 않으므로, 큰 변경 전에는 `v0.2.0-beta.1`, `v0.2.0-beta.2`를 pre-release로
+      공개해 beta.1 설치본이 beta.2로 업데이트되는지 본다(정식 버전 설치본은 pre-release를 받지 않고, beta 설치본은 나중에 정식 `v0.2.0`도
+      받는다). `-rc`는 쓰지 않는다: rc 설치본은 rc 채널에 남는다
 
 ## 6. 공개
 

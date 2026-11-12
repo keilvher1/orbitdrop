@@ -1,6 +1,8 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHttpError } from 'builder-util-runtime';
+import { GitHubProvider } from 'electron-updater/out/providers/GitHubProvider';
 import { describe, expect, it } from 'vitest';
 import { buildSummary, parseBuildInfo, readBuildInfo, type BuildInfo } from '../../src/main/update/build-info';
 import { classifyUpdateError } from '../../src/main/update/errors';
@@ -125,6 +127,46 @@ describe('update error classification', () => {
     expect(classifyUpdateError(Object.assign(new Error('HttpError: 404 Not Found'), { statusCode: 404 }))).toBe('failed');
     expect(classifyUpdateError(coded('sha512 checksum mismatch', 'ERR_CHECKSUM_MISMATCH'))).toBe('failed');
     expect(classifyUpdateError('weird')).toBe('failed');
+  });
+
+  /** The real GitHub provider of electron-updater, with `releases/latest` answering 404 (only prereleases/drafts exist). */
+  async function providerFailure(releaseNotes: string, latest: () => never): Promise<unknown> {
+    const feed = `<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom"><entry><id>tag:github.com,2008:Repository/1/v0.2.0-beta.1</id><link rel="alternate" type="text/html" href="https://github.com/keilvher1/orbitdrop/releases/tag/v0.2.0-beta.1"/><title>OrbitDrop 0.2.0-beta.1</title><content type="html">${releaseNotes}</content></entry></feed>`;
+    const executor = {
+      request: async (options: { path?: string }) => {
+        if (options.path?.endsWith('.atom')) return feed;
+        if (options.path?.endsWith('/releases/latest')) latest();
+        throw new Error(`unexpected request ${options.path}`);
+      },
+    };
+    const updater = { allowPrerelease: false, channel: null, fullChangelog: false, currentVersion: { raw: '0.1.0' } };
+    const provider = new GitHubProvider({ provider: 'github', owner: 'keilvher1', repo: 'orbitdrop' }, updater as never, { executor: executor as never, platform: 'darwin', isUseMultipleRangeRequest: false });
+    return provider.getLatestVersion().then(
+      () => {
+        throw new Error('expected the provider to fail');
+      },
+      (error: unknown) => error,
+    );
+  }
+
+  it('only prereleases on GitHub (releases/latest 404, as the real provider wraps it): "up to date", whatever the release notes say', async () => {
+    const notFound = (): never => {
+      throw createHttpError({ statusCode: 404, statusMessage: 'Not Found', headers: {} } as never);
+    };
+    for (const notes of ['Bug fixes', 'Fixed a timeout when the network changed', 'net::ERR_INTERNET_DISCONNECTED in the notes']) {
+      const error = await providerFailure(notes, notFound);
+      expect((error as { code?: string }).code).toBe('ERR_UPDATER_INVALID_RELEASE_FEED');
+      expect(classifyUpdateError(error), notes).toBe('noRelease');
+    }
+    // The same request failing for lack of a connection is "offline", not "up to date".
+    const offline = await providerFailure('Bug fixes', () => {
+      throw new Error('net::ERR_INTERNET_DISCONNECTED');
+    });
+    expect(classifyUpdateError(offline)).toBe('offline');
+    const server = await providerFailure('Bug fixes', () => {
+      throw createHttpError({ statusCode: 502, statusMessage: 'Bad Gateway', headers: {} } as never);
+    });
+    expect(classifyUpdateError(server)).not.toBe('noRelease');
   });
 
   it('nothing published for this OS yet is not an error', () => {

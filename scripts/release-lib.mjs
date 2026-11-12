@@ -163,12 +163,26 @@ export async function checkUpdateInfo(info, dir, { platform, version, archs = []
 
 // ── GitHub releases (gh CLI) ─────────────────────────────────────────────────
 
-/** The release for `tag`, drafts included (needs push access), or null. */
-export function findRelease({ tag, run, repo = REPO }) {
+/** Every release named after `tag`, drafts included (needs push access). */
+export function findReleases({ tag, run, repo = REPO }) {
   const out = must(run, 'gh', ['api', '-H', 'Accept: application/vnd.github+json', `repos/${repo}/releases?per_page=100`], { quiet: true });
   const releases = JSON.parse(out);
   if (!Array.isArray(releases)) throw new Error('unexpected answer from the GitHub API');
-  return releases.find((r) => r.tag_name === tag) ?? null;
+  return releases.filter((r) => r.tag_name === tag);
+}
+
+/**
+ * The one release for `tag`, or null. `gh release upload|download <tag>` find the release by tag
+ * themselves (a published one first), so the draft is only safe to write to when it is the ONLY
+ * release with that tag: more than one (e.g. two drafts created at the same moment, or a draft left
+ * next to the published release) is refused — a human removes the extra one on GitHub.
+ */
+export function findRelease({ tag, run, repo = REPO }) {
+  const releases = findReleases({ tag, run, repo });
+  if (releases.length > 1) {
+    throw new Error(`${releases.length} releases use the tag ${tag} (${releases.map((r) => (r.draft ? 'draft' : 'published')).join(', ')}): delete the extra one on GitHub, then run this again`);
+  }
+  return releases[0] ?? null;
 }
 
 /**

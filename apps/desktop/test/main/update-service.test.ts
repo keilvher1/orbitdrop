@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CHECK_INTERVAL_MS,
   CHECK_WATCHDOG_MS,
+  DOWNLOAD_STALL_MS,
   FIRST_CHECK_DELAY_MS,
   RESTART_FALLBACK_MS,
   RESTART_IDLE_MS,
@@ -17,6 +18,7 @@ import type { UpdateSupport } from '../../src/main/update/support';
 class FakeDriver implements UpdaterDriver {
   checks = 0;
   installs = 0;
+  disposed = false;
   private answer: { resolve(): void; reject(error: unknown): void } | null = null;
   installError: Error | null = null;
 
@@ -38,21 +40,26 @@ class FakeDriver implements UpdaterDriver {
     if (this.installError) throw this.installError;
   }
 
+  /** Like the real driver: a given-up driver reports nothing any more. */
+  dispose(): void {
+    this.disposed = true;
+  }
+
   /** The check found nothing newer. */
   upToDate(): void {
-    this.events.notAvailable();
+    if (!this.disposed) this.events.notAvailable();
     this.answer?.resolve();
   }
 
   /** The check found `version`; its download goes on after the check resolved. */
   found(version: string): void {
-    this.events.available(version);
+    if (!this.disposed) this.events.available(version);
     this.answer?.resolve();
   }
 
   /** electron-updater emits 'error' and rejects the check. */
   fail(error: unknown): void {
-    this.events.error(error);
+    if (!this.disposed) this.events.error(error);
     this.answer?.reject(error);
   }
 }
@@ -310,14 +317,46 @@ describe('UpdateService errors', () => {
     await expect(result).resolves.toMatchObject({ state: 'upToDate' });
   });
 
-  it('a check that never finishes is given up after 5 minutes', async () => {
+  it('a check that never finishes is given up after 5 minutes: the request settles, the next check gets a new updater', async () => {
     const h = setup();
-    void h.service.checkNow();
-    await vi.advanceTimersByTimeAsync(CHECK_WATCHDOG_MS);
-    expect(h.service.state()).toMatchObject({ state: 'error', error: 'network' });
-    void h.service.checkNow(); // a new check can start
+    let answered: UpdateState | null = null;
+    void h.service.checkNow().then((state) => (answered = state));
+    await vi.advanceTimersByTimeAsync(CHECK_WATCHDOG_MS - 1);
+    expect(answered).toBeNull();
+    await vi.advanceTimersByTimeAsync(1);
+    // The About button gets its answer (an IPC call never hangs on a stalled request).
+    expect(answered).toMatchObject({ state: 'error', error: 'network' });
+    const stalled = h.driver();
+    expect(stalled.disposed).toBe(true);
+
+    const next = h.service.checkNow();
     await vi.advanceTimersByTimeAsync(0);
-    expect(h.driver().checks).toBe(2);
+    expect(h.drivers).toHaveLength(2); // a stalled electron-updater keeps returning its pending check
+    stalled.found('9.9.9'); // a late answer of the given-up instance is ignored
+    expect(h.service.state().state).toBe('checking');
+    h.driver().upToDate();
+    await expect(next).resolves.toMatchObject({ state: 'upToDate' });
+  });
+
+  it('a download without progress for 10 minutes is given up; progress keeps it alive', async () => {
+    const h = setup();
+    await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS);
+    h.driver().found('0.2.0');
+    await vi.advanceTimersByTimeAsync(DOWNLOAD_STALL_MS - 1000);
+    h.driver().events.progress(10.2);
+    await vi.advanceTimersByTimeAsync(DOWNLOAD_STALL_MS - 1000);
+    h.driver().events.progress(10.4); // the same whole percent still counts as progress
+    await vi.advanceTimersByTimeAsync(DOWNLOAD_STALL_MS - 1000);
+    expect(h.service.state()).toMatchObject({ state: 'downloading', percent: 10 });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(h.service.state()).toMatchObject({ state: 'error', error: 'network' });
+    expect(h.drivers[0]!.disposed).toBe(true);
+    // Manual checks work again, with a new updater.
+    const retry = h.service.checkNow();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.drivers).toHaveLength(2);
+    h.driver().upToDate();
+    await expect(retry).resolves.toMatchObject({ state: 'upToDate' });
   });
 
   it('electron-updater that cannot be loaded is an error; the next check tries again', async () => {

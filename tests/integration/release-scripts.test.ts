@@ -255,6 +255,13 @@ describe('draft releases', () => {
 
     releases[0]!.draft = false;
     expect(() => ensureDraftRelease({ tag: 'v0.2.0-beta.1', title: 't', notes: 'n', run: fake.run, workDir })).toThrow(/already published/);
+
+    // gh looks the tag up itself: with two releases for one tag it could write to the published one.
+    releases.push({ tag_name: 'v0.2.0-beta.1', draft: true, assets: [] });
+    expect(() => ensureDraftRelease({ tag: 'v0.2.0-beta.1', title: 't', notes: 'n', run: fake.run, workDir })).toThrow(/2 releases use the tag v0\.2\.0-beta\.1 \(published, draft\)/);
+    releases[0]!.draft = true;
+    expect(() => ensureDraftRelease({ tag: 'v0.2.0-beta.1', title: 't', notes: 'n', run: fake.run, workDir })).toThrow(/2 releases use the tag/);
+    expect(fake.calls.some((c) => c.args[1] === 'upload')).toBe(false);
   });
 
   it('SHA256SUMS.txt covers every asset: GitHub digests, a download where none exists, uploads cross-checked', async () => {
