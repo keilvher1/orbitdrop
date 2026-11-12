@@ -6,16 +6,21 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { ACTIONS, DEFAULT_WHEEL_GEOMETRY, baseMenuOrder, defaultSettingsFor } from '../../packages/contracts/src/index.ts';
 
-// A first run on Windows starts from these settings (main: defaultSettingsFor(process.platform)).
+// A first run on Windows starts from these settings (main: firstRunSettings → defaultSettingsFor(process.platform)),
+// in the OS language: Korean → ko, anything else → en. The driver tells which one the app chose from its window titles.
 const DEFAULT_SETTINGS = defaultSettingsFor('win32');
-const locale = DEFAULT_SETTINGS.locale;
-const menu = (key, mode) => baseMenuOrder(key, mode).map((actionId) => ({ actionId, label: ACTIONS[actionId].wheelLabel[locale] }));
+const LOCALES = ['ko', 'en'];
+// Format labels (DOCX, JPG, …) are the same in both languages.
+const menu = (key, mode) => baseMenuOrder(key, mode).map((actionId) => ({ actionId, label: ACTIONS[actionId].wheelLabel.en }));
 // The centre texts main sends in `configure.strings` (the helper also puts the current one in the wheel window's title).
-const messages = JSON.parse(readFileSync(new URL(`../../apps/desktop/src/shared/locales/${locale}/main.json`, import.meta.url), 'utf8'));
+const messages = (locale) => JSON.parse(readFileSync(new URL(`../../apps/desktop/src/shared/locales/${locale}/main.json`, import.meta.url), 'utf8'));
+for (const id of [...baseMenuOrder('pdf', 'convert'), ...baseMenuOrder('image/jpeg', 'convert')]) {
+  if (ACTIONS[id].wheelLabel.ko !== ACTIONS[id].wheelLabel.en) throw new Error(`${id}: the wheel label differs between languages`);
+}
 
 const data = {
   source: "packages/contracts (DEFAULT_WHEEL_GEOMETRY, defaultSettingsFor('win32'), baseMenuOrder)",
-  locale,
+  locales: LOCALES,
   // What main sends in `configure` for default settings (apps/desktop/src/main/helper/configure.ts).
   geometry: { ...DEFAULT_WHEEL_GEOMETRY, diameter: DEFAULT_SETTINGS.globalDrag.wheelDiameter },
   modifiers: { convert: DEFAULT_SETTINGS.globalDrag.convertModifiers, tools: DEFAULT_SETTINGS.globalDrag.toolsModifiers },
@@ -25,12 +30,13 @@ const data = {
     pdf: menu('pdf', 'convert'),
     'image/jpeg': menu('image/jpeg', 'convert'),
   },
-  strings: {
-    dropHint: messages['helper.dropHint'],
-    unsupportedNonFile: messages['helper.unsupportedNonFile'],
-    // Title of the first-run welcome window (main: windowTitle → 'window.welcome').
-    welcomeTitle: messages['window.welcome'],
-  },
+  // Per language: centre texts, and the start of the first-run welcome window's title (main: windowTitle → 'window.welcome').
+  strings: Object.fromEntries(
+    LOCALES.map((locale) => {
+      const m = messages(locale);
+      return [locale, { dropHint: m['helper.dropHint'], unsupportedNonFile: m['helper.unsupportedNonFile'], welcomeTitle: m['window.welcome'] }];
+    }),
+  ),
 };
 
 const out = process.argv[2];

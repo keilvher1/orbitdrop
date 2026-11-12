@@ -174,6 +174,7 @@ internal static class Suite
         Shots.Take("99-final-explorer", "Explorer after all cases");
         environment["filesAtEnd"] = Directory.GetFiles(folder).Select(f => Path.GetFileName(f)).OrderBy(n => n, StringComparer.Ordinal).ToList();
         environment["failedSendInputCalls"] = Input.FailedSends;
+        environment["uiLanguage"] = g.Locale ?? "unknown";
         try
         {
             ctx.Explorer?.Close();
@@ -255,11 +256,11 @@ internal static class Suite
         string neutral = Wheel.Text();
         Log.Info($"  wheel text on open: '{neutral}'");
         Input.Glide(ctx.Activation.X + 4, ctx.Activation.Y + 3, 60, 1);
-        string text = Wheel.WaitText(t => t.Length > 0 && t != ctx.G.DropHint, TimeSpan.FromSeconds(2), out bool entered);
+        string text = Wheel.WaitText(t => t.Length > 0 && !ctx.G.IsDropHint(t), TimeSpan.FromSeconds(2), out bool entered);
         if (!entered)
         {
             Input.Glide(ctx.Activation.X, ctx.Activation.Y, 60, 1);
-            text = Wheel.WaitText(t => t.Length > 0 && t != ctx.G.DropHint, TimeSpan.FromSeconds(2), out entered);
+            text = Wheel.WaitText(t => t.Length > 0 && !ctx.G.IsDropHint(t), TimeSpan.FromSeconds(2), out entered);
         }
         c.Add($"the drag entered the wheel (centre text '{expectedText}')", text == expectedText, $"wheel text '{text}' (was '{neutral}')");
         c.Shot(shotName, $"{c.Id}: wheel open, centre '{text}'");
@@ -346,6 +347,11 @@ internal static class Suite
         {
             c.Add("Explorer keeps the focus while the wheel is shown", Native.GetForegroundWindow() == ctx.Ex.Hwnd,
                 $"foreground {Native.ClassName(Native.GetForegroundWindow())}");
+            // The helper names its window after configure.locale: the same language as the app's own windows.
+            string? wheelLocale = SharedGeometry.LocaleOfWheelTitle(Wheel.Title());
+            c.Add("the wheel uses the app's UI language", wheelLocale != null && (ctx.G.Locale == null || wheelLocale == ctx.G.Locale),
+                $"wheel '{Wheel.Title()}', app {ctx.G.Locale ?? "not seen yet"}");
+            ctx.G.Locale ??= wheelLocale;
         }
         if (releaseShiftFirst)
         {
@@ -395,11 +401,13 @@ internal static class Suite
         var watch = Stopwatch.StartNew();
         while (welcome == IntPtr.Zero && watch.Elapsed < TimeSpan.FromSeconds(15))
         {
-            welcome = AppWindows().FirstOrDefault(h => Native.WindowText(h) == ctx.G.WelcomeTitle);
+            welcome = AppWindows().FirstOrDefault(h => ctx.G.LocaleOfWelcomeTitle(Native.WindowText(h)) != null);
             if (welcome == IntPtr.Zero) Thread.Sleep(250);
         }
         List<IntPtr> others = AppWindows().Where(h => h != welcome).ToList();
-        c.Add($"first run: the welcome window '{ctx.G.WelcomeTitle}' opens", welcome != IntPtr.Zero,
+        // A first run takes the UI language from the OS (Korean → ko, anything else → en): the title tells which.
+        if (welcome != IntPtr.Zero) ctx.G.Locale = ctx.G.LocaleOfWelcomeTitle(Native.WindowText(welcome));
+        c.Add($"first run: the welcome window opens (UI language {ctx.G.Locale ?? "?"})", welcome != IntPtr.Zero,
             welcome == IntPtr.Zero ? $"not within 15 s; windows: {Describe(AppWindows())}" : Describe(new[] { welcome }));
         c.Add("no other OrbitDrop window on screen (tray app)", others.Count == 0, others.Count == 0 ? "none" : Describe(others));
         if (welcome != IntPtr.Zero)

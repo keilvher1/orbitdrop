@@ -149,6 +149,17 @@ jobs:
           node --import tsx tests/windows-gui/geometry.mjs 'C:\odgui\geometry.json'
           cp 'C:\odgui\geometry.json' 'C:\odgui\out\app\geometry.json'
 
+      # A first run takes OrbitDrop's UI language from the OS language list (Korean → ko, anything else
+      # → en). The runner is English; put Korean first, as on a Korean user's PC, so the cases run in the
+      # app's Korean UI (the OS display language stays English). The driver reports the language it saw.
+      - name: Korean first in the user's language list
+        shell: powershell
+        run: |
+          $list = New-WinUserLanguageList ko-KR
+          $list.Add('en-US')
+          Set-WinUserLanguageList -LanguageList $list -Force
+          Get-WinUserLanguageList | Format-Table LanguageTag, Autonym, InputMethodTips -AutoSize | Out-String -Width 200
+
       # Diagnostic: does a process started with Start-Process in one step survive into the next one?
       # (The first full run lost OrbitDrop right after its start step ended.) Its answer is printed
       # in the next step; the drag cases do not depend on it, because the driver starts OrbitDrop.

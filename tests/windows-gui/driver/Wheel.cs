@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 
@@ -17,9 +18,20 @@ internal sealed class SharedGeometry
     public double EdgePadding { get; private init; }
     public double CaptionGap { get; private init; }
     public double CaptionHeight { get; private init; }
-    public string DropHint { get; private init; } = "";
-    public string NotAFile { get; private init; } = "";
-    public string WelcomeTitle { get; private init; } = "";
+    /// <summary>Centre texts and the welcome window's title per UI language ("ko", "en").</summary>
+    public Dictionary<string, (string dropHint, string notAFile, string welcomeTitle)> Strings { get; } = new();
+    /// <summary>The UI language the app chose (a first run follows the OS language), once seen in a window title.</summary>
+    public string? Locale { get; set; }
+    private (string dropHint, string notAFile, string welcomeTitle) Current =>
+        Locale != null && Strings.TryGetValue(Locale, out var s) ? s : Strings.Values.First();
+    public string NotAFile => Current.notAFile;
+    public bool IsDropHint(string text) => Strings.Values.Any(s => s.dropHint == text);
+    /// <summary>The language of a welcome window title ("OrbitDrop 시작하기 — OrbitDrop"), or null.</summary>
+    public string? LocaleOfWelcomeTitle(string title) =>
+        Strings.Where(kv => kv.Value.welcomeTitle.Length > 0 && title.StartsWith(kv.Value.welcomeTitle, StringComparison.Ordinal)).Select(kv => kv.Key).FirstOrDefault();
+    /// <summary>The language of the helper's wheel title (its base name follows configure.locale), or null.</summary>
+    public static string? LocaleOfWheelTitle(string title) =>
+        title.StartsWith("OrbitDrop \uD720", StringComparison.Ordinal) ? "ko" : title.StartsWith("OrbitDrop wheel", StringComparison.Ordinal) ? "en" : null;
     public Dictionary<string, List<(string actionId, string label)>> Menus { get; } = new();
 
     public static SharedGeometry Load(string path)
@@ -38,10 +50,14 @@ internal sealed class SharedGeometry
             EdgePadding = g.GetProperty("edgePadding").GetDouble(),
             CaptionGap = strip.GetProperty("gap").GetDouble(),
             CaptionHeight = strip.GetProperty("height").GetDouble(),
-            DropHint = strings.GetProperty("dropHint").GetString() ?? "",
-            NotAFile = strings.GetProperty("unsupportedNonFile").GetString() ?? "",
-            WelcomeTitle = strings.TryGetProperty("welcomeTitle", out JsonElement welcome) ? welcome.GetString() ?? "" : "",
         };
+        foreach (JsonProperty locale in strings.EnumerateObject())
+        {
+            shared.Strings[locale.Name] = (
+                locale.Value.GetProperty("dropHint").GetString() ?? "",
+                locale.Value.GetProperty("unsupportedNonFile").GetString() ?? "",
+                locale.Value.GetProperty("welcomeTitle").GetString() ?? "");
+        }
         foreach (JsonProperty menu in root.GetProperty("menus").EnumerateObject())
         {
             var sectors = new List<(string, string)>();
