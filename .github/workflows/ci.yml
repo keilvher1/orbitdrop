@@ -98,8 +98,12 @@ jobs:
 
       # Ad-hoc signed, not notarized; artifacts are named *-unsigned.*. The smoke test runs the
       # app straight from each read-only mounted DMG (x64 through Rosetta 2 when available).
+      # The arm64 smoke test gates the job. The x64 one runs under Rosetta 2 inside GitHub's VM, which
+      # was not reliable for the full app (first run: the window took > 15 s; next: every child process
+      # got SIGTERM 76 s in), so it is tried twice and reported but does not fail the job; the x64
+      # package is still built, inspected and its native modules checked (docs/verification.md).
       - name: Package (unsigned) and smoke-test
-        run: node scripts/package.mjs mac --arch all --skip-build --skip-native --unsigned
+        run: node scripts/package.mjs mac --arch all --skip-build --skip-native --unsigned --rosetta-smoke best-effort
 
       - name: Upload packages
         if: always()
