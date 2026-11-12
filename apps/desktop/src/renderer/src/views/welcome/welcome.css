@@ -6,6 +6,10 @@
 
 .welcome-view {
   width: 480px;
+  /* Korean lines break at spaces, never between the syllables of a word ("남습니" / "다." on the Windows
+   * runner's first run); the in-app wheel capsule and both native helpers follow the same rule. */
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 .welcome-body {
