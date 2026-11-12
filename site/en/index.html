@@ -294,7 +294,7 @@
       </article>
     </div>
     <p class="dl-which"><strong>Not sure which Mac you have?</strong> Open Apple menu › About This Mac. If “Chip” shows a name like Apple M1, choose Apple silicon; if “Processor” shows Intel, choose Intel.</p>
-    <p class="dl-policy"><strong>Code signing</strong> Who signs the installers and how, the state of Windows signing and the list of signed files: see the <a href="code-signing-policy/">Code signing policy</a>.</p>
+    <p class="dl-policy"><strong>Code signing</strong> The macOS packages are signed with the developer’s Apple Developer ID and notarized by Apple. The Windows installers are being set up for signing through <a href="https://signpath.org">SignPath Foundation</a>, which provides free code signing for open source projects; the current release, 1.0.0, is not signed yet. Who signs what and how, and the list of signed files: see the <a href="code-signing-policy/">Code signing policy</a>.</p>
     <div class="verify card">
       <h3>Check the download (SHA-256)</h3>
       <p>If the release includes <code>SHA256SUMS.txt</code>, you can make sure the file was not changed on the way: compare the output of the command below with the line for the same file name in that file. The two values must match.</p>
