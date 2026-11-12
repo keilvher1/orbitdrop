@@ -128,7 +128,7 @@ function runProcess(command, args, env, timeoutMs) {
     const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
     child.stdout.on('data', (d) => (stdout += d));
     child.stderr.on('data', (d) => (stderr += d));
-    child.on('close', (code) => {
+    child.on('close', (code, signal) => {
       clearTimeout(timer);
       const line = stdout.split(/\r?\n/).find((l) => l.startsWith('CONVERT_SMOKE '));
       let result = null;
@@ -137,7 +137,8 @@ function runProcess(command, args, env, timeoutMs) {
       } catch {
         result = null;
       }
-      resolvePromise({ code, result, stderr: stderr.split(/\r?\n/).filter(Boolean).slice(-8) });
+      const tail = (text) => text.split(/\r?\n/).filter(Boolean).slice(-8);
+      resolvePromise({ code, signal, result, stderr: tail(stderr), stdout: tail(stdout.replace(/^CONVERT_SMOKE .*$/m, '')) });
     });
   });
 }
@@ -207,7 +208,12 @@ export async function runConvertSmoke(modes = ['node', 'utility', 'asar'], { tim
         throw new Error(`unknown mode ${mode}`);
       }
       const passed = outcome.code === 0 && outcome.result?.ok === true;
-      summary.modes[mode] = { passed, exitCode: outcome.code, ...(outcome.result ?? {}), ...(passed ? {} : { stderr: outcome.stderr }) };
+      summary.modes[mode] = {
+        passed,
+        exitCode: outcome.code,
+        ...(outcome.result ?? {}),
+        ...(passed ? {} : { signal: outcome.signal, stderr: outcome.stderr, stdout: outcome.stdout, resultOk: outcome.result?.ok ?? null }),
+      };
       summary.ok &&= passed;
     }
   } finally {
