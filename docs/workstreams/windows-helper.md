@@ -7,12 +7,14 @@ OLE drop target in one HWND), hit-testing, highlight, and accepting the drop as
 **Copy only**. It reports to Electron main over the NDJSON helper protocol v1
 (`packages/contracts/src/helper-protocol.ts`).
 
-**There was no Windows machine available.** Everything Windows-specific is written,
-compiled and linked (MinGW-w64, warnings as errors), but **nothing in `src/win/` has
-been run**. The portable core (protocol, JSON, geometry, coordinates, classification,
-state machine) is built and tested on macOS. MSVC builds, unit tests, a stdio smoke
-test and PNG snapshots on Windows are prepared in CI and in the build script; they
-have not been run yet.
+**There was no Windows machine available.** Everything Windows-specific was written and
+compiled and linked on macOS (MinGW-w64, warnings as errors); the portable core (protocol, JSON,
+geometry, coordinates, classification, state machine) is built and tested on macOS. Since
+2026-11-12 the MSVC build, the unit and OLE glue tests, the stdio smoke test and the PNG snapshots
+also run on GitHub's Windows runners (`native-windows.yml`, `ci.yml`), and `windows-gui.yml` drives
+real File Explorer drags against the installed app on a runner with synthesized input (SendInput;
+record: `docs/verification.md`, "Windows — GitHub 러너 GUI 드래그 자동 시험"). **No person has used
+the helper on a physical Windows PC yet.**
 
 ## Status
 
@@ -506,6 +508,13 @@ Use the MSVC build (CI artifact or `node scripts/build-native-win.mjs` on Window
 app's normal start. Set `ORBITDROP_HELPER_DEBUG=1` to get helper diagnostics on stderr and
 as `log` messages. Record the OS build, display setup and result for each item.
 
+Automated on a GitHub runner with synthesized input (Windows Server 2025, 1024×768, 100 %, one
+monitor, administrator: `.github/workflows/windows-gui.yml`): items 1 (with the first-run welcome
+window), 2, 3 (highlight and centre text, not the cursor shape), 4, 5 (Shift held through the drop
+only), 7, 8, 10 (centre; outside the ring through the window's transparent corner), 11 (plain text
+from a test window) and 13 (two drops), plus the drag image staying above the wheel (17, runner
+only). The rest, and every item by a person on a physical Windows 11 PC, is still open.
+
 1. **Start**: main receives `ready` with `globalDrag.available: true`. No window,
    taskbar entry or Alt+Tab entry appears. Task Manager shows one `OrbitDropHelper.exe`.
 2. **Explorer drag + Shift → convert wheel**: drag `Page 001.pdf` a few pixels and press
@@ -653,7 +662,8 @@ Added with the secondary caption (2026-10-23):
 
 ## Known limitations and risks
 
-* **Nothing GUI-related has run on Windows.** First risks to check:
+* **GUI behaviour has run only on a GitHub runner, with synthesized input** (see the checklist
+  note above). First risks to check on a physical PC:
   - Drag-image z-order versus our topmost layered window (item 17).
   - Whether the constant-alpha fade affects layered-window hit-testing during the first
     ~140 ms.
