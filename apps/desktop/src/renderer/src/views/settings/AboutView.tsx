@@ -7,6 +7,7 @@ import { useWindowFit } from '../../app/useWindowFit';
 import { Notice, Spinner } from '../../components/Notice';
 import { TitleBar } from '../../components/TitleBar';
 import { capsulePath, sectorShape } from '../../wheel/sectorPath';
+import { AboutSupport } from './AboutSupport';
 import './settings.css';
 
 const PLATFORM_NAMES: Readonly<Record<Platform, string>> = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
@@ -79,6 +80,7 @@ export function AboutContent() {
           <span>{t('common.loading')}</span>
         </div>
       )}
+      <AboutSupport />
     </div>
   );
 }

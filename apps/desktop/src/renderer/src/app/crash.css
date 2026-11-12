@@ -1,0 +1,81 @@
+/* Crash screens (crash.tsx): a view that crashed, a page that crashed twice, a window that could not start. */
+
+.crash-view {
+  width: 420px;
+}
+
+.crash-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 20px 20px;
+  line-height: 1.5;
+}
+
+.crash-icon {
+  color: var(--c-warning-text);
+}
+
+.crash-title {
+  font-size: var(--font-title-size);
+  font-weight: 700;
+}
+
+.crash-details {
+  max-width: 100%;
+  color: var(--c-text-muted);
+  font-size: 12px;
+}
+
+.crash-details summary {
+  cursor: pointer;
+}
+
+.crash-details code,
+.crash-startup-detail {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.crash-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  align-self: stretch;
+  margin-top: 6px;
+}
+
+.crash-startup {
+  max-width: 460px;
+  line-height: 1.5;
+}
+
+.crash-startup-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 'recovered' notice: floats under the title bar, the view keeps its layout. */
+.window-notice {
+  position: fixed;
+  top: calc(var(--titlebar-height) + 4px);
+  right: 10px;
+  left: 10px;
+  z-index: 60;
+}
+
+.window-notice .notice {
+  box-shadow: 0 6px 18px rgb(0 0 0 / 22%);
+}
+
+@media (forced-colors: active) {
+  .window-notice .notice {
+    border: 2px solid CanvasText;
+  }
+}
