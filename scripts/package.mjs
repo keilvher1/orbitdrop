@@ -671,11 +671,17 @@ async function installTestWin(result) {
   if (uninstaller) {
     step('uninstall');
     spawnSync(join(dir, uninstaller), ['/S'], { stdio: 'inherit', timeout: 300000 });
-    // The NSIS uninstaller re-launches itself from %TEMP%; wait for the files to disappear.
-    for (let i = 0; i < 60 && existsSync(exe); i++) await new Promise((r) => setTimeout(r, 1000));
+    // The NSIS uninstaller re-launches itself from %TEMP% and returns at once; the copy removes the
+    // files first and the uninstall registry key after them. Wait for both (seen on the runner: the
+    // key was still there right after the files had gone).
+    const entryPresent = () => {
+      const r = capture('reg', ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall', '/s', '/f', desktopPkg.productName, '/d']);
+      return r.status === 0 && r.out.includes(desktopPkg.productName);
+    };
+    for (let i = 0; i < 60 && (existsSync(exe) || entryPresent()); i++) await new Promise((r) => setTimeout(r, 1000));
     out.uninstalled = !existsSync(exe);
-    const after = capture('reg', ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall', '/s', '/f', desktopPkg.productName, '/d']);
-    out.uninstallEntryRemoved = !(after.status === 0 && after.out.includes(desktopPkg.productName));
+    out.uninstallEntryRemoved = !entryPresent();
+    out.installFolderRemoved = !existsSync(dir);
   }
   console.log(`  install test: ${JSON.stringify({ ...out, smoke: out.smoke ? { ok: out.smoke.ok, report: out.smoke.report } : undefined })}`);
   if (install.status !== 0 || !out.installed) errors.push(`win: silent per-user install failed (exit ${install.status})`);
