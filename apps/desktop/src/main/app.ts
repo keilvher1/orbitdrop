@@ -275,7 +275,7 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
     this.helperCrash = new HelperCrashNotifier({
       notify: (title, body, onClick) => this.showNotification(title, body, onClick),
       enabled: () => this.settings.get().notifications,
-      restart: () => void this.helper?.restart(),
+      restart: () => void this.helper?.restart().catch((error: unknown) => this.log.warn('helper restart failed', { error: describeError(error) })),
       t: this.t,
       log: createLogger('helper'),
     });
