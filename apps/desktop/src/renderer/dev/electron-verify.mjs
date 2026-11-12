@@ -459,7 +459,7 @@ async function main() {
     }
 
     // 5. Other windows
-    for (const kind of ['jobs', 'settings', 'dropzone', 'about']) {
+    for (const kind of ['jobs', 'settings', 'dropzone', 'about', 'welcome']) {
       if (!want(kind)) continue;
       await hooks('openWindow', kind);
       const page = await windowOf(kind);
@@ -480,6 +480,12 @@ async function main() {
         about: async () => {
           const info = await page.evaluate(() => window.orbit.getAppInfo());
           return [(await page.getByText(`버전 ${info.version}`).count()) > 0, `version ${info.version}`];
+        },
+        // First-run welcome (automation never opens it by itself): heading and the platform's tools keys.
+        welcome: async () => {
+          const heading = await page.getByRole('heading', { name: 'OrbitDrop에 오신 것을 환영합니다' }).count();
+          const keys = await page.locator('.welcome-key-row dt').allTextContents();
+          return [heading > 0 && keys.length === 2, `keys ${JSON.stringify(keys)}`];
         },
       };
       const [ok, detail] = await content[kind]();
