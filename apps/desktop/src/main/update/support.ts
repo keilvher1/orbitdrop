@@ -1,5 +1,5 @@
 import { accessSync, constants, existsSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { posix, win32 } from 'node:path';
 import type { UpdateUnsupportedReason } from '@orbitdrop/contracts';
 import type { BuildInfo } from './build-info';
 
@@ -42,7 +42,7 @@ export function folderAccess(dir: string): FolderAccess {
 
 /** The .app bundle of a macOS executable (Contents/MacOS/<name> → <name>.app). */
 export function macAppBundle(execPath: string): string {
-  return resolve(execPath, '..', '..', '..');
+  return posix.dirname(posix.dirname(posix.dirname(posix.normalize(execPath))));
 }
 
 /**
@@ -62,22 +62,24 @@ export function macAppBundle(execPath: string): string {
 export function updateSupport(input: UpdateSupportInput): UpdateSupport {
   const exists = input.exists ?? existsSync;
   const access = input.folderAccess ?? folderAccess;
+  // The target's path rules (the same as the host's in the app; tests decide for both OSes anywhere).
+  const path = input.platform === 'win32' ? win32 : posix;
   const unsupported = (reason: UpdateUnsupportedReason): UpdateSupport => ({ supported: false, reason });
 
   if (input.smokeTest) return unsupported('smokeTest');
   if (!input.packaged) return unsupported('development');
   if (input.platform !== 'darwin' && input.platform !== 'win32') return unsupported('platform');
-  if (!exists(join(input.resourcesPath, 'app-update.yml'))) return unsupported('noUpdateConfig');
+  if (!exists(path.join(input.resourcesPath, 'app-update.yml'))) return unsupported('noUpdateConfig');
 
   if (input.platform === 'darwin') {
     if (input.buildInfo === null) return unsupported('unknownBuild');
     if (input.buildInfo.signing !== 'developer-id') return unsupported('notSigned');
     const bundle = macAppBundle(input.execPath);
-    if (bundle.includes('/AppTranslocation/') || access(dirname(bundle)) === 'readOnly') return unsupported('readOnlyLocation');
+    if (bundle.includes('/AppTranslocation/') || access(posix.dirname(bundle)) === 'readOnly') return unsupported('readOnlyLocation');
     return { supported: true };
   }
 
-  const uninstaller = join(dirname(input.execPath), `Uninstall ${input.productName}.exe`);
+  const uninstaller = win32.join(win32.dirname(input.execPath), `Uninstall ${input.productName}.exe`);
   if (!exists(uninstaller)) return unsupported('notInstalled');
   return { supported: true };
 }

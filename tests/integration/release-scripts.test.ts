@@ -4,7 +4,7 @@
  */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { findSigningIdentity, notaryCredentials, signAndNotarizeDmg } from '../../scripts/mac-dmg.mjs';
 import { collectAssets, checkAssets, publishDraftAssets } from '../../scripts/release-assets.mjs';
@@ -399,7 +399,7 @@ describe('scripts/release-mac.mjs', () => {
     const fake = githubRunner(releases, {
       'gh release upload': (args) => {
         for (const file of args.slice(3, args.indexOf('--repo'))) {
-          const name = file.split('/').pop()!;
+          const name = basename(file);
           const assets = releases[0]!.assets!;
           const digest = digests.get(name) ?? (existsSync(file) ? 'sums' : '');
           assets.splice(0, assets.length, ...assets.filter((a) => a.name !== name), { name, digest: digest === 'sums' ? null : `sha256:${digest}` });
@@ -457,7 +457,7 @@ describe('scripts/release-assets.mjs (CI)', () => {
     const fake = githubRunner(releases, {
       'gh release upload': (args) => {
         const assets = releases[0]!.assets!;
-        for (const file of args.slice(3, args.indexOf('--repo'))) assets.push({ name: file.split('/').pop()!, digest: null });
+        for (const file of args.slice(3, args.indexOf('--repo'))) assets.push({ name: basename(file), digest: null });
         return {};
       },
       'gh release download': (args) => {

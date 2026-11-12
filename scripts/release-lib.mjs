@@ -7,7 +7,7 @@
 // Nothing here publishes a release: drafts only (docs/RELEASING.md).
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { createReadStream, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -159,20 +159,6 @@ export async function checkUpdateInfo(info, dir, { platform, version, archs = []
     if (installers.length !== 1 || urls.length !== 1) problems.push(`expected exactly one -setup.exe, found ${urls.join(', ') || 'none'}`);
   }
   return problems;
-}
-
-/** Release files of one build in `dir`: what goes to the draft release (reports separately). */
-export function releaseFiles(dir, { version, os }) {
-  if (!existsSync(dir)) return [];
-  const prefix = `${PRODUCT}-${version}-${os === 'darwin' ? 'mac' : 'win'}-`;
-  return readdirSync(dir)
-    .filter((name) => {
-      if (!statSync(join(dir, name)).isFile()) return false;
-      if (os === 'darwin' && name === 'latest-mac.yml') return true;
-      if (os === 'win32' && name === 'latest.yml') return true;
-      return name.startsWith(prefix) && /\.(dmg|zip|exe|blockmap)$/.test(name);
-    })
-    .sort();
 }
 
 // ── GitHub releases (gh CLI) ─────────────────────────────────────────────────

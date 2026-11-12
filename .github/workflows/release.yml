@@ -274,8 +274,9 @@ jobs:
   release:
     name: Draft release
     needs: [plan, macos, windows]
+    # Forks build but never draft: installed copies only read keilvher1/orbitdrop (app-update.yml).
     if: >-
-      always() && needs.plan.result == 'success' && needs.plan.outputs.tag != '' &&
+      always() && github.repository == 'keilvher1/orbitdrop' && needs.plan.result == 'success' && needs.plan.outputs.tag != '' &&
       needs.windows.result == 'success' && (needs.macos.result == 'success' || needs.macos.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 30

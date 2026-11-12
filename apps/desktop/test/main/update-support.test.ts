@@ -36,7 +36,7 @@ function win(files: readonly string[], overrides: Partial<UpdateSupportInput> = 
     execPath: WIN_EXE,
     resourcesPath: WIN_RESOURCES,
     productName: 'OrbitDrop',
-    exists: (path) => files.some((name) => path.endsWith(name)),
+    exists: (path) => files.some((name) => path === `${WIN_RESOURCES}\\${name}` || path === `C:\\Users\\kim\\AppData\\Local\\Programs\\OrbitDrop\\${name}`),
     folderAccess: () => 'writable',
     ...overrides,
   };
