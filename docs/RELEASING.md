@@ -37,7 +37,9 @@ OrbitDrop은 GitHub 저장소 [keilvher1/orbitdrop](https://github.com/keilvher1
 
 ## 1. 버전 올리기
 
-1. `apps/desktop/package.json`의 `version`을 올린다(semver). 업데이트는 **더 높은 버전**만 받으므로 반드시 올라가야 한다.
+1. `node scripts/set-version.mjs <버전>`으로 버전을 올린다(semver). `apps/desktop/package.json`과 두 네이티브 helper(macOS
+   `HelperInfo.version`·`Info.plist`, Windows `CMakeLists.txt` → VERSIONINFO)를 함께 바꾸며, 어긋나면 `--check`와 테스트가 실패한다.
+   업데이트는 **더 높은 버전**만 받으므로 반드시 올라가야 한다.
    `0.2.0-beta.1` 같은 프리릴리스 버전은 GitHub에서 pre-release로 공개하며, 정식 버전 설치본은 프리릴리스를 받지 않는다.
    프리릴리스 이름은 `-alpha.N`/`-beta.N`만 쓴다: 그런 설치본은 더 새 프리릴리스와 정식 버전으로 넘어가지만, 다른 이름(`-rc.N` 등)은
    electron-updater가 별도 채널로 다뤄 같은 이름의 프리릴리스만 따라가고 정식 버전으로는 넘어가지 않는다.
