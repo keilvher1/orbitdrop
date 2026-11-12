@@ -23,7 +23,12 @@ const wchar_t* localeName(proto::Locale l) { return l == proto::Locale::Ko ? L"k
  * code points. Mapping chosen to match the reference look: compress = arrows
  * pointing inwards (BackToWindow), metadata = Tag, edit = sliders (Equalizer),
  * annotate = pen (Edit), background = Picture, crop = Crop, redact = eye with a
- * slash (Hide). Must be checked visually on Windows (see the workstream doc).
+ * slash (Hide), analyze (Claude analysis) = Robot U+E99A. Robot is listed in both
+ * fonts' official tables (learn.microsoft.com/windows/apps/design/style/
+ * segoe-ui-symbol-font and .../segoe-fluent-icons-font) and is not among the
+ * glyphs added after Fluent 1.00; the Fluent sparkle glyphs (e.g. SearchSparkle
+ * U+ED37) are, and MDL2 lacks them. Must be checked visually on Windows (see the
+ * workstream doc).
  */
 wchar_t iconGlyph(proto::IconId id) {
     switch (id) {
@@ -34,6 +39,7 @@ wchar_t iconGlyph(proto::IconId id) {
         case proto::IconId::Background: return 0xE8B9;
         case proto::IconId::Crop: return 0xE7A8;
         case proto::IconId::Redact: return 0xED1A;
+        case proto::IconId::Analyze: return 0xE99A;
     }
     return 0;
 }

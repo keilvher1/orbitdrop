@@ -5,17 +5,18 @@ import OrbitDropHelperCore
 ///   [--highlight <i>] [--highlight-style active|rejected|hover] [--diameter 360]
 ///   [--locale ko|en] [--theme light|dark|highContrast] [--config <configure.json>]
 ///   [--state neutral|active] [--files <n>] [--size <bytes>] [--scale 2]
-///   [--backdrop none|desktop]`
+///   [--backdrop none|desktop] [--analysis]`
 ///
 /// Renders the wheel offscreen (no window) with the built-in default menus/tokens,
-/// or with a `configure` message loaded from --config.
+/// or with a `configure` message loaded from --config. `--analysis` adds the opt-in
+/// Claude analysis sector to the built-in tools menus (ignored with --config).
 public enum SnapshotCommand {
   public static let usage = """
     usage: OrbitDropHelper --render-snapshot <out.png> --menu <MenuKey> --mode convert|tools
              [--highlight <index>] [--highlight-style active|rejected|hover]
              [--diameter 200…600] [--locale ko|en] [--theme light|dark|highContrast]
              [--config <configure.json>] [--state neutral|active] [--files <n>] [--size <bytes>]
-             [--scale 1…4] [--backdrop none|desktop]
+             [--scale 1…4] [--backdrop none|desktop] [--analysis]
     """
 
   public static func run(_ args: [String]) -> Int32 {
@@ -42,7 +43,7 @@ public enum SnapshotCommand {
     try CLIArguments(
       args,
       valued: ["--render-snapshot", "--menu", "--mode", "--highlight", "--highlight-style", "--diameter", "--locale", "--theme", "--config", "--state", "--files", "--size", "--scale", "--backdrop"],
-      flags: []
+      flags: ["--analysis"]
     )
   }
 
@@ -71,7 +72,7 @@ public enum SnapshotCommand {
       default: throw HelperCLIError.usage("--config is not a configure message")
       }
     } else {
-      config = DefaultConfig.config(locale: locale, theme: theme)
+      config = DefaultConfig.config(locale: locale, theme: theme, analysis: a.flags.contains("--analysis"))
     }
     if let d = try a.double("--diameter", in: 200...600) { config.geometry.diameter = d }
 

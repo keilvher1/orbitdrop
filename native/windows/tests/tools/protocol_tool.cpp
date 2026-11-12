@@ -125,13 +125,16 @@ int main(int argc, char** argv) {
     if (cmd == "configure") {
         const std::string loc = argc > 2 ? argv[2] : "en";
         const std::string theme = argc > 3 ? argv[3] : "light";
+        // "analysis": the menus main sends while Claude analysis is on (e.g. for --render-snapshot --config).
+        const bool analysis = argc > 4 && std::string(argv[4]) == "analysis";
         const auto cfg = defaults::referenceConfigure(loc == "ko" ? proto::Locale::Ko : proto::Locale::En,
                                                       theme == "dark" ? defaults::Theme::Dark
                                                       : theme == "hc" ? defaults::Theme::HighContrast
-                                                                      : defaults::Theme::Light);
+                                                                      : defaults::Theme::Light,
+                                                      analysis);
         std::printf("%s\n", defaults::configureToJson(*cfg).c_str());
         return 0;
     }
-    std::fprintf(stderr, "usage: %s configure [en|ko] [light|dark|hc] | parse | samples\n", argv[0]);
+    std::fprintf(stderr, "usage: %s configure [en|ko] [light|dark|hc] [analysis] | parse | samples\n", argv[0]);
     return 2;
 }

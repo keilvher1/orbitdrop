@@ -30,12 +30,12 @@ constexpr int64_t kMaxSafeInteger = 9007199254740991LL;  // Number.MAX_SAFE_INTE
 enum class ActionId : uint8_t {
     ConvertJpeg, ConvertPng, ConvertWebp, ConvertHeic, ConvertTiff, ConvertAvif, ConvertBmp, ConvertPdf,
     ConvertDocx, ConvertTxt, ToolCompress, ToolMetadata, ToolEdit, ToolAnnotate, ToolAddBackground, ToolCrop,
-    ToolRedact,
+    ToolRedact, ToolAnalyze,  // ToolAnalyze: Claude analysis, opt-in (main sends it only while enabled)
 };
-constexpr size_t kActionCount = 17;
+constexpr size_t kActionCount = 18;
 
-enum class IconId : uint8_t { Compress, Metadata, Edit, Annotate, Background, Crop, Redact };
-constexpr size_t kIconCount = 7;
+enum class IconId : uint8_t { Compress, Metadata, Edit, Annotate, Background, Crop, Redact, Analyze };
+constexpr size_t kIconCount = 8;
 
 enum class WheelMode : uint8_t { Convert, Tools };
 enum class Locale : uint8_t { Ko, En };

@@ -100,6 +100,29 @@ final class ClassificationTests: XCTestCase {
     XCTAssertNil(Classifier.sectors(for: .unsupported(fileCount: 1, reason: .unknownType), mode: .convert, config: config))
     XCTAssertEqual(Classifier.sectors(for: .files(key: .pdf, paths: ["/a.pdf"]), mode: .convert, config: config)?.map(\.label), ["DOCX", "JPG", "PNG", "TXT"])
     XCTAssertEqual(Classifier.sectors(for: .files(key: .mixed, paths: ["/a.pdf", "/b.png"]), mode: .convert, config: config)?.map(\.actionId), [.convertDocx, .convertJpeg, .convertPng])
+    XCTAssertNil(Classifier.sectors(for: .files(key: .mixed, paths: ["/a.pdf", "/b.png"]), mode: .tools, config: config))
+  }
+
+  /// Claude analysis (opt-in): the only tools sector of PDF and mixed drags, last after the image
+  /// tools; batch-capable, so several files keep it enabled. Convert wheels do not change.
+  func testClaudeAnalysisMenus() {
+    let config = DefaultConfig.config(locale: .ko, analysis: true)
+    let analyze = WheelSector(actionId: .toolAnalyze, label: "Claude 분석", icon: .analyze, enabled: true, batch: true)
+    XCTAssertEqual(Classifier.sectors(for: .files(key: .pdf, paths: ["/a.pdf"]), mode: .tools, config: config), [analyze])
+    XCTAssertEqual(Classifier.sectors(for: .files(key: .pdf, paths: ["/a.pdf", "/b.pdf"]), mode: .tools, config: config), [analyze])
+    XCTAssertEqual(Classifier.sectors(for: .files(key: .mixed, paths: ["/a.pdf", "/b.png"]), mode: .tools, config: config), [analyze])
+    for key in [MenuKey.image(.png), .image(.gif), .images] {
+      let tools = Classifier.sectors(for: .files(key: key, paths: ["/a", "/b"]), mode: .tools, config: config)
+      XCTAssertEqual(tools?.map(\.actionId), DefaultConfig.imageToolsOrder + [.toolAnalyze], key.rawValue)
+      XCTAssertEqual(tools?.last, analyze, "\(key.rawValue): enabled with two files")
+    }
+    let off = DefaultConfig.config(locale: .ko)
+    for key in MenuKey.allCases {
+      XCTAssertEqual(config.menu(for: key)?.convert, off.menu(for: key)?.convert, key.rawValue)
+      XCTAssertEqual(config.menu(for: key)?.tools.dropLast(), off.menu(for: key)?.tools[...], key.rawValue)
+    }
+    XCTAssertEqual(DefaultConfig.action(.toolAnalyze).label.en, "ANALYZE")
+    XCTAssertEqual(DefaultConfig.inputs(.toolAnalyze), ["image", "pdf"])
   }
 
   func testByteFormat() {

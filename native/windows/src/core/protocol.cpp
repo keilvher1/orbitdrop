@@ -16,10 +16,10 @@ namespace {
 constexpr std::array<const char*, kActionCount> kActionNames = {
     "convert.jpeg", "convert.png",   "convert.webp",  "convert.heic",     "convert.tiff",  "convert.avif",
     "convert.bmp",  "convert.pdf",   "convert.docx",  "convert.txt",      "tool.compress", "tool.metadata",
-    "tool.edit",    "tool.annotate", "tool.addBackground", "tool.crop", "tool.redact",
+    "tool.edit",    "tool.annotate", "tool.addBackground", "tool.crop", "tool.redact", "tool.analyze",
 };
 constexpr std::array<const char*, kIconCount> kIconNames = {"compress", "metadata", "edit",  "annotate",
-                                                            "background", "crop",   "redact"};
+                                                            "background", "crop",   "redact", "analyze"};
 constexpr std::array<const char*, kMenuKeyCount> kMenuKeyNames = {
     "pdf",        "image/jpeg", "image/png",  "image/webp", "image/gif", "image/tiff",
     "image/avif", "image/heic", "image/bmp",  "images",     "mixed",

@@ -157,6 +157,38 @@ final class ProtocolTests: XCTestCase {
     XCTAssertEqual(error, .invalidValue("menus[0].convert[0].actionId"))
   }
 
+  /// Claude analysis (opt-in): with the setting on, main sends `tool.analyze` (icon `analyze`) as the
+  /// only tools sector of the PDF and mixed menus and after the image tools. The decoder accepts it,
+  /// matches the built-in menus, and still rejects ids outside the closed lists.
+  func testClaudeAnalysisSectorIsAccepted() throws {
+    let fixture = try String(contentsOf: TestPaths.fixture("configure-en.json"), encoding: .utf8)
+    let analyze = #"{"actionId":"tool.analyze","label":"ANALYZE","icon":"analyze","enabled":true,"batch":true}"#
+    let emptyTools = #""tools":[]"#
+    // Every image tools list ends with REDACT, the only lists whose last sector is not batch-capable.
+    let lastImageTool = #""batch":false}]"#
+    XCTAssertEqual(fixture.components(separatedBy: emptyTools).count - 1, 2, "PDF and mixed have no tools without analysis")
+    XCTAssertEqual(fixture.components(separatedBy: lastImageTool).count - 1, 9, "8 image formats + images")
+    let line = fixture
+      .replacingOccurrences(of: emptyTools, with: #""tools":["# + analyze + "]")
+      .replacingOccurrences(of: lastImageTool, with: #""batch":false},"# + analyze + "]")
+    guard case .message(.configure(let config)) = NDJSON.parseMainLine(line) else { return XCTFail("rejected: \(NDJSON.parseMainLine(line))") }
+    let sector = WheelSector(actionId: .toolAnalyze, label: "ANALYZE", icon: .analyze, enabled: true, batch: true)
+    XCTAssertEqual(config.menu(for: .pdf)?.tools, [sector])
+    XCTAssertEqual(config.menu(for: .mixed)?.tools, [sector])
+    XCTAssertEqual(config.menu(for: .image(.png))?.tools.map(\.actionId), DefaultConfig.imageToolsOrder + [.toolAnalyze])
+    let builtIn = DefaultConfig.config(locale: .en, analysis: true)
+    for menu in config.menus {
+      XCTAssertEqual(menu.tools.map(\.actionId), builtIn.menu(for: menu.key)?.tools.map(\.actionId), menu.key.rawValue)
+      XCTAssertEqual(menu.tools.last, menu.tools.isEmpty ? nil : sector, menu.key.rawValue)
+    }
+    // The vocabularies stay closed: an icon or action id the helper does not know is refused with its path.
+    XCTAssertEqual(NDJSON.parseMainLine(line.replacingOccurrences(of: #""icon":"analyze""#, with: #""icon":"sparkles""#)), .invalid(.invalidValue("menus[0].tools[0].icon")))
+    XCTAssertEqual(NDJSON.parseMainLine(line.replacingOccurrences(of: #""tool.analyze""#, with: #""tool.summarize""#)), .invalid(.invalidValue("menus[0].tools[0].actionId")))
+    let drop = try HelperToMainMessage.drop(DropMessage(sessionId: "m1", actionId: .toolAnalyze, mode: .tools, files: ["/a.pdf", "/b.png"])).jsonObject()
+    XCTAssertEqual(drop["actionId"] as? String, "tool.analyze")
+    XCTAssertEqual(drop["mode"] as? String, "tools")
+  }
+
   func testLineLimitIsExactlyMaxBytes() {
     // {"v":1,"type":"ping","nonce":1,"p":"xxxx…"} padded to exactly the limit → only rejected for the unknown field.
     let prefix = #"{"v":1,"type":"ping","nonce":1,"p":""#
