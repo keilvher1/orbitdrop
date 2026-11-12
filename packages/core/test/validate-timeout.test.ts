@@ -127,7 +127,10 @@ describe('header read timeout', () => {
   });
 
   it('explains a hanging network share as NETWORK_PATH_FAILED', async () => {
-    await writeFile(join(dir, 'stand-in.png'), PNG);
+    // The stand-in's real stat() is reported for the share path while macOS is simulated, so it
+    // must have allocated blocks: NTFS keeps a file of a few bytes inside its MFT record (0
+    // blocks), which the macOS rule would read as a dataless iCloud file (CLOUD_PLACEHOLDER).
+    await writeFile(join(dir, 'stand-in.png'), Buffer.concat([PNG, Buffer.alloc(64 * 1024, 1)]));
     const input = '/Volumes/NAS/photos/net.png';
     control.fakeRealpath.set(input, input);
     control.fakeStat.set(input, join(dir, 'stand-in.png'));
@@ -135,6 +138,22 @@ describe('header read timeout', () => {
     const { error, ms } = await timed(validateInputFile(input, { headerTimeoutMs: 60, cloudRoots: [], platform: 'darwin' }));
     expect(error).toMatchObject({ code: 'NETWORK_PATH_FAILED' });
     expect(ms).toBeLessThan(1000);
+  });
+
+  // Windows paths are only absolute for Windows' own path rules, so this one runs there.
+  it.runIf(process.platform === 'win32')('explains a hanging Windows share (UNC path, also a mapped drive resolved to one) as NETWORK_PATH_FAILED', async () => {
+    await writeFile(join(dir, 'stand-in.png'), Buffer.concat([PNG, Buffer.alloc(64 * 1024, 1)]));
+    for (const [input, real] of [
+      ['\\\\nas\\photos\\net.png', '\\\\nas\\photos\\net.png'],
+      ['Z:\\photos\\mapped.png', '\\\\nas\\photos\\mapped.png'], // realpath of a mapped drive is the UNC path
+    ] as const) {
+      control.fakeRealpath.set(input, real);
+      control.fakeStat.set(real, join(dir, 'stand-in.png'));
+      control.hangOpen.add(real);
+      const { error, ms } = await timed(validateInputFile(input, { headerTimeoutMs: 60, cloudRoots: [], platform: 'win32' }));
+      expect(error, input).toMatchObject({ code: 'NETWORK_PATH_FAILED' });
+      expect(ms).toBeLessThan(1000);
+    }
   });
 
   it('still validates a slow-but-working file within the timeout', async () => {
