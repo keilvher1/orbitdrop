@@ -193,7 +193,10 @@ for (const { arch, path } of staged) {
       try {
         parsed = JSON.parse(line);
       } catch {}
-      entry.smoke = parsed?.ok ? `passed ${parsed.checks}/${parsed.checks} (${parsed.schema}${arch === 'x64' && process.arch === 'arm64' ? ', Rosetta 2' : ''})` : `FAILED ${parsed ? parsed.failed.join('; ') : line || result.stderr}`;
+      entry.smoke = parsed?.ok
+        ? `passed ${parsed.checks}/${parsed.checks} (${parsed.schema}${arch === 'x64' && process.arch === 'arm64' ? ', Rosetta 2' : ''})${parsed.skipped?.length ? `, skipped: ${parsed.skipped.join('; ')}` : ''}`
+        : `FAILED ${parsed ? parsed.failed.join('; ') : line || result.stderr}`;
+      if (parsed?.skipped?.length) console.warn(`  ⚠ helper smoke ${arch}: skipped ${parsed.skipped.join('; ')}`);
       if (!parsed?.ok) {
         console.error(result.stdout, result.stderr);
         summary.push(entry);

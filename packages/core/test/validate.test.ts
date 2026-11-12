@@ -137,8 +137,40 @@ describe('paths', () => {
     expect(Buffer.byteLength(file)).toBeGreaterThan(800);
     expect((await validateInputFile(file, opts)).format).toBe('png');
     await expect(validateInputFile(join(dir, `${'a'.repeat(300)}.png`), opts)).rejects.toMatchObject({ code: 'PATH_TOO_LONG' });
-    const overlong = join(dir, ...Array.from({ length: 30 }, () => 'b'.repeat(200)), 'x.png');
+    // Over the whole-path limit: macOS PATH_MAX is 1024 bytes; Windows (Node opens `\\?\` paths)
+    // allows 32,767 UTF-16 units, so ~6,000 characters are a legal (here: missing) path there.
+    const parts = process.platform === 'win32' ? 170 : 30;
+    const overlong = join(dir, ...Array.from({ length: parts }, () => 'b'.repeat(200)), 'x.png');
     await expect(validateInputFile(overlong, opts)).rejects.toMatchObject({ code: 'PATH_TOO_LONG' });
+  });
+
+  it.runIf(process.platform === 'win32')('Windows: names of up to 255 UTF-16 units (765 UTF-8 bytes of Hangul) and paths over MAX_PATH work', async () => {
+    const name = `${'가'.repeat(251)}.png`; // 255 units: the NTFS limit (macOS allows 255 bytes)
+    const sub = join(dir, '사진'.repeat(60)); // the file's path is far over 260 characters
+    await mkdir(sub);
+    await writeFile(join(sub, name), PNG);
+    expect(join(sub, name).length).toBeGreaterThan(260);
+    const v = await validateInputFile(join(sub, name), opts);
+    expect([v.displayName, v.format, v.sourceDir]).toEqual([name, 'png', sub]);
+    await expect(validateInputFile(join(sub, `${'가'.repeat(252)}.png`), opts)).rejects.toMatchObject({ code: 'PATH_TOO_LONG' });
+    const slashes = join(sub, name).replace(/\\/g, '/'); // forward slashes are Windows separators too
+    expect((await validateInputFile(slashes, opts)).format).toBe('png');
+  });
+});
+
+describe('Windows path limits', () => {
+  it('flags a name over 255 or a path over 32,767 UTF-16 units, wherever the separators are', async () => {
+    const { exceedsWin32PathLimits } = await import('../src/node');
+    expect(exceedsWin32PathLimits(`C:\\Users\\me\\${'가'.repeat(255)}`)).toBe(false);
+    expect(exceedsWin32PathLimits(`C:\\Users\\me\\${'가'.repeat(256)}`)).toBe(true);
+    expect(exceedsWin32PathLimits(`C:/Users/${'🍊'.repeat(128)}/a.png`)).toBe(true); // 256 units: emoji are surrogate pairs
+    expect(exceedsWin32PathLimits(`\\\\nas\\share\\${'a\\'.repeat(16_000)}x.png`)).toBe(false); // 32,017 units
+    expect(exceedsWin32PathLimits(`C:\\${'abcdefgh\\'.repeat(3700)}x.png`)).toBe(true); // 33,308 units
+  });
+
+  it('applies them when validating for Windows', async () => {
+    const tooLong = join(dir, `${'가'.repeat(256)}.png`);
+    await expect(validateInputFile(tooLong, { ...opts, platform: 'win32' })).rejects.toMatchObject({ code: 'PATH_TOO_LONG' });
   });
 });
 

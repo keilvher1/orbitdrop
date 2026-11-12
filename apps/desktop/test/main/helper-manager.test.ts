@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -173,13 +174,26 @@ describe('LineReader', () => {
 });
 
 describe('helper location', () => {
+  // Candidates are joined with the separators of the OS the app runs on (`join` of this host).
   it('prefers ORBITDROP_HELPER_PATH, then the packaged or dev staging folder', () => {
     const dev = helperCandidates({ packaged: false, resourcesPath: '/res', appPath: '/app', platform: 'darwin', arch: 'arm64' });
-    expect(dev[0]).toEqual({ path: '/app/resources/helper/darwin-arm64/OrbitDropHelper', source: 'dev' });
+    expect(dev[0]).toEqual({ path: join('/app', 'resources', 'helper', 'darwin-arm64', 'OrbitDropHelper'), source: 'dev' });
     const packaged = helperCandidates({ envPath: '/custom/helper', packaged: true, resourcesPath: '/res', appPath: '/app', platform: 'darwin', arch: 'arm64' });
     expect(packaged[0]).toEqual({ path: '/custom/helper', source: 'env' });
-    expect(packaged[1]).toEqual({ path: '/res/helper/OrbitDropHelper', source: 'packaged' });
+    expect(packaged[1]).toEqual({ path: join('/res', 'helper', 'OrbitDropHelper'), source: 'packaged' });
     expect(helperExecutableName('win32')).toBe('OrbitDropHelper.exe');
+  });
+
+  it('on Windows looks for OrbitDropHelper.exe only (no .app bundle)', () => {
+    const resources = join('C:', 'Program Files', 'OrbitDrop', 'resources');
+    expect(helperCandidates({ packaged: true, resourcesPath: resources, appPath: resources, platform: 'win32', arch: 'x64' })).toEqual([
+      { path: join(resources, 'helper', 'OrbitDropHelper.exe'), source: 'packaged' },
+    ]);
+    const dev = helperCandidates({ packaged: false, resourcesPath: resources, appPath: join('D:', 'repo', 'apps', 'desktop'), platform: 'win32', arch: 'x64' });
+    expect(dev.map((c) => c.path)).toEqual([
+      join('D:', 'repo', 'apps', 'desktop', 'resources', 'helper', 'win32-x64', 'OrbitDropHelper.exe'),
+      join('D:', 'repo', 'apps', 'desktop', 'resources', 'helper', 'win32-universal', 'OrbitDropHelper.exe'),
+    ]);
   });
 });
 

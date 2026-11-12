@@ -1,0 +1,217 @@
+# OrbitDrop — automated GUI drag test on GitHub's Windows runner (synthesized input).
+#
+# A real File Explorer window, a real OLE file drag made with SendInput, Shift → OrbitDrop's native
+# wheel → drop on a sector; the packaged, installed app must write the right output next to the
+# original. Evidence level: "GitHub runner VM GUI test (synthesized input)" — not a physical PC and
+# not a person (docs/support-matrix.md, docs/verification.md "Windows — GitHub 러너 GUI 드래그 자동 시험").
+#
+# The driver (tests/windows-gui/driver) takes over the mouse and keyboard, so it only ever runs
+# here, on a disposable runner desktop. This workflow uses no secrets and publishes nothing.
+name: windows-gui
+
+on:
+  push:
+    branches: [ci/windows-gui]
+    # Documentation-only pushes (the run's own record) do not need a new run.
+    paths-ignore:
+      - 'docs/**'
+      - 'site/**'
+      - '**/*.md'
+  workflow_dispatch:
+    inputs:
+      reuse_app_run:
+        description: Run id of an earlier windows-gui run whose installer to test (empty = build the app in this run)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  actions: read # download-artifact from an earlier run (reuse_app_run)
+
+concurrency:
+  group: windows-gui-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  electron_config_cache: ${{ github.workspace }}/.cache/electron
+  ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+  ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
+  CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+jobs:
+  gui:
+    name: GUI drag test (installed app, real Explorer, synthesized input)
+    runs-on: windows-2025
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build the GUI driver (.NET)
+        run: dotnet build tests/windows-gui/driver/OrbitDropGuiDriver.csproj -c Release -o C:\odgui\driver
+
+      # Before anything else touches the desktop: session, input desktop, integrity levels,
+      # screen and DPI, a screenshot, and one synthesized Explorer drag (a file onto a folder).
+      - name: Probe the runner desktop
+        run: C:\odgui\driver\OrbitDropGuiDriver.exe probe --out C:\odgui\out\probe
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Cache Electron runtime and builder tools
+        if: ${{ !inputs.reuse_app_run }}
+        uses: actions/cache@v6
+        with:
+          path: |
+            .cache/electron
+            .cache/electron-builder
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: electron-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Same steps as ci.yml's Windows job (helper unit tests run there and in native-windows.yml).
+      - name: Native helper — MSVC build and stage (x64)
+        if: ${{ !inputs.reuse_app_run }}
+        shell: bash
+        run: node scripts/build-native.mjs win --arch x64 --skip-tests
+
+      - name: Build bundles (electron-vite)
+        if: ${{ !inputs.reuse_app_run }}
+        shell: bash
+        run: pnpm build
+
+      - name: Package (unsigned NSIS installer)
+        if: ${{ !inputs.reuse_app_run }}
+        shell: bash
+        run: node scripts/package.mjs win --arch x64 --skip-build --skip-native --unsigned --skip-smoke
+
+      - name: Upload the installer (for reuse_app_run)
+        if: ${{ !inputs.reuse_app_run }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-gui-app
+          retention-days: 14
+          path: |
+            apps/desktop/release/*-setup.exe
+            apps/desktop/release/build-report-*.json
+
+      - name: Download the installer of run ${{ inputs.reuse_app_run }}
+        if: ${{ inputs.reuse_app_run }}
+        uses: actions/download-artifact@v8
+        with:
+          name: windows-gui-app
+          path: apps/desktop/release
+          run-id: ${{ inputs.reuse_app_run }}
+          github-token: ${{ github.token }}
+
+      - name: Install per user (silent NSIS)
+        run: |
+          $out = New-Item -ItemType Directory -Force C:\odgui\out\app
+          $setup = Get-ChildItem apps/desktop/release -Filter '*-setup.exe' | Select-Object -First 1
+          if (-not $setup) { throw 'no *-setup.exe' }
+          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\OrbitDrop\OrbitDrop.exe'
+          for ($i = 0; $i -lt 60 -and -not (Test-Path $exe); $i++) { Start-Sleep -Seconds 1 }
+          if (-not (Test-Path $exe)) { throw "not installed: $exe" }
+          # A silent install must not start the app; if it did, stop it so this test starts it fresh.
+          Get-Process OrbitDrop -ErrorAction SilentlyContinue | Stop-Process -Force
+          $helper = Join-Path (Split-Path $exe) 'resources\helper\OrbitDropHelper.exe'
+          $lines = @(
+            "installer: $($setup.Name)",
+            "installer sha256: $((Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLower())",
+            "OrbitDrop.exe sha256: $((Get-FileHash $exe -Algorithm SHA256).Hash.ToLower())",
+            "OrbitDropHelper.exe sha256: $((Get-FileHash $helper -Algorithm SHA256).Hash.ToLower())",
+            "installed to: $(Split-Path $exe)"
+          )
+          $report = Get-ChildItem apps/desktop/release -Filter 'build-report-*.json' | Select-Object -First 1
+          if ($report) {
+            Copy-Item $report.FullName $out
+            $json = Get-Content $report.FullName -Raw | ConvertFrom-Json
+            $lines += "built from: $($json.source | ConvertTo-Json -Compress)"
+          }
+          $lines | Tee-Object -FilePath (Join-Path $out 'install.txt')
+          "### Installed app`n" + (($lines | ForEach-Object { "- ``$_``" }) -join "`n") | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY
+
+      - name: Fixtures (repository generator) and shared wheel geometry (contracts)
+        shell: bash
+        run: |
+          node tests/windows-gui/fixtures.mjs 'C:\odgui\fixtures'
+          node --import tsx tests/windows-gui/geometry.mjs 'C:\odgui\geometry.json'
+          cp 'C:\odgui\geometry.json' 'C:\odgui\out\app\geometry.json'
+
+      # A first run takes OrbitDrop's UI language from the OS language list (Korean → ko, anything else
+      # → en). The runner is English; put Korean first, as on a Korean user's PC, so the cases run in the
+      # app's Korean UI (the OS display language stays English). The driver reports the language it saw.
+      - name: Korean first in the user's language list
+        shell: powershell
+        run: |
+          $list = New-WinUserLanguageList ko-KR
+          $list.Add('en-US')
+          Set-WinUserLanguageList -LanguageList $list -Force
+          Get-WinUserLanguageList | Format-Table LanguageTag, Autonym, InputMethodTips -AutoSize | Out-String -Width 200
+
+      # Diagnostic: does a process started with Start-Process in one step survive into the next one?
+      # (The first full run lost OrbitDrop right after its start step ended.) Its answer is printed
+      # in the next step; the drag cases do not depend on it, because the driver starts OrbitDrop.
+      - name: Step-boundary check (a process started in this step)
+        run: |
+          $p = Start-Process -FilePath ping.exe -ArgumentList '-n', '600', '127.0.0.1' -PassThru `
+            -RedirectStandardOutput C:\odgui\out\app\step-check-stdout.log -RedirectStandardError C:\odgui\out\app\step-check-stderr.log
+          $p.Id | Set-Content C:\odgui\step-check.pid
+          "started ping.exe pid $($p.Id)"
+
+      - name: GUI drag cases (the driver starts OrbitDrop with a fresh profile and debug logs)
+        run: |
+          $pidFile = Get-Content C:\odgui\step-check.pid
+          $alive = [bool](Get-Process -Id $pidFile -ErrorAction SilentlyContinue)
+          "step-boundary check: ping.exe pid $pidFile started in the previous step is alive now: $alive" | Tee-Object -FilePath C:\odgui\out\app\step-check.txt
+          "### Step-boundary check`n- a process started with Start-Process in the previous step is still alive: **$alive**" | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY
+          # Packaged builds keep their data in %APPDATA%\OrbitDrop (ORBITDROP_USER_DATA_DIR is honoured by
+          # development builds only). A fresh runner has none; refuse to run on a leftover profile.
+          $data = Join-Path $env:APPDATA 'OrbitDrop'
+          if (Test-Path $data) { throw "an OrbitDrop profile already exists: $data" }
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\OrbitDrop\OrbitDrop.exe'
+          C:\odgui\driver\OrbitDropGuiDriver.exe suite --launch $exe --out C:\odgui\out\suite --work C:\odgui\work `
+            --fixtures C:\odgui\fixtures --geometry C:\odgui\geometry.json --main-log "$data\logs\main.log"
+          exit $LASTEXITCODE
+
+      - name: Collect OrbitDrop logs
+        if: always()
+        run: |
+          $out = New-Item -ItemType Directory -Force C:\odgui\out\app
+          $log = Join-Path $env:APPDATA 'OrbitDrop\logs\main.log'
+          Get-Process OrbitDrop, OrbitDropHelper -ErrorAction SilentlyContinue | Format-Table Id, ProcessName, SessionId, StartTime -AutoSize | Out-String
+          if (Test-Path $log) {
+            Copy-Item $log (Join-Path $out 'main.log')
+            # The helper's own lines: its ready/drop/cancel messages, its `log` messages ("helper: …") and
+            # its stderr diagnostics (ORBITDROP_HELPER_DEBUG=1), as main logged them.
+            Get-Content $log | Where-Object { $_ -match '\[helper\]' } | Set-Content -Encoding utf8 (Join-Path $out 'helper.log')
+          } else {
+            "no main.log at $log"
+          }
+          Get-ChildItem (Join-Path $env:APPDATA 'OrbitDrop') -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch 'Cache|blob_storage|Shared Dictionary' } | Select-Object FullName, Length | Format-Table -AutoSize | Out-String
+          # Crashes of OrbitDrop, its helper or its Electron children (Windows Error Reporting).
+          Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = (Get-Date).AddHours(-3) } -ErrorAction SilentlyContinue |
+            Where-Object { $_.ProviderName -in @('Application Error', 'Windows Error Reporting', 'Application Hang') -and $_.Message -match 'OrbitDrop' } |
+            Format-List TimeCreated, ProviderName, Id, Message | Out-String -Width 250 | Tee-Object -FilePath (Join-Path $out 'crash-events.txt')
+          Get-Process OrbitDrop -ErrorAction SilentlyContinue | Stop-Process -Force
+
+      - name: Upload evidence (screenshots, results, logs)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-gui-evidence
+          if-no-files-found: warn
+          retention-days: 30
+          path: C:\odgui\out

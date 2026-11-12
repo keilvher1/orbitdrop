@@ -37,7 +37,8 @@ describe.skipIf(!hasElectron)('conversion engine under Electron', () => {
     const summary = await smoke.runConvertSmoke(modes);
     for (const mode of modes) {
       const result = summary.modes[mode]!;
-      expect(result.passed, `${mode}: ${JSON.stringify(result.stderr ?? '')}`).toBe(true);
+      const { results: _results, ...brief } = result;
+      expect(result.passed, `${mode}: ${JSON.stringify(brief).slice(0, 2000)}`).toBe(true);
       expect(result.electron).toMatch(/^\d+\./);
       expect(result.probe).toMatchObject({ pdfRender: true, pdfText: true, errors: [] });
       const jpegsToPdf = result.results!.find((r) => r.actionId === 'convert.pdf (jpegs)')!;

@@ -214,11 +214,24 @@ export function framesWarning(dropped: DroppedFrames, files: number): JobWarning
     : { code: 'FIRST_PAGE_ONLY', params: { pages: dropped.count, files } };
 }
 
+/**
+ * libjpeg's message for a JPEG coding process it was built without. sharp's Windows libvips is
+ * built without arithmetic decoding (macOS and Linux decode it), so an arithmetic-coded JPEG
+ * (SOF9–SOF11, SOF13–SOF15) cannot be read there: the file is fine, this build cannot read it.
+ */
+const JPEG_CODING_UNSUPPORTED = /arithmetic coding is not implemented/i;
+
 /** Wraps decoder failures (corrupt/truncated data, pixel limit) into OrbitErrors. */
 export function mapSharpError(error: unknown): OrbitError {
   if (error instanceof OrbitError) return error;
   const message = error instanceof Error ? error.message : String(error);
   if (/pixel limit/i.test(message)) return new OrbitError('IMAGE_TOO_LARGE', 'Image exceeds the pixel limit', { cause: error });
+  if (JPEG_CODING_UNSUPPORTED.test(message)) {
+    return new OrbitError('ENGINE_UNAVAILABLE', 'This JPEG uses arithmetic coding, which this build cannot decode', {
+      detail: `jpeg-arithmetic: ${message.slice(0, 260)}`,
+      cause: error,
+    });
+  }
   // Loader prefixes as libvips 8.18 reports them ("vipspng: libpng read error" for a truncated PNG).
   if (/unsupported image format|bad seek|premature end|corrupt|invalid|truncated|VipsJpeg|vipspng|libpng|libspng|pngload|webpload|heifload|tiffload|gifload/i.test(message)) {
     return new OrbitError('IMAGE_CORRUPT', 'Image could not be decoded', { detail: message.slice(0, 300), cause: error });

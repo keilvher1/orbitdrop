@@ -56,13 +56,14 @@ const ORBIT_API_KEYS = [
   'onUpdateStateChanged',
   'checkForUpdates',
   'restartToUpdate',
+  // First run, Help, diagnostics and crash handling (main 0c07287).
   'getWindowNotice',
   'reportRendererError',
   'copyDiagnostics',
   'openLogFolder',
   'openDataFolder',
-  'resetSettings',
   'openLicense',
+  'resetSettings',
   'restartHelper',
 ];
 

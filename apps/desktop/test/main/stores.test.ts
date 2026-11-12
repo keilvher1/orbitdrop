@@ -1,10 +1,11 @@
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, SETTINGS_VERSION, type Settings } from '@orbitdrop/contracts';
 import { HISTORY_LIMIT, HistoryStore, type HistoryEntry } from '../../src/main/history/store';
 import { SettingsStore } from '../../src/main/settings/store';
+import { allowWrites, denyWrites, holdOpenWithoutDeleteSharing } from './read-only-dir';
 
 let dir: string;
 beforeEach(async () => {
@@ -67,7 +68,10 @@ describe('SettingsStore', () => {
 
   it('a file that cannot be moved aside is left alone until a real change is saved', async () => {
     await writeFile(join(dir, 'settings.json'), '{ broken');
-    await chmod(dir, 0o555); // folder not writable: neither the move nor a save can happen
+    // Neither the move nor a save can happen. POSIX: the folder is read-only (0555). Windows has no
+    // read-only folders; there another program holds the file open without delete sharing (a sync
+    // client, a virus scanner), so it cannot be renamed or replaced — whatever our privileges.
+    const release = process.platform === 'win32' ? await holdOpenWithoutDeleteSharing(join(dir, 'settings.json')) : await denyWrites(dir).then(() => () => allowWrites(dir));
     try {
       const store = new SettingsStore(dir, undefined, 'darwin');
       expect(await store.load()).toEqual(RESET_DEFAULTS);
@@ -75,8 +79,10 @@ describe('SettingsStore', () => {
       expect(await readFile(join(dir, 'settings.json'), 'utf8')).toBe('{ broken');
       // Saving fails quietly (logged); the app keeps running with the in-memory settings.
       await expect(store.update({ locale: 'en' })).resolves.toMatchObject({ locale: 'en' });
+      expect(await readdir(dir)).toEqual(['settings.json']); // no temp file left by the failed save
+      expect(await readFile(join(dir, 'settings.json'), 'utf8')).toBe('{ broken');
     } finally {
-      await chmod(dir, 0o755);
+      await release();
     }
   });
 

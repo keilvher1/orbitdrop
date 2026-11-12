@@ -26,13 +26,20 @@ const helperPath = join(appDir, 'resources', 'helper', `${process.platform}-${pr
 
 test.skip(!existsSync(helperPath), `no helper staged at ${helperPath}`);
 
+/** Running processes of exactly this helper binary. */
+/**
+ * Running drag helpers of exactly this binary: main starts it without arguments. The same binary also
+ * runs as `OrbitDropHelper imageio …` (the processors' HEIC probe on macOS), which takes seconds on a
+ * CI VM — that is not a second drag helper, so only argument-less processes count.
+ */
 function helperProcessCount(): number {
-  if (process.platform === 'win32') return 0;
-  try {
-    return execFileSync('pgrep', ['-f', helperPath], { encoding: 'utf8' }).trim().split('\n').filter(Boolean).length;
-  } catch {
-    return 0; // pgrep exits 1 when nothing matches
+  if (process.platform === 'win32') {
+    const path = helperPath.replace(/'/g, "''");
+    const script = `@(Get-CimInstance Win32_Process -Filter "Name = 'OrbitDropHelper.exe'" | Where-Object { $_.ExecutablePath -eq '${path}' -and $_.CommandLine -notmatch ' imageio( |$)' }).Count`;
+    return Number(execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', windowsHide: true }).trim()) || 0;
   }
+  const commandLines = execFileSync('ps', ['-axww', '-o', 'args='], { encoding: 'utf8' }).split('\n').map((line) => line.trim());
+  return commandLines.filter((args) => args === helperPath).length;
 }
 
 test('the real helper accepts main’s configure and stops on quit', async () => {

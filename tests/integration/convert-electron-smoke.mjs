@@ -25,6 +25,7 @@
 
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
@@ -34,9 +35,19 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const ENTRY = join(ROOT, 'tests', 'integration', 'convert-smoke-entry.ts');
 const MEMORY_ENTRY = join(ROOT, 'tests', 'integration', 'convert-memory-entry.ts');
 
+/**
+ * The Electron executable itself (Electron.app/Contents/MacOS/Electron, electron.exe), as the
+ * electron package resolves it — downloading the runtime on first use, like its launcher does.
+ * Not node_modules/.bin/electron: on Windows that is a .cmd script, which Node refuses to spawn
+ * without a shell (EINVAL, CVE-2024-27980), and the launcher's extra process would outlive a kill.
+ */
 export function electronBinary() {
-  const bin = join(ROOT, 'node_modules', '.bin', process.platform === 'win32' ? 'electron.cmd' : 'electron');
-  return existsSync(bin) ? bin : null;
+  try {
+    const bin = createRequire(join(ROOT, 'package.json'))('electron');
+    return typeof bin === 'string' && existsSync(bin) ? bin : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Bundle the entry to CJS with rolldown (the bundler of electron-vite 6 / Vite 8). */
@@ -72,7 +83,20 @@ app.whenReady().then(() => {
   const child = utilityProcess.fork(script, [], { stdio: 'pipe', env: process.env, execArgv, serviceName: 'convert-smoke' });
   child.stdout.on('data', (d) => process.stdout.write(d));
   child.stderr.on('data', (d) => process.stderr.write(d));
-  child.on('exit', (code) => app.exit(code ?? 1));
+  // Exit once the child's output has been passed on: on Windows its 'exit' arrives before the last
+  // data on its stdout pipe, and exiting right away lost the CONVERT_SMOKE line (exit 0, no output).
+  let exitCode = null;
+  let openStreams = 2;
+  const finish = () => {
+    if (exitCode !== null && openStreams === 0) process.stdout.write('', () => app.exit(exitCode));
+  };
+  child.stdout.on('end', () => { openStreams -= 1; finish(); });
+  child.stderr.on('end', () => { openStreams -= 1; finish(); });
+  child.on('exit', (code) => {
+    exitCode = code ?? 1;
+    finish();
+    setTimeout(() => app.exit(exitCode), 10000); // the pipes never closed
+  });
 });
 app.on('window-all-closed', () => {});
 `;
@@ -117,7 +141,7 @@ function runProcess(command, args, env, timeoutMs) {
     const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
     child.stdout.on('data', (d) => (stdout += d));
     child.stderr.on('data', (d) => (stderr += d));
-    child.on('close', (code) => {
+    child.on('close', (code, signal) => {
       clearTimeout(timer);
       const line = stdout.split(/\r?\n/).find((l) => l.startsWith('CONVERT_SMOKE '));
       let result = null;
@@ -126,14 +150,15 @@ function runProcess(command, args, env, timeoutMs) {
       } catch {
         result = null;
       }
-      resolvePromise({ code, result, stderr: stderr.split(/\r?\n/).filter(Boolean).slice(-8) });
+      const tail = (text) => text.split(/\r?\n/).filter(Boolean).slice(-8);
+      resolvePromise({ code, signal, result, stderr: tail(stderr), stdout: tail(stdout.replace(/^CONVERT_SMOKE .*$/m, '')) });
     });
   });
 }
 
 export async function runConvertSmoke(modes = ['node', 'utility', 'asar'], { timeoutMs = 120_000 } = {}) {
   const electron = electronBinary();
-  if (!electron) return { ok: false, error: 'electron binary not found (node_modules/.bin/electron)' };
+  if (!electron) return { ok: false, error: 'electron binary not found (node_modules/electron)' };
   const work = await mkdtemp(join(tmpdir(), 'orbitdrop-electron-smoke-'));
   const summary = { ok: true, bundle: null, modes: {} };
   try {
@@ -196,7 +221,12 @@ export async function runConvertSmoke(modes = ['node', 'utility', 'asar'], { tim
         throw new Error(`unknown mode ${mode}`);
       }
       const passed = outcome.code === 0 && outcome.result?.ok === true;
-      summary.modes[mode] = { passed, exitCode: outcome.code, ...(outcome.result ?? {}), ...(passed ? {} : { stderr: outcome.stderr }) };
+      summary.modes[mode] = {
+        passed,
+        exitCode: outcome.code,
+        ...(outcome.result ?? {}),
+        ...(passed ? {} : { signal: outcome.signal, stderr: outcome.stderr, stdout: outcome.stdout, resultOk: outcome.result?.ok ?? null }),
+      };
       summary.ok &&= passed;
     }
   } finally {

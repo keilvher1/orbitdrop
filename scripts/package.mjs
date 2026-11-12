@@ -39,6 +39,10 @@
 //                       (artifacts are labelled "-incomplete"); for pipeline testing only
 //   --smoke-timeout <s> seconds before the smoke test is killed (default 180: more than the app's own
 //                       120 s limit for the engine probe, so a stuck probe still prints its report)
+//   --rosetta-smoke <m> strict (default) | best-effort: how a failed smoke test of the x64 package
+//                       under Rosetta 2 counts (it is tried twice, the second time with the translation
+//                       cache warm). best-effort reports it without failing the build — for CI runners
+//                       whose Rosetta 2 is unreliable (GitHub's macOS VM, docs/verification.md)
 //   --install-test      Windows: silently install the NSIS package per-user into a temp folder,
 //                       check the HKCU uninstall entry, smoke-test the installed exe, uninstall
 import { spawn, spawnSync } from 'node:child_process';
@@ -80,6 +84,7 @@ const opts = {
   allowIncomplete: flag('allow-incomplete'),
   installTest: flag('install-test'),
   smokeTimeoutMs: Number(option('smoke-timeout', '180')) * 1000,
+  rosettaSmoke: option('rosetta-smoke', 'strict'),
 };
 
 const errors = []; // always fatal
@@ -91,6 +96,7 @@ const fatal = (msg) => {
 const step = (msg) => console.log(`\n▶ ${msg}`);
 
 if (!['mac', 'win'].includes(target)) fatal(`unknown target "${target}" (expected mac or win)`);
+if (!['strict', 'best-effort'].includes(opts.rosettaSmoke)) fatal(`--rosetta-smoke must be strict or best-effort, not "${opts.rosettaSmoke}"`);
 if (target === 'mac' && process.platform !== 'darwin') fatal('macOS packages are built on macOS (codesign, hdiutil, the Swift helper). Use the macOS CI job.');
 if (target === 'win' && process.platform !== 'win32') fatal('Windows packages are built on Windows (MSVC helper, win32 sharp/canvas binaries). Use the Windows CI job.');
 
@@ -592,6 +598,9 @@ function smokeTest(binary, { x64OnArm = false } = {}) {
     const childEnv = { ...process.env };
     delete childEnv.ELECTRON_RUN_AS_NODE;
     delete childEnv.ORBITDROP_HELPER_PATH;
+    // Chromium's own messages (GPU process, renderer start-up) go to stderr too, so a failing smoke
+    // test shows why a window did not load (stderr is printed only when it fails).
+    childEnv.ELECTRON_ENABLE_LOGGING = '1';
     const started = Date.now();
     console.log(`  $ ${[cmd, ...args].join(' ')}`);
     const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], env: childEnv, detached: !isWin, windowsHide: true });
@@ -638,7 +647,7 @@ function smokeTest(binary, { x64OnArm = false } = {}) {
           parseError = err.message;
         }
       }
-      const tail = (s) => s.trim().split(/\r?\n/).slice(-8).join('\n');
+      const tail = (s, lines = 8) => s.trim().split(/\r?\n/).slice(-lines).join('\n');
       resolve({
         ran: true,
         exitCode: code,
@@ -650,7 +659,7 @@ function smokeTest(binary, { x64OnArm = false } = {}) {
         report,
         parseError,
         stdoutTail: tail(stdout),
-        stderrTail: tail(stderr),
+        stderrTail: tail(stderr, 60),
       });
     });
   });
@@ -664,14 +673,29 @@ async function runSmoke(result, binary) {
     return;
   }
   step(`smoke test ${os}-${a}${x64OnArm ? ' (Rosetta 2)' : ''}: ${rel(binary)}`);
-  result.smoke = await smokeTest(binary, { x64OnArm });
+  const attempt = async () => {
+    const s = await smokeTest(binary, { x64OnArm });
+    if (s.report) console.log(`  ORBITDROP_SMOKE ${JSON.stringify(s.report)}`);
+    console.log(`  exit=${s.exitCode} signal=${s.signal ?? '-'} timedOut=${s.timedOut} ${s.seconds}s → ${s.ok ? 'OK' : 'FAILED'}`);
+    if (!s.ok) {
+      if (s.stdoutTail) console.log(`  stdout (tail):\n${s.stdoutTail.replace(/^/gm, '    ')}`);
+      if (s.stderrTail) console.log(`  stderr (tail):\n${s.stderrTail.replace(/^/gm, '    ')}`);
+    }
+    return s;
+  };
+  result.smoke = await attempt();
+  // The first launch under Rosetta 2 translates Electron's x86_64 code while the app starts; on a slow
+  // machine that alone can break the run. A second launch finds the translation cache warm.
+  if (x64OnArm && !result.smoke.ok) {
+    console.log('  first launch under Rosetta 2 failed; trying again with the translation cache warm');
+    result.smoke = { ...(await attempt()), firstAttempt: { ok: false, exitCode: result.smoke.exitCode, signal: result.smoke.signal, timedOut: result.smoke.timedOut, seconds: result.smoke.seconds } };
+  }
   const s = result.smoke;
-  if (s.report) console.log(`  ORBITDROP_SMOKE ${JSON.stringify(s.report)}`);
-  console.log(`  exit=${s.exitCode} signal=${s.signal ?? '-'} timedOut=${s.timedOut} ${s.seconds}s → ${s.ok ? 'OK' : 'FAILED'}`);
   if (!s.ok) {
-    if (s.stdoutTail) console.log(`  stdout (tail):\n${s.stdoutTail.replace(/^/gm, '    ')}`);
-    if (s.stderrTail) console.log(`  stderr (tail):\n${s.stderrTail.replace(/^/gm, '    ')}`);
-    if (s.implemented) errors.push(`${os}-${a}: the smoke test reported failure (exit ${s.exitCode})`);
+    if (x64OnArm && opts.rosettaSmoke === 'best-effort') {
+      s.bestEffort = true;
+      console.warn(`  ⚠ ${os}-${a}: the smoke test under Rosetta 2 failed twice; counted as best effort (--rosetta-smoke best-effort), not as a build failure`);
+    } else if (s.implemented) errors.push(`${os}-${a}: the smoke test reported failure (exit ${s.exitCode})`);
     else incomplete.push(`${os}-${a}: the app printed no ORBITDROP_SMOKE line within ${opts.smokeTimeoutMs / 1000}s (is --smoke-test implemented in apps/desktop/src/main?)`);
   }
 }
@@ -785,11 +809,17 @@ async function installTestWin(result) {
   if (uninstaller) {
     step('uninstall');
     spawnSync(join(dir, uninstaller), ['/S'], { stdio: 'inherit', timeout: 300000 });
-    // The NSIS uninstaller re-launches itself from %TEMP%; wait for the files to disappear.
-    for (let i = 0; i < 60 && existsSync(exe); i++) await new Promise((r) => setTimeout(r, 1000));
+    // The NSIS uninstaller re-launches itself from %TEMP% and returns at once; the copy removes the
+    // files first and the uninstall registry key after them. Wait for both (seen on the runner: the
+    // key was still there right after the files had gone).
+    const entryPresent = () => {
+      const r = capture('reg', ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall', '/s', '/f', desktopPkg.productName, '/d']);
+      return r.status === 0 && r.out.includes(desktopPkg.productName);
+    };
+    for (let i = 0; i < 60 && (existsSync(exe) || entryPresent()); i++) await new Promise((r) => setTimeout(r, 1000));
     out.uninstalled = !existsSync(exe);
-    const after = capture('reg', ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall', '/s', '/f', desktopPkg.productName, '/d']);
-    out.uninstallEntryRemoved = !(after.status === 0 && after.out.includes(desktopPkg.productName));
+    out.uninstallEntryRemoved = !entryPresent();
+    out.installFolderRemoved = !existsSync(dir);
   }
   console.log(`  install test: ${JSON.stringify({ ...out, smoke: out.smoke ? { ok: out.smoke.ok, report: out.smoke.report } : undefined })}`);
   if (install.status !== 0 || !out.installed) errors.push(`win: silent per-user install failed (exit ${install.status})`);
@@ -844,7 +874,7 @@ for (const r of results) {
   console.log(`  ${r.os}-${r.arch}: ${r.ok ? 'built' : 'BUILD FAILED'} · ${r.signing.mode}${r.labels.length ? ` · labels: ${r.labels.join(', ')}` : ''}`);
   if (r.app) console.log(`    app: ${r.app.path} (${mb(r.app.bytes)})`);
   for (const x of r.artifacts) console.log(`    ${x.path} (${mb(x.bytes)}) sha256 ${x.sha256}`);
-  if (r.smoke) console.log(`    smoke: ${r.smoke.ok ? 'OK' : r.smoke.ran ? (r.smoke.implemented ? 'FAILED' : 'not implemented') : `not run (${r.smoke.error})`}`);
+  if (r.smoke) console.log(`    smoke: ${r.smoke.ok ? 'OK' : r.smoke.ran ? (r.smoke.implemented ? 'FAILED' : 'not implemented') : `not run (${r.smoke.error})`}${r.smoke.bestEffort ? ' (best effort: Rosetta 2 on this runner)' : ''}${r.smoke.firstAttempt ? ' (second launch)' : ''}`);
   if (r.nativeCheck) console.log(`    native-module check: ${r.nativeCheck.ran ? (r.nativeCheck.ok ? `OK (librsvg ${r.nativeCheck.sharp?.rsvg}, ${r.nativeCheck.koreanFont}, pdf-lib + docx)` : 'FAILED') : `not run (${r.nativeCheck.reason})`}`);
   if (r.dmgNotarization) console.log(`    DMG: ${r.dmgNotarization.ok ? `signed, notarized, stapled (${r.dmgNotarization.spctl})` : r.dmgNotarization.skipped ? `not notarized (${r.dmgNotarization.skipped})` : `FAILED at ${r.dmgNotarization.failedAt ?? '?'}`}`);
   console.log(`    report: ${rel(join(RELEASE, `build-report-${r.os}-${r.arch}.json`))}`);
@@ -853,7 +883,7 @@ for (const r of results) {
 if (process.env.GITHUB_STEP_SUMMARY) {
   const lines = ['### OrbitDrop packages', '', '| Target | Signing | Notarized (app / DMG) | Smoke test | Native modules | Artifacts |', '|---|---|---|---|---|---|'];
   for (const r of results) {
-    const smoke = !r.smoke ? 'not run' : r.smoke.ok ? 'OK' : r.smoke.ran ? (r.smoke.implemented ? 'FAILED' : 'not implemented') : `not run (${r.smoke.error})`;
+    const smoke = (!r.smoke ? 'not run' : r.smoke.ok ? 'OK' : r.smoke.ran ? (r.smoke.implemented ? 'FAILED' : 'not implemented') : `not run (${r.smoke.error})`) + (r.smoke?.bestEffort ? ' (best effort: Rosetta 2 on this runner)' : '');
     const files = r.artifacts.map((x) => `\`${x.path.split('/').pop()}\` (${mb(x.bytes)})`).join('<br>') || (r.ok ? '(dir only)' : 'BUILD FAILED');
     const nat = !r.nativeCheck ? 'not run' : !r.nativeCheck.ran ? 'skipped' : r.nativeCheck.ok ? `OK (librsvg ${r.nativeCheck.sharp?.rsvg}, ${r.nativeCheck.koreanFont}, pdf-lib + docx)` : 'FAILED';
     const notarized = r.signing.notarize === null ? 'n/a' : `${r.signing.notarize ? 'yes' : 'no'} / ${r.dmgNotarization?.ok ? 'yes' : 'no'}`;

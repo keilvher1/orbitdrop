@@ -75,6 +75,21 @@ function isUnder(path: string, root: string, platform: NodeJS.Platform): boolean
   return p === r || p.startsWith(r + sep);
 }
 
+/** NTFS / Win32 limits in UTF-16 code units: one name, and a whole path in the `\\?\` form Node uses. */
+const WIN32_MAX_NAME = 255;
+const WIN32_MAX_PATH = 32_767;
+
+/**
+ * Whether a Windows path exceeds what NTFS and the Win32 API accept. Windows reports such a
+ * path as "not found" (ERROR_INVALID_NAME / ERROR_PATH_NOT_FOUND → ENOENT) where macOS says
+ * ENAMETOOLONG, so validateInputFile checks it first and both report PATH_TOO_LONG. Paths of
+ * more than MAX_PATH (260) characters are fine: Node opens files through `\\?\` paths.
+ */
+export function exceedsWin32PathLimits(path: string): boolean {
+  if (path.length > WIN32_MAX_PATH) return true;
+  return path.split(/[\\/]/).some((name) => name.length > WIN32_MAX_NAME);
+}
+
 /** Heuristic only (used to explain a hanging read): see validateInputFile. */
 export function isNetworkPath(path: string, platform: NodeJS.Platform): boolean {
   if (platform === 'win32') return path.startsWith('\\\\') || path.startsWith('//');
@@ -121,7 +136,8 @@ function emptyFileError(displayName: string): OrbitError {
 /**
  * Validate a path received from a drop or dialog before any job is created.
  *
- *  - must be absolute; symbolic links are resolved (realpath) with loop
+ *  - must be absolute; on Windows a name over 255 or a path over 32,767 UTF-16 units is
+ *    PATH_TOO_LONG (Windows itself only says "not found"); symbolic links are resolved (realpath) with loop
  *    detection (SYMLINK_LOOP); a dangling link is FILE_NOT_FOUND
  *  - folders (also via a link) and other non-regular files → NOT_A_FILE
  *  - 0 bytes → FILE_EMPTY for a supported extension, else UNSUPPORTED_FORMAT;
@@ -146,6 +162,9 @@ export async function validateInputFile(inputPath: string, options: ValidateOpti
   const limits = options.limits ?? DEFAULT_PROCESSING_LIMITS;
   const platform = options.platform ?? process.platform;
   if (!isAbsolute(inputPath)) throw new OrbitError('FILE_NOT_FOUND', 'Path must be absolute');
+  if (platform === 'win32' && exceedsWin32PathLimits(inputPath)) {
+    throw new OrbitError('PATH_TOO_LONG', 'Path is too long', { detail: `${inputPath.length} UTF-16 units` });
+  }
 
   let realPath: string;
   try {

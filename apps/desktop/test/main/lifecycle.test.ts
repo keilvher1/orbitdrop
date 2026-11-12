@@ -20,6 +20,7 @@ import {
 import { applyLoginItem, loginItemToAdopt, type LoginItems } from '../../src/main/login-item';
 import { MAX_EDITOR_WINDOWS, editorsToEvict } from '../../src/main/windows/specs';
 import { waitFor } from './helpers';
+import { allowWrites, denyAclsApply, denyWrites } from './read-only-dir';
 
 let dir: string;
 beforeEach(async () => {
@@ -79,6 +80,9 @@ describe('quit', () => {
 
 describe('files on a command line', () => {
   const options = { appPath: '/app', platform: 'darwin' as const };
+  // Arguments are resolved with this host's path rules: on Windows '/Users/me/a.jpg' is
+  // 'X:\Users\me\a.jpg' on the current drive, so the expectations go through `resolve` too
+  // (on macOS `resolve` leaves these absolute paths exactly as written).
 
   it('keeps file arguments, resolved against the launch folder, without switches, the app folder or duplicates', () => {
     expect(
@@ -87,7 +91,7 @@ describe('files on a command line', () => {
         '/app',
         options,
       ),
-    ).toEqual(['/Users/me/a.jpg', resolve('/app', 'rel/b.pdf')]);
+    ).toEqual([resolve('/Users/me/a.jpg'), resolve('/app', 'rel/b.pdf')]);
     // A development run: `electron [--inspect=0 --remote-debugging-port=0] <app folder>` names no file.
     expect(filePathsFromArgv(['/x/Electron', '--inspect=0', '--remote-debugging-port=0', '/app'], '/somewhere', options)).toEqual([]);
     expect(filePathsFromArgv(['/x/Electron'], '/', options)).toEqual([]);
@@ -95,19 +99,30 @@ describe('files on a command line', () => {
 
   it('development runs (`electron <entry script>`, skip 2) do not take the entry for a file', () => {
     expect(filePathsFromArgv(['/x/Electron', 'out/main/index.js', 'photo.jpg'], '/repo/apps/desktop', { appPath: '/repo/apps/desktop/out/main', platform: 'darwin', skip: 2 })).toEqual([
-      '/repo/apps/desktop/photo.jpg',
+      resolve('/repo/apps/desktop/photo.jpg'),
     ]);
     // Without the skip the entry script would have been a candidate.
     expect(filePathsFromArgv(['/x/Electron', 'out/main/index.js'], '/repo/apps/desktop', { appPath: '/repo/apps/desktop/out/main', platform: 'darwin' })).toEqual([
-      '/repo/apps/desktop/out/main/index.js',
+      resolve('/repo/apps/desktop/out/main/index.js'),
     ]);
   });
 
   it('compares paths case-insensitively on Windows and caps the number of files', () => {
-    expect(filePathsFromArgv(['OrbitDrop.exe', '/APP', '/Photos/A.jpg', '/photos/a.JPG'], '/', { appPath: '/app', platform: 'win32' })).toEqual(['/Photos/A.jpg']);
+    expect(filePathsFromArgv(['OrbitDrop.exe', '/APP', '/Photos/A.jpg', '/photos/a.JPG'], '/', { appPath: '/app', platform: 'win32' })).toEqual([resolve('/Photos/A.jpg')]);
     const many = ['exe', ...Array.from({ length: 600 }, (_, i) => `/p/${i}.png`)];
     expect(filePathsFromArgv(many, '/', options)).toHaveLength(500);
-    expect(filePathsFromArgv(many, '/', { ...options, max: 3 })).toEqual(['/p/0.png', '/p/1.png', '/p/2.png']);
+    expect(filePathsFromArgv(many, '/', { ...options, max: 3 })).toEqual(['/p/0.png', '/p/1.png', '/p/2.png'].map((p) => resolve(p)));
+  });
+
+  it.runIf(process.platform === 'win32')('Windows command lines: drive letters, backslashes, relative names and the install folder', () => {
+    const app = 'C:\\Users\\me\\AppData\\Local\\Programs\\OrbitDrop';
+    expect(
+      filePathsFromArgv(
+        [`${app}\\OrbitDrop.exe`, '--original-process-start-time=1', 'C:\\Photos\\A.jpg', 'c:\\photos\\a.JPG', 'sub\\b.pdf', '..\\c.png', app.toUpperCase(), 'D:\\사진\\사진 001.png'],
+        'D:\\work\\here',
+        { appPath: app, platform: 'win32' },
+      ),
+    ).toEqual(['C:\\Photos\\A.jpg', 'D:\\work\\here\\sub\\b.pdf', 'D:\\work\\c.png', 'D:\\사진\\사진 001.png']);
   });
 
   it('a second launch with files opens them (validated by the target); without files it shows the Drop Zone', () => {
@@ -232,18 +247,26 @@ describe('app data folder', () => {
     expect(await readdir(join(dir, 'new', 'nested'))).toEqual([]);
   });
 
-  it('a read-only folder (or one that cannot be created) is reported', async () => {
+  // POSIX: mode 0555. Windows: a deny ACL (folders have no read-only mode there) — which only
+  // stops processes the ACL applies to; on the GitHub runner it does not stop Node (see denyAclsApply).
+  it.runIf(denyAclsApply())('a read-only folder is reported', async () => {
     const readOnly = join(dir, 'ro');
     await mkdir(readOnly);
-    await chmod(readOnly, 0o555);
+    await denyWrites(readOnly);
     try {
       expect(dataDirWritable(readOnly)).toBe(false);
       expect(dataDirWritable(join(readOnly, 'child'))).toBe(false);
     } finally {
-      await chmod(readOnly, 0o755);
+      await allowWrites(readOnly);
     }
+    expect(await readdir(readOnly)).toEqual([]); // the probes left nothing behind
+  });
+
+  it('a folder that cannot be created is reported', async () => {
     await writeFile(join(dir, 'file'), 'x');
     expect(dataDirWritable(join(dir, 'file'))).toBe(false); // a file where the folder should be
+    expect(dataDirWritable(join(dir, 'file', 'child'))).toBe(false); // a file on the way to it
+    expect(await readdir(dir)).toEqual(['file']);
   });
 });
 

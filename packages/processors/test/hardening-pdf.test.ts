@@ -5,7 +5,7 @@ import { createCanvas } from '@napi-rs/canvas';
 import { PDFDocument, PDFName, PDFNumber, StandardFonts, degrees, rgb } from 'pdf-lib';
 import sharp from 'sharp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { pdfResourceLoads } from '../src/pdf/engine';
+import { pdfResourceLoads, withLeadingFamily } from '../src/pdf/engine';
 import { extractPageText, linesToParagraphs, type TextLine } from '../src/pdf/text';
 import { detectKoreanFont } from '../src/tools';
 import { docxParagraphs, makeFixtureDir, readZip, staticFixture } from './helpers/convert-fixtures';
@@ -247,6 +247,14 @@ describe('PDF inputs (hardening)', () => {
     } finally {
       await fixtures.cleanup();
     }
+  });
+
+  it('text with Hangul is drawn with the Hangul family first in the font PDF.js chose (Windows: its generic face has no Hangul)', () => {
+    const font = 'normal normal 24px "g_d0_f1", sans-serif';
+    expect(withLeadingFamily(font, '"Malgun Gothic"')).toBe('normal normal 24px "Malgun Gothic", "g_d0_f1", sans-serif');
+    expect(withLeadingFamily(withLeadingFamily(font, '"Malgun Gothic"'), '"Malgun Gothic"')).toBe('normal normal 24px "Malgun Gothic", "g_d0_f1", sans-serif');
+    expect(withLeadingFamily('italic bold 12.5px/1.2 serif', '"AppleGothic"')).toBe('italic bold 12.5px/1.2 "AppleGothic", serif');
+    expect(withLeadingFamily('no size here', '"Malgun Gothic"')).toBe('no size here');
   });
 
   it('text layout survives pages with hundreds of thousands of lines (no call-stack overflow)', async () => {

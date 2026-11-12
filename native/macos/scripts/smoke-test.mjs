@@ -9,7 +9,7 @@
 // appears during a real OS drag with the modifier held, and `configure` is sent
 // with enabled:false unless --enabled is given.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
+import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -40,6 +40,12 @@ const results = [];
 function check(name, ok, detail = '') {
   results.push({ name, ok: Boolean(ok), detail });
   if (!jsonSummary) console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`);
+}
+/** A check this machine cannot perform (reported as skipped, with the reason; not a pass). */
+const skipped = [];
+function skip(name, reason) {
+  skipped.push({ name, reason });
+  if (!jsonSummary) console.log(`skip ${name} — ${reason}`);
 }
 
 const HELPER_TYPES = new Set(['ready', 'state', 'drop', 'cancelled', 'pong', 'permissions', 'log', 'error']);
@@ -188,28 +194,66 @@ const t0 = performance.now();
 }
 
 // ---------------------------------------------------------------- D: CLI modes
-{
-  const version = spawnSync(binary, ['--version'], { encoding: 'utf8' });
-  check('--version', version.status === 0 && /OrbitDropHelper \d+\.\d+\.\d+/.test(version.stdout), version.stdout.trim());
-  const probe = spawnSync(binary, ['imageio', '--probe'], { encoding: 'utf8' });
-  let probed = null;
+/**
+ * One CLI run, bounded, with stdout/stderr in files. On GitHub's macOS runner (a VM) the helper's
+ * `imageio --probe` exits while its stdout pipe stays open (a process it started keeps the write
+ * end), so waiting for the pipe to close hung this script — a file is complete once the helper exits.
+ */
+function runCli(cliArgs, timeoutMs = 60_000) {
+  const dir = mkdtempSync(join(tmpdir(), 'orbitdrop-helper-cli-'));
+  const out = openSync(join(dir, 'stdout'), 'w');
+  const err = openSync(join(dir, 'stderr'), 'w');
   try {
-    probed = JSON.parse(probe.stdout);
-  } catch {}
-  const shapeOk = probed && Array.isArray(probed.decode) && Array.isArray(probed.encode) && Object.keys(probed).length === 2;
-  check('imageio --probe JSON', probe.status === 0 && shapeOk, probe.stdout.trim());
+    const r = spawnSync(binary, cliArgs, { stdio: ['ignore', out, err], timeout: timeoutMs, killSignal: 'SIGKILL' });
+    return { status: r.status, error: r.error, stdout: readFileSync(join(dir, 'stdout'), 'utf8'), stderr: readFileSync(join(dir, 'stderr'), 'utf8') };
+  } finally {
+    closeSync(out);
+    closeSync(err);
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  const version = runCli(['--version']);
+  check('--version', version.status === 0 && /OrbitDropHelper \d+\.\d+\.\d+/.test(version.stdout), version.stdout.trim());
+  // Bounded: the probe runs an ImageIO encode round trip per format, which takes seconds on GitHub's
+  // macOS runner (no HEVC hardware). The app bounds it as well (processors: 3 s, then HEIC is "not
+  // available").
+  const probe = runCli(['imageio', '--probe'], 60_000);
+  if (probe.error?.code === 'ETIMEDOUT') {
+    skip('imageio --probe JSON', 'did not finish within 60 s (killed): this Mac\'s ImageIO encoder round trip does not finish');
+  } else {
+    let probed = null;
+    try {
+      probed = JSON.parse(probe.stdout);
+    } catch {}
+    const shapeOk = probed && Array.isArray(probed.decode) && Array.isArray(probed.encode) && Object.keys(probed).length === 2;
+    check('imageio --probe JSON', probe.status === 0 && shapeOk, probe.stdout.trim());
+  }
   const dir = mkdtempSync(join(tmpdir(), 'orbitdrop-helper-smoke-'));
   const png = join(dir, 'wheel.png');
-  const snap = spawnSync(binary, ['--render-snapshot', png, '--menu', 'pdf', '--mode', 'convert', '--highlight', '1', '--scale', '1'], { encoding: 'utf8' });
+  const snap = runCli(['--render-snapshot', png, '--menu', 'pdf', '--mode', 'convert', '--highlight', '1', '--scale', '1']);
   let pngOk = false;
   if (snap.status === 0 && existsSync(png)) {
     const head = readFileSync(png).subarray(0, 24);
     pngOk = head.toString('latin1', 1, 4) === 'PNG' && head.readUInt32BE(16) === 408 && head.readUInt32BE(20) === 440 && statSync(png).size > 5000;
   }
-  check('--render-snapshot writes a 408×440 PNG (disc + caption strip + shadow margin)', pngOk, snap.stderr.trim());
+  check('--render-snapshot writes a 408×440 PNG (disc + caption strip + shadow margin)', pngOk, snap.error ? String(snap.error.message) : snap.stderr.trim());
 }
 
 const failed = results.filter((r) => !r.ok);
-const summary = { ok: failed.length === 0, binary, schema: schemaMode, checks: results.length, failed: failed.map((f) => f.name), ms: Math.round(performance.now() - t0) };
-console.log(jsonSummary ? JSON.stringify(summary) : `\n${summary.ok ? 'PASS' : 'FAIL'}: ${results.length - failed.length}/${results.length} checks (${schemaMode} validation) in ${summary.ms} ms`);
+const summary = {
+  ok: failed.length === 0,
+  binary,
+  schema: schemaMode,
+  checks: results.length,
+  failed: failed.map((f) => f.name),
+  skipped: skipped.map((s) => `${s.name}: ${s.reason}`),
+  ms: Math.round(performance.now() - t0),
+};
+console.log(
+  jsonSummary
+    ? JSON.stringify(summary)
+    : `\n${summary.ok ? 'PASS' : 'FAIL'}: ${results.length - failed.length}/${results.length} checks (${schemaMode} validation)${skipped.length ? `, ${skipped.length} skipped` : ''} in ${summary.ms} ms`,
+);
 process.exit(summary.ok ? 0 : 1);

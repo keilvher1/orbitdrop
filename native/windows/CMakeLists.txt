@@ -71,6 +71,7 @@ add_library(orbitdrop_core STATIC
   src/core/protocol.cpp
   src/core/selection.cpp
   src/core/session.cpp
+  src/core/text_wrap.cpp
   src/core/utf.cpp
   src/core/wheel_layout.cpp
 )
@@ -96,6 +97,7 @@ if(ORBITDROP_BUILD_TESTS)
     tests/test_protocol.cpp
     tests/test_selection.cpp
     tests/test_session.cpp
+    tests/test_text_wrap.cpp
     tests/test_utf.cpp
   )
   target_link_libraries(orbitdrop-core-tests PRIVATE orbitdrop_core orbitdrop_flags)

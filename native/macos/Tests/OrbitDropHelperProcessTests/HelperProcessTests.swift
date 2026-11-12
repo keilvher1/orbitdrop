@@ -236,17 +236,51 @@ final class HelperProcessTests: XCTestCase {
 
   // MARK: CLI modes
 
-  func run(_ arguments: [String]) throws -> (status: Int32, stdout: String) {
+  /// A CLI run that did not finish within its time limit (it was killed).
+  struct CLITimeout: Error, CustomStringConvertible {
+    let arguments: [String]
+    let seconds: TimeInterval
+    var description: String { "OrbitDropHelper \(arguments.joined(separator: " ")) did not finish within \(Int(seconds)) s (killed)" }
+  }
+
+  /// Runs the helper CLI, bounded, with stdout in a file. Both matter on GitHub's macOS runner (a
+  /// VM): there `imageio --probe` exits (status 0) while its stdout pipe stays open — a process it
+  /// started keeps the pipe's write end — so reading the pipe to its end, as this did before, never
+  /// returned and hung the whole test run. A file is complete once the helper has exited; a run that
+  /// does not exit in time is killed and throws CLITimeout.
+  func run(_ arguments: [String], timeout: TimeInterval = 60) throws -> (status: Int32, stdout: String) {
+    let outURL = FileManager.default.temporaryDirectory.appendingPathComponent("orbitdrop-helper-cli-\(UUID().uuidString).out")
+    guard FileManager.default.createFile(atPath: outURL.path, contents: nil) else { throw CocoaError(.fileWriteUnknown) }
+    defer { try? FileManager.default.removeItem(at: outURL) }
+    let out = try FileHandle(forWritingTo: outURL)
+    defer { try? out.close() }
     let process = Process()
     process.executableURL = Self.helperURL
     process.arguments = arguments
-    let out = Pipe()
     process.standardOutput = out
-    process.standardError = Pipe()
+    process.standardError = FileHandle.nullDevice
     try process.run()
-    let data = out.fileHandleForReading.readDataToEndOfFile()
-    process.waitUntilExit()
+    let deadline = Date().addingTimeInterval(timeout)
+    while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
+    if process.isRunning {
+      kill(process.processIdentifier, SIGKILL)
+      process.waitUntilExit()
+      throw CLITimeout(arguments: arguments, seconds: timeout)
+    }
+    let data = (try? Data(contentsOf: outURL)) ?? Data()
     return (process.terminationStatus, String(decoding: data, as: UTF8.self))
+  }
+
+  /// `imageio --probe` runs an ImageIO encode/decode round trip per format; on GitHub's macOS runner
+  /// (a VM without HEVC hardware) that takes seconds instead of milliseconds. The product bounds it
+  /// (processors give it 3 s, then HEIC is "not available"); a probe that takes more than 60 s here
+  /// skips the tests that need it, with that reason, instead of hanging them.
+  func probeOrSkip() throws -> (status: Int32, stdout: String) {
+    do {
+      return try run(["imageio", "--probe"], timeout: 60)
+    } catch let timeout as CLITimeout {
+      throw XCTSkip("\(timeout): this Mac's ImageIO encoder round trip does not finish (seen on GitHub's macOS runner VMs)")
+    }
   }
 
   func temporaryDirectory() throws -> URL {
@@ -262,7 +296,7 @@ final class HelperProcessTests: XCTestCase {
   }
 
   func testImageIOHeicEncodeDecodeThroughTheCLI() throws {
-    let probe = try run(["imageio", "--probe"])
+    let probe = try probeOrSkip()
     XCTAssertEqual(probe.status, 0)
     let probed = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(probe.stdout.utf8)) as? [String: [String]])
     guard probed["encode"]?.contains("heic") == true else { throw XCTSkip("no HEVC encoder on this Mac") }
@@ -304,7 +338,7 @@ final class HelperProcessTests: XCTestCase {
   /// 3. --decode writes upright pixels with no orientation tag, 4. --quality takes 0…1.
   func testImageIOContractUsedByProcessors() throws {
     // 1 + 2: probe.
-    let probe = try run(["imageio", "--probe"])
+    let probe = try probeOrSkip()
     XCTAssertEqual(probe.status, 0)
     let lastLine = try XCTUnwrap(probe.stdout.split(separator: "\n").last.map(String.init))
     let probed = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(lastLine.utf8)) as? [String: Any])

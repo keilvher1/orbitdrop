@@ -306,7 +306,10 @@ TEST_CASE("ole: CF_HDROP parsing keeps Unicode and long paths") {
     effect = DROPEFFECT_COPY;
     target->Drop(&data, 0, POINTL{920, 500}, &effect);
     REQUIRE(sink.count("drop") == 1);
-    const auto& files = sink.last("drop").get("files")->asArray();
+    // Keep the message alive: last() returns a temporary, and a reference into it would dangle
+    // (MSVC reuses that memory at once; this read garbage there).
+    const json::Value drop = sink.last("drop");
+    const auto& files = drop.get("files")->asArray();
     REQUIRE(files.size() == 4);
     CHECK_EQ(files[2].asString(), p.paths[2]);
 }

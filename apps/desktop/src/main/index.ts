@@ -126,7 +126,9 @@ async function runSmoke(): Promise<void> {
   } catch (error) {
     log.error('smoke test crashed', { error: describeError(error) });
   }
-  await orbit.shutdown().catch(() => undefined);
+  // The report is printed; a cleanup that hangs must not keep the process alive (seen: the x64 build under
+  // Rosetta 2 on GitHub's macOS runner still ran 100 s later). A quit is bounded the same way (installQuitHandler).
+  await Promise.race([orbit.shutdown().catch(() => undefined), new Promise<void>((resolve) => setTimeout(resolve, 10_000))]);
   try {
     if (smokeDataDir) rmSync(smokeDataDir, { recursive: true, force: true });
   } catch {

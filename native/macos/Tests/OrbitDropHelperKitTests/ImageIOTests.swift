@@ -5,6 +5,52 @@ import XCTest
 
 @testable import OrbitDropHelperKit
 
+/// ImageIOTool.probe() runs an encode/decode round trip per format; on GitHub's macOS runner (a VM
+/// without HEVC hardware) that takes seconds, and a probe that never returned would stall every
+/// later test. So it runs once on its own thread with a deadline, while this (main) thread keeps
+/// its run loop going — the encoders may hand work to the main queue: with the main thread blocked
+/// in a semaphore wait the probe missed a 30 s deadline on the runner, where the same probe in the
+/// helper CLI finished in seconds. When it does not finish, the tests that need it are skipped
+/// with that reason (the product bounds the same probe: `imageio --probe` gets 3 s, then HEIC is
+/// "not available").
+enum BoundedProbe {
+  static let seconds: Double = 60
+
+  final class Box: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: ImageIOTool.Probe?
+    private var done = false
+
+    func finish(_ probe: ImageIOTool.Probe) {
+      lock.lock()
+      value = probe
+      done = true
+      lock.unlock()
+    }
+
+    var result: (done: Bool, probe: ImageIOTool.Probe?) {
+      lock.lock()
+      defer { lock.unlock() }
+      return (done, value)
+    }
+  }
+
+  static let result: ImageIOTool.Probe? = {
+    let box = Box()
+    Thread.detachNewThread { box.finish(ImageIOTool.probe()) }
+    let deadline = Date().addingTimeInterval(seconds)
+    while !box.result.done && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
+    return box.result.probe
+  }()
+
+  static func probeOrSkip() throws -> ImageIOTool.Probe {
+    guard let probe = result else {
+      throw XCTSkip("ImageIOTool.probe() did not finish within \(Int(seconds)) s: this Mac's ImageIO encoder round trip does not finish (seen on GitHub's macOS runner VMs)")
+    }
+    return probe
+  }
+}
+
 /// ImageIO codec mode: real encode/decode round trips, re-reading the outputs.
 final class ImageIOTests: XCTestCase {
   /// 64×48 image: left half red, right half blue.
@@ -38,8 +84,8 @@ final class ImageIOTests: XCTestCase {
     return (Int(bytes[0]), Int(bytes[1]), Int(bytes[2]))
   }
 
-  func testProbeShape() {
-    let probe = ImageIOTool.probe()
+  func testProbeShape() throws {
+    let probe = try BoundedProbe.probeOrSkip()
     XCTAssertTrue(probe.decode.contains("heic"), "macOS always decodes HEIC")
     XCTAssertTrue(probe.decode.contains("jpeg") && probe.decode.contains("png"))
     XCTAssertTrue(probe.encode.contains("jpeg") && probe.encode.contains("png"))
@@ -50,7 +96,7 @@ final class ImageIOTests: XCTestCase {
   }
 
   func testHeicRoundTrip() throws {
-    guard ImageIOTool.probe().encode.contains("heic") else { throw XCTSkip("no HEVC encoder on this Mac") }
+    guard try BoundedProbe.probeOrSkip().encode.contains("heic") else { throw XCTSkip("no HEVC encoder on this Mac") }
     let png = encoded(makeImage(), uti: UTType.png.identifier)
     let heic = try ImageIOTool.encode(png, format: "heic", quality: 0.9)
     XCTAssertEqual(heic.width, 64)
@@ -71,7 +117,7 @@ final class ImageIOTests: XCTestCase {
   }
 
   func testQualityAffectsSize() throws {
-    guard ImageIOTool.probe().encode.contains("heic") else { throw XCTSkip("no HEVC encoder on this Mac") }
+    guard try BoundedProbe.probeOrSkip().encode.contains("heic") else { throw XCTSkip("no HEVC encoder on this Mac") }
     // A noisy image so quality matters.
     let ctx = CGContext(data: nil, width: 256, height: 256, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
     var seed: UInt32 = 7

@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as napiCanvas from '@napi-rs/canvas';
 import type * as PdfJs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { OrbitError } from '@orbitdrop/contracts';
+import { resolveAnnotationFont } from '../tools/fonts';
 
 /**
  * PDF.js (legacy build, for Node/Electron) + @napi-rs/canvas, configured so it
@@ -137,12 +138,82 @@ interface CanvasAndContext {
   context: NapiContext | null;
 }
 
-function makeCanvasFactory(canvas: NapiCanvasModule) {
+// ---------------------------------------------------------------- text in fonts the PDF does not embed
+
+/**
+ * PDF.js draws text in a font the PDF does not embed (e.g. a CID font with a predefined CMap
+ * such as UniKS-UCS2-H) with fillText in the family list `"g_d0_f1", sans-serif`: the loaded
+ * name, which the canvas does not know, then the generic family. @napi-rs/canvas falls back
+ * per glyph only along that list, and its generic families are one default face: on macOS one
+ * with Hangul (Apple SD Gothic Neo), on Windows Arial — so Korean text in such PDFs came out
+ * blank there (measured on the Windows runner: 0 ink pixels for '한글' in `sans-serif`).
+ * Text that contains Hangul is therefore drawn (and measured) with the Hangul font the
+ * processors use for annotations (resolveAnnotationFont: Malgun Gothic on Windows) at the head
+ * of the family list; all other text keeps exactly the font PDF.js chose. Embedded fonts are
+ * drawn as paths and never reach fillText.
+ */
+async function hangulFamily(): Promise<string | null> {
+  try {
+    const { family } = await resolveAnnotationFont();
+    return family === null ? null : `"${family.replace(/"/g, '')}"`;
+  } catch {
+    return null;
+  }
+}
+
+const HANGUL = /[\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\uac00-\ud7af\ud7b0-\ud7ff]/u;
+
+/** A CSS font shorthand (`[style] [weight] <size>[/<line-height>] <families>`) with `family` first in its family list. */
+export function withLeadingFamily(font: string, family: string): string {
+  const match = /^(.*?\d(?:px|pt|pc|em|rem|ex|ch|vw|vh|%)(?:\s*\/\s*\S+)?\s+)(.+)$/i.exec(font.trim());
+  if (match === null || match[2]!.startsWith(family)) return font;
+  return `${match[1]}${family}, ${match[2]}`;
+}
+
+function fontAccessor(context: NapiContext): { get: () => unknown; set: (value: unknown) => void } | null {
+  for (let proto = Object.getPrototypeOf(context) as object | null; proto !== null; proto = Object.getPrototypeOf(proto) as object | null) {
+    const descriptor = Object.getOwnPropertyDescriptor(proto, 'font');
+    if (descriptor === undefined) continue;
+    const { get, set } = descriptor;
+    return typeof get === 'function' && typeof set === 'function' ? { get, set } : null;
+  }
+  return null;
+}
+
+/** Make fillText/strokeText/measureText of `context` use `family` first for text with Hangul (see above). */
+function installHangulFallback(context: NapiContext, family: string | null): NapiContext {
+  const font = family === null ? null : fontAccessor(context);
+  if (family === null || font === null) return context;
+  for (const name of ['fillText', 'strokeText', 'measureText'] as const) {
+    const original = context[name] as unknown as (this: NapiContext, text: unknown, ...rest: unknown[]) => unknown;
+    if (typeof original !== 'function') continue;
+    Object.defineProperty(context, name, {
+      configurable: true,
+      writable: true,
+      value(this: NapiContext, text: unknown, ...rest: unknown[]): unknown {
+        if (typeof text !== 'string' || !HANGUL.test(text)) return original.call(this, text, ...rest);
+        const chosen = String(font.get.call(this));
+        const withHangul = withLeadingFamily(chosen, family);
+        if (withHangul === chosen) return original.call(this, text, ...rest);
+        font.set.call(this, withHangul);
+        try {
+          return original.call(this, text, ...rest);
+        } finally {
+          font.set.call(this, chosen);
+        }
+      },
+    });
+  }
+  return context;
+}
+
+function makeCanvasFactory(canvas: NapiCanvasModule, hangul: string | null) {
   return class NapiCanvasFactory {
     create(width: number, height: number): CanvasAndContext {
       if (width <= 0 || height <= 0) throw new Error('Invalid canvas size');
       const c = canvas.createCanvas(width, height);
-      return { canvas: c, context: c.getContext('2d') };
+      // Text in transparency groups, patterns and soft masks is drawn on these canvases.
+      return { canvas: c, context: installHangulFallback(c.getContext('2d'), hangul) };
     }
 
     reset(target: CanvasAndContext, width: number, height: number): void {
@@ -281,9 +352,10 @@ export async function openPdf(bytes: Uint8Array, engine?: PdfEngine, options: { 
   const e = engine ?? (await loadPdfEngine());
   const data = ownedBytes(bytes);
   const { assets } = e;
+  const hangul = await hangulFamily();
   const params = {
     data,
-    CanvasFactory: makeCanvasFactory(e.canvas),
+    CanvasFactory: makeCanvasFactory(e.canvas, hangul),
     FilterFactory: NoopFilterFactory,
     BinaryDataFactory: LocalBinaryDataFactory,
     cMapUrl: assets.cMapUrl,
@@ -347,8 +419,10 @@ export async function renderPage(engine: PdfEngine, page: PdfPage, scale: number
   const viewport = page.getViewport({ scale });
   const width = Math.max(1, Math.round(viewport.width));
   const height = Math.max(1, Math.round(viewport.height));
+  const hangul = await hangulFamily();
+  signal?.throwIfAborted();
   const canvas: NapiCanvas = engine.canvas.createCanvas(width, height);
-  const context = canvas.getContext('2d', { alpha: false });
+  const context = installHangulFallback(canvas.getContext('2d', { alpha: false }), hangul);
   context.fillStyle = background;
   context.fillRect(0, 0, width, height);
   const task = page.render({

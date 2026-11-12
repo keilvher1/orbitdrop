@@ -5,8 +5,11 @@
 * **자동 검증**: 테스트·패키지 검사·smoke test. 결과물을 다시 읽어 확인한다. → 아래 [자동 검증 증거](#자동-검증-증거)
 * **실제 OS GUI 검증**: 사람이 **설치본**으로 실제 Finder/Explorer 파일을 드래그해 확인한다. CI·빌드·단위 테스트 통과는
   이것을 대신하지 못한다. → 아래 [수동 GUI 검증 절차](#수동-gui-검증-절차)
+* 그 사이에 **스크립트 GUI 시험**이 있다: 실제 OS의 Finder/탐색기와 설치본으로 하지만, 입력은 스크립트가 합성한다 — macOS 가상 머신
+  (VNC 입력, [기록](#가상-머신-gui-검증--macos-1487-2026-10-22))과 GitHub Windows 러너(`SendInput`, [기록](#windows--github-러너-gui-드래그-자동-시험-2026-11-12)).
+  사람·실물 기기의 확인을 대신하지 않는다.
 
-결과는 [support-matrix.md](support-matrix.md)의 등급(구현됨 / 자동 검증됨 / 실제 OS GUI 검증됨 / 미검증 / 미지원)에 반영한다.
+결과는 [support-matrix.md](support-matrix.md)의 등급(구현됨 / 자동 검증됨 / 러너 GUI 시험됨 / VM GUI 검증됨 / 실제 OS GUI 검증됨 / 미검증 / 미지원)에 반영한다.
 
 ---
 
@@ -89,11 +92,13 @@
 | 구현 | Swift/AppKit helper: 전역 마우스 모니터 + 보조키 폴링 + 드래그 페이스트보드 changeCount로 후보 감지, 포커스를 빼앗지 않는 NSPanel이 휠이자 드롭 대상, Copy만 수락, 세션당 drop 1회 | C++/Win32: 폴링 관찰(훅·주입 없음), 레이어드 비활성 창(디스크 밖 알파 0), OLE `IDropTarget`(CF_HDROP), Copy 또는 None만 반환 |
 | 권한 실측 | 필요 권한 없음(손쉬운 사용·입력 모니터링 요청 안 함). Esc는 입력 모니터링이 이미 허용된 경우에만 전역 감지 | 해당 없음(권한 대화상자 없음). 관리자 권한 실행 시 UIPI로 일반 탐색기 드래그 불가 |
 | 자동 확인 | 드롭 대상(가짜 `NSDraggingInfo`), 실제 이벤트 순서를 재생하는 관찰자 테스트, 세션 상태 기계, 휠 기준값 전 구간, 패키지 안 helper `ready`·`globalDrag.available: true` | 포터블 코어(세션·좌표·프로토콜) 86개 테스트와 골든 기준값을 macOS 호스트에서 실행. OLE 드롭 테스트는 컴파일만 |
-| **실제 Finder/탐색기 드래그** | **가상 머신에서 통과**(macOS 14.8.7 — 아래 [가상 머신 GUI 검증](#가상-머신-gui-검증--macos-1487-2026-10-22), macOS 26.6.2 — [핵심 흐름 점검](#가상-머신-핵심-흐름-점검--macos-2662-2026-10-24)) · 실물 Mac에서 사람이 하는 확인은 **미실시** — 사용자가 `node --import tsx native/macos/scripts/poc-harness.mjs`(`--guided`면 단계별 안내와 자동 판정, 끝에 `RESULT: PASS/FAIL`)로 [macos-helper.md §8](workstreams/macos-helper.md) 24단계를 수행하고 아래 표에 기록(1–20 기존, 21–24는 2차 점검에서 추가: 드래그 중 화면 잠금, 보안 키보드 입력, 배율이 다른 보조 모니터, iCloud 클라우드 전용 파일) | **미실시** — Windows 기기 없음. [windows-helper.md](workstreams/windows-helper.md) 점검표 34항목 |
+| **실제 Finder/탐색기 드래그** | **가상 머신에서 통과**(macOS 14.8.7 — 아래 [가상 머신 GUI 검증](#가상-머신-gui-검증--macos-1487-2026-10-22), macOS 26.6.2 — [핵심 흐름 점검](#가상-머신-핵심-흐름-점검--macos-2662-2026-10-24)) · 실물 Mac에서 사람이 하는 확인은 **미실시** — 사용자가 `node --import tsx native/macos/scripts/poc-harness.mjs`(`--guided`면 단계별 안내와 자동 판정, 끝에 `RESULT: PASS/FAIL`)로 [macos-helper.md §8](workstreams/macos-helper.md) 24단계를 수행하고 아래 표에 기록(1–20 기존, 21–24는 2차 점검에서 추가: 드래그 중 화면 잠금, 보안 키보드 입력, 배율이 다른 보조 모니터, iCloud 클라우드 전용 파일) | **GitHub 러너에서 스크립트 시험 통과**(Windows Server 2025 24H2, 1024×768·100 %, `SendInput` 합성 입력, 실제 탐색기·설치본 — 아래 [기록](#windows--github-러너-gui-드래그-자동-시험-2026-11-12)) · 실물 PC에서 사람이 하는 확인은 **미실시** — [windows-helper.md](workstreams/windows-helper.md) 점검표 34항목 |
 
 자동 확인으로 대신할 수 없는 핵심 질문은 셋이다. 실제 드래그 중에 전역 마우스 이벤트가 오는지, 드래그 도중 나타난
 패널이 drag-enter를 받는지, 휠 바깥 투명 영역에 놓은 드롭이 아래 Finder 창으로 가는지(§8 9단계). **세 가지 모두 아래 가상
 머신 검증(macOS 14.8.7, 26.6.2)에서 확인됐다.** 실물 Mac에서 사람이 확인하기 전까지 지원표에는 "실제 OS GUI 검증됨"이 아니라 "VM GUI 검증됨"으로 적는다.
+Windows에서도 세 가지 모두 GitHub 러너의 스크립트 시험([기록](#windows--github-러너-gui-드래그-자동-시험-2026-11-12))에서 확인됐다 — helper가 탐색기 드래그 중 버튼·Shift를 읽어 휠을
+띄웠고, 휠 창이 DragEnter와 Drop을 받았고, 휠 창의 투명 모서리에 놓은 드롭은 아래 탐색기로 갔다. 지원표에는 "러너 GUI 시험됨"으로 적는다.
 
 ### 가상 머신 GUI 검증 — macOS 14.8.7 (2026-10-22)
 
@@ -232,6 +237,86 @@ Apple 실리콘의 Rosetta 2에서만).
 DMG 설치 → VNC 클라이언트로 드래그(버튼 누름 → 몇 픽셀씩 이동 → Shift(또는 Meta+Shift) 누름 → 조각으로 이동 → 놓기). 회선이 느리면
 tart가 연결 하나로 받아 매우 느릴 수 있어(이 Mac에서 0.5 MB/s), 이미지 조각을 여러 연결로 받아(해시 확인) 로컬 레지스트리로 넘겼다.
 
+### Windows — GitHub 러너 GUI 드래그 자동 시험 (2026-11-12)
+
+**방법.** GitHub Actions의 Windows 러너(가상 머신)에서 **실제 파일 탐색기**와 **설치본**(무서명 NSIS, 사용자별 무인 설치)으로
+시험했다. 입력은 시험 드라이버(`tests/windows-gui/driver`, C#, 러너에서 빌드)가 `SendInput`으로 합성했다: 탐색기 항목 위에서 버튼을
+누르고 `SM_CXDRAG`보다 멀리 움직여 탐색기가 OLE 드래그를 시작하게 한 뒤 Shift를 누르고, helper의 휠 창(클래스
+`OrbitDropWheelWindow`)이 보이면 그 창의 사각형과 공유 기하(`packages/contracts`의 `DEFAULT_WHEEL_GEOMETRY`·메뉴 순서,
+`tests/windows-gui/geometry.mjs`)로 계산한 조각 중심으로 옮겨 놓는다. 휠의 상태는 helper가 휠 창 제목에 넣는 가운데 글
+(`OrbitDrop 휠: JPG`)로, 결과는 디스크의 파일(디코딩·SHA-256)과 OrbitDrop의 `main.log`(`ORBITDROP_DEBUG=1`,
+`ORBITDROP_HELPER_DEBUG=1` — helper의 줄도 들어 있다)로 확인했다. 휠이 뜨기를 기다리는 시간은 최대 3초, 결과 파일은 최대 90초다.
+첫 실행의 UI 언어는 OS의 언어 목록을 따르므로(한국어 → ko, 그 밖 → en) 영어 러너에서는 사용자 언어 목록 맨 앞에 한국어를 넣고
+(`Set-WinUserLanguageList ko-KR, en-US` — OS 표시 언어는 영어 그대로) 설치본을 처음 실행했다.
+**사람이 아니라 스크립트가, 실물 PC가 아니라 Hyper-V 가상 화면에서 조작했으므로 실물 Windows 11 PC에서 사람이 하는 GUI 검증을
+대신하지 않는다.** 워크플로 `.github/workflows/windows-gui.yml`(브랜치 `ci/windows-gui`, push·수동 실행).
+
+| 항목 | 값 |
+|---|---|
+| 러너 | GitHub Actions `windows-2025`, 이미지 `windows-2025-vs2026` 20261103.298.1 |
+| OS | Windows Server 2025 Datacenter 24H2, 빌드 26100.33674 — Windows 11 24H2와 같은 26100 계열이지만 **서버 에디션**이다 |
+| 화면 | 1024×768 px, 96 DPI(100 %), 모니터 1개(Microsoft Hyper-V Video), 작업 영역 1024×720(아래 작업 표시줄) |
+| 세션·권한 | 콘솔 세션 2(활성), 입력 데스크톱 `WinSta0\Default`, 사용자 `runneradmin`(관리자). 작업·탐색기·OrbitDrop·helper 모두 **High** 무결성(UAC `EnableLUA=1`이지만 토큰 분할 없음 — elevation type `default`) |
+| 설치본 | `OrbitDrop-0.1.0-win-x64-unsigned-setup.exe`(무서명) sha256 `97a02e3f4a9368a1de1c9c80bf6ecb1433452d0c2971c74f86381aa76051668f` — 같은 실행에서 소스 `56810ad`(작업 트리 깨끗함)로 빌드, `/S`로 `%LOCALAPPDATA%\Programs\OrbitDrop`에 설치. `OrbitDrop.exe` `57f35224…`, `OrbitDropHelper.exe`(MSVC) `8ffa6cdf…` |
+| 프로필 | 새 러너의 `%APPDATA%\OrbitDrop`(시작 전에 없음을 확인; 설치본은 `ORBITDROP_USER_DATA_DIR`을 따르지 않는다). 드라이버가 같은 단계에서 OrbitDrop을 실행한다(아래 발견 2) |
+| UI 언어 | ko(언어 목록 한국어 우선 → 첫 실행이 ko를 고름). 언어 목록을 그대로 둔 실행([43178286524](https://github.com/keilvher1/orbitdrop/actions/runs/43178286524))은 영어 UI로 열렸고(환영 창 "Get Started with OrbitDrop") 드래그 사례 2–9는 같은 동작이었다(텍스트 드래그는 "Not a file"로 거부) |
+| 실행·증거 | [43181416215](https://github.com/keilvher1/orbitdrop/actions/runs/43181416215)(브랜치 끝 `56810ad`) — 9개 사례 모두 통과. 바로 전 커밋 `8f8d312`로 빌드한 [43180012036](https://github.com/keilvher1/orbitdrop/actions/runs/43180012036)도 모두 통과. 아티팩트 `windows-gui-evidence`(스크린샷·`results.json`·`summary.md`·`driver.log`, OrbitDrop의 `main.log`·`helper.log`·stdout/stderr, 탐지 결과), `windows-gui-app`(설치본·`build-report-win32-x64.json`). 스크린샷 일부는 `docs/screenshots/runner-win2025-*.png`(05는 고치기 전 실행 43176700062, 07은 43180012036, 나머지는 43181416215) |
+
+| # | 사례 | 결과 | 확인 내용 · 스크린샷 |
+|---|---|---|---|
+| 0 | 탐지 | 통과 | 위 세션·권한·화면 값, 그리고 합성 입력으로 탐색기에서 파일을 하위 폴더로 끌어 옮김(이동 확인) — 아티팩트 `probe/screenshots/probe-03-dragging.png` |
+| 1 | 첫 실행 | 통과 | 환영 창 "OrbitDrop 시작하기"만 열림(다른 OrbitDrop 창 없음) → 제목 표시줄 클릭 + Esc로 닫히고 남는 창 없음, helper `ready … globalDrag=true`(실행 후 0.3–0.4초, 엔진 점검 `capabilities ready`는 4–5초), helper 1개, helper와 셸(탐색기)의 무결성 수준 같음, 휠 창(레이어드·최상위·비활성)이 숨은 채 존재, 휠 제목이 앱 언어를 따름("OrbitDrop 휠") |
+| 2 | PDF → JPG(Shift를 누른 채 놓기) | 통과 | Shift 뒤 약 40–170 ms에 휠이 포인터 위치에(중심 오차 0 px), 탐색기가 포커스 유지, 가운데 "PDF", 위부터 시계방향 DOCX·JPG·PNG·TXT, JPG 조각이 주황(`#D4441C`)·가운데 캡슐과 아래 캡션 "JPG", 탐색기의 드래그 이미지(영어 UI의 "+ Copy")가 휠 위에 보임 — `runner-win2025-01` · 놓자 `Page 001.jpg` 2550×3300 JPEG, 새 파일 정확히 1개, PDF 해시 그대로(탐색기에서 Shift는 이동인데도 원본 이동 없음), `drop accepted` 1회 — `runner-win2025-02` |
+| 3 | JPG → PNG | 통과 | 8조각 이미지 메뉴(위부터 시계방향 PNG·WEBP·HEIC(비활성 — Windows 미지원)·TIFF·AVIF·BMP·PDF·DOCX)의 맨 위 PNG가 강조, `photo.png` 320×240 PNG, 원본 해시 그대로 — `runner-win2025-06` |
+| 4 | Esc | 통과 | JPG가 강조된 채 Esc → 버튼을 누른 상태에서 휠이 바로 사라지고 놓은 뒤에도 다시 나오지 않음, 결과 없음, 원본 그대로, `cancelled escape` |
+| 5 | 링 밖에 놓기(휠 창의 투명 모서리) | 통과 | 모서리 픽셀은 클릭이 통과(`WindowFromPoint` → 탐색기, 디스크 위는 휠 창), 탐색기 드래그 이미지가 "Move to OrbitDrop GUI test"로 바뀜(탐색기가 대상) — `runner-win2025-03` · 놓아도 결과 없음, 원본이 같은 폴더에 그대로(해시 동일), `cancelled dragEnded` |
+| 6 | 가운데(dead zone)에 놓기 | 통과 | 가운데로 오면 강조가 풀리고("PDF"), 놓으면 휠이 거부, 결과 없음, `cancelled outsideRing` |
+| 7 | Shift를 먼저 떼기 | 통과 | Shift를 떼도 휠 유지, 이어서 JPG에 놓으면 `shift-up.jpg` |
+| 8 | 텍스트(파일 아님) 드래그 | 통과 | 시험용 WinForms 창의 글자를 끌기(OLE `DoDragDrop`, 텍스트 형식만) → 휠 가운데와 아래 캡션 "파일이 아님", 조각 위에서도 강조 없음, 놓아도 결과 없음, helper `drag payload not offered: noFiles`, `cancelled invalidPayload` — `runner-win2025-04`(고친 뒤) |
+| 9 | 빠른 연속 드롭 2번 | 통과 | 첫 드롭 직후 두 번째 PDF를 끌어 JPG에 놓음(드롭 간격 3.5초 — 드래그 한 번의 길이. 첫 작업은 0.2초 만에 끝나 작업끼리 겹치지는 않음) → 결과 정확히 1개씩(`rapid-a.jpg`, `rapid-b.jpg`), 세션 id 2개, `drop accepted` 2회, 원본 그대로 |
+
+결과 표와 모든 확인 항목은 실행의 작업 요약과 `results.json`에, 스크린샷은 아티팩트 `windows-gui-evidence/suite/screenshots`에 있다
+(포인터는 화면 캡처에 찍히지 않아 빨간 십자로 위치를 그렸다). 같은 시험을 여러 번 돌렸다 — 고치기 전 설치본
+([43175114169](https://github.com/keilvher1/orbitdrop/actions/runs/43175114169), [43176700062](https://github.com/keilvher1/orbitdrop/actions/runs/43176700062)),
+고친 설치본([43177178612](https://github.com/keilvher1/orbitdrop/actions/runs/43177178612), `a5ac7a6`), `main`을 합친 설치본
+([43178286524](https://github.com/keilvher1/orbitdrop/actions/runs/43178286524) 영어 UI, [43179437101](https://github.com/keilvher1/orbitdrop/actions/runs/43179437101) 한국어 UI)에서
+드래그 사례(2–7·9)는 매번 같은 결과였다. 다른 점은 캡슐 줄바꿈(아래 발견 1)과, 합친 뒤 생긴 환영 창·첫 실행 언어(발견 4)뿐이다.
+
+**이 시험에서 찾은 것:**
+1. **휠 가운데 캡슐이 한국어 단어 중간에서 줄을 바꿈(수정함, `a5ac7a6`).** "파일이 아님"이 "파일이 아" / "님"으로 그려졌다
+   (`runner-win2025-05`, 화면에서 읽은 글자 줄 폭 64 px / 10 px). helper 자신의 스냅샷에서도 "먼저 내려받으세요"가 "먼저 내려" /
+   "받으세요"였다. DirectWrite의 기본 줄바꿈은 한글 음절 사이 어디서나 끊는다. macOS helper(`CapsuleLayout.wrap`)처럼 공백에서만 줄을
+   나누고(keep-all) 글자를 1 DIP씩 줄이며 다시 나누도록 고쳤다(`native/windows/src/core/text_wrap`, 단위 테스트 4개, 코어 테스트 103개 ·
+   ASan/UBSan 통과). 조각 이름과 아래 캡션은 그대로다. 드라이버는 이제 화면에서 캡슐의 글자 줄을 읽어 단어 중간 줄바꿈을 실패로 본다 —
+   고치기 전 설치본에서는 이 확인만 실패했고(실행 43176700062), 고친 설치본에서 통과했다.
+2. **러너는 단계(step)가 끝나면 그 단계에서 띄운 프로세스를 끝낸다(제품 문제 아님).** 첫 실행에서 OrbitDrop을 별도 단계에서
+   `Start-Process`로 띄웠더니 `native helper ready` 직후 로그가 끊기고 다음 단계에는 프로세스가 없었다(SQLite `-journal` 파일이 남음 =
+   강제 종료). 같은 방법으로 띄운 `ping.exe`도 다음 단계에서 사라져 있었고, Windows 오류 보고에 OrbitDrop 충돌 기록은 없었다. 그래서
+   드라이버가 시험 단계 안에서 OrbitDrop을 실행하고 종료 코드를 지켜본다.
+3. **참고: 휠이 뜬 뒤 마우스를 움직이지 않았는데도 OLE가 드래그 대상을 휠로 바꿨다.** 휠이 보이고 약 0.2초 안에 가운데 글이 "PDF"로
+   바뀌었다(DragEnter). 점검표 26(뜨자마자 놓기)의 전제와 관련되지만, 그 자체(움직이지 않고 바로 놓기)는 시험하지 않았다.
+4. **첫 실행이 바뀜(제품 변경, 시험 쪽을 맞춤).** `main`에 들어온 첫 실행 흐름은 새 프로필에서 환영 창을 띄우고 UI 언어를 OS 언어 목록에서
+   고른다. 그래서 영어 러너의 첫 합친 실행에서는 시험이 기대한 한국어 글과 달라 첫 실행·텍스트 드래그의 글 확인만 실패했다(동작은 맞았다 —
+   영어 환영 창, "Not a file"로 거부). 드라이버는 이제 환영 창 제목으로 앱 언어를 알아내 그 언어의 글로 확인하고, 환영 창을 Esc로 닫는다.
+5. **환영 창 본문도 한국어 단어 중간에서 줄을 바꿈(수정함, 렌더러 CSS).** 한국어 첫 실행의 환영 창에서 "남습니" / "다.", "파" / "일 열기"처럼
+   끊겼다(`runner-win2025-07`; Chromium의 기본 `word-break: normal`은 한글 음절 사이에서도 줄을 바꾼다). 앱 안 휠의 캡슐(`wheel.css`)과
+   두 helper처럼 환영 창(`welcome.css`)에 `word-break: keep-all`을 줬다 — 고친 설치본(실행 43181416215)에서는 "남습니다.", "파일 열기"가 한 줄 안에 그대로 있다(`runner-win2025-08`). 다른 창의 본문 글은 이번에 보지 않았다.
+
+**다루지 않은 것**(이 기록으로 "검증됨"이 되지 않는다):
+- 100 % 이외의 배율(125·150·200 %), 보조·음수 좌표 모니터, 화면 가장자리·작업 표시줄 근처(캡션이 위로 가는 경우) — 러너는 1024×768,
+  96 DPI, 모니터 1개로 고정이다(점검표 14–16, 34의 일부).
+- 실물 PC와 사람: 입력은 `SendInput` 합성, 화면은 가상 디스플레이다. 포인터 모양(복사 +)은 캡처되지 않는다(탐색기 드래그 이미지의
+  "+ Copy" 표시로 대신 봤다). 터치·펜 미검증.
+- Windows 11 클라이언트 에디션과 일반 사용자 권한: 러너는 Windows Server 2025이고 탐색기와 앱이 모두 High 무결성이다. 일반 사용자
+  (Medium)와 "관리자 권한으로 실행" 때의 UIPI 거부(점검표 21·31)는 미검증.
+- 도구 휠(Windows 기본 Ctrl+Shift)과 편집 창(점검표 6), 여러 파일, 폴더·가상 파일·
+  OneDrive(11·27·30), 긴 경로·네트워크 드라이브(32), 잠금·잠자기(19), 고대비·애니메이션(22), 왼손잡이 버튼(23), Narrator(24).
+- 브라우저·메모장에서의 텍스트 드래그: 시험한 텍스트 드래그의 출처는 시험용 WinForms 창이다(서버에는 WordPad가 없고 메모장의 편집
+  컨트롤은 글자를 끌어 내보내지 않는다).
+
+**재현.** `ci/windows-gui` 브랜치에 push하거나 `windows-gui` 워크플로를 수동 실행한다(입력 `reuse_app_run`에 이전 실행 id를 주면
+설치본을 다시 빌드하지 않는다). 드라이버는 GitHub Actions 밖에서는 실행을 거부한다(마우스와 키보드를 가져가므로 개발 PC에서 돌리지 않는다).
+
 ---
 
 ## 자동 검증 증거
@@ -351,6 +436,69 @@ MinGW로 만든 C++ 시험 exe(`libstdc++-6.dll` import → 정책 위반으로 
 이 시험에서 `elevate.exe`가 포함되는 것을 보고 `nsis.packElevateHelper: false`를 추가했다. 교차 빌드에서는
 `${platform}`이 호스트 OS라 darwin 바이너리가 들어갔다 — 그래서 `package.mjs`는 교차 빌드를 거부한다.
 
-이 환경에는 Windows가 없다. `.github/workflows/ci.yml`의 `windows` 작업이 Windows Server(windows-latest)에서
-helper 빌드·테스트, NSIS 패키지, smoke test, 무인 사용자별 설치/HKCU 확인/설치본 smoke/제거를 수행하도록 작성되어 있으나
-**아직 실행 결과가 없다**. 실행 후 결과(작업 요약 표, `build-report-win32-x64.json`)를 여기에 기록한다.
+### CI — GitHub Actions에서 처음 돌린 Windows (2026-11-12)
+
+개발 환경에는 Windows 기기가 없어서, 아래가 OrbitDrop이 **Windows에서 실제로 실행된 첫 기록**이다. 사람이 Explorer에서
+드래그한 검증은 아니다(위 결과 기록표 — Windows는 여전히 미실시). 실제 탐색기 드래그는 같은 러너에서 합성 입력으로 따로 시험했다 —
+[Windows — GitHub 러너 GUI 드래그 자동 시험](#windows--github-러너-gui-드래그-자동-시험-2026-11-12).
+
+환경: GitHub Actions `windows-latest` = **Microsoft Windows Server 2025 Datacenter 10.0.26100 (빌드 26100.33674)**, x64, 러너
+이미지 `windows-2025-vs2026` 20261103.298.1, Visual Studio 2026(MSVC 19.51.36260, Windows SDK 10.0.26100), Node 24.22.2,
+pnpm 11.27.1, Electron 44.9.0. 레지스트리 `LongPathsEnabled=1`, 한글 글꼴 Malgun Gothic 설치됨. 작업은 관리자(runneradmin)
+권한으로 돈다. 녹색 실행: https://github.com/keilvher1/orbitdrop/actions/runs/43178538763 (소스 `a41608f`, main `4b9e3a0` 병합 뒤).
+
+| 단계 | 결과 |
+|---|---|
+| 단위·통합 테스트 (`pnpm test`) | 95 파일 통과·3 건너뜀, 1,167 통과·25 건너뜀 (macOS 러너와 같은 테스트, 건너뜀은 아래 표) |
+| Windows helper (MSVC `/MT`) | 코어 테스트 99개(골든 벡터 포함), OLE 글루 테스트 6개, stdio smoke 47개 확인 모두 통과, Direct2D 휠 스냅숏 생성. DLL 의존성은 시스템 DLL뿐 |
+| E2E (`playwright test`, 빌드된 앱 + 실제 MSVC helper) | 31 통과, 8 건너뜀 |
+| NSIS 패키지 | `OrbitDrop-0.1.0-win-x64-unsigned-setup.exe` 102.3 MB(`win-unpacked` 393.1 MB), sha256 `8bd6aee5d091111b7f085668efed40b11d48aec1751e27bb2f8c1a96a182491e` (미서명). after-pack: 의존성 트리 문제 0, sharp/libvips/canvas는 x64 PE, helper 포함 |
+| 패키지 smoke test (`win-unpacked\OrbitDrop.exe --smoke-test`) | 종료 0, 1.7초(보고서 1,287 ms), `ok:true` — 엔진 probe(HEIC 없음, 16개 작업 사용 가능), helper `ready`(packaged), PNG→JPG 412 ms·PDF→PNG 528 ms, 숨긴 About 창 렌더링 458 ms |
+| 네이티브 모듈 검사 | librsvg 2.63.2 / libvips 8.18.7, Malgun Gothic 한글 잉크 766 px, 패키지 안의 pdf-lib·docx로 PDF·DOCX 생성, 네이티브 모듈은 `app.asar.unpacked`에서 로드 |
+| 사용자별 무인 설치 → 설치본 smoke → 무인 제거 | `/S /D=<임시 폴더>` 종료 0, 설치본에 helper·라이선스 파일, **HKCU 제거 항목만**(HKLM 없음, 관리자 권한 없음), 설치본 smoke `ok:true`, `Uninstall OrbitDrop.exe /S` 뒤 파일·HKCU 항목·설치 폴더 모두 없음 |
+
+처음 실행에서 드러난 문제와 처리(분류: **제품 버그** / **플랫폼 차이** / **POSIX를 가정한 테스트**):
+
+- **제품 버그 — PDF의 내장되지 않은 한글 글꼴이 빈칸**: PDF.js는 내장되지 않은 글꼴(예: `UniKS-UCS2-H` CMap의 CID 글꼴)을
+  `"g_d0_f1", sans-serif`로 그리는데, @napi-rs/canvas의 일반 글꼴 계열은 Windows에서 Arial 하나라 한글 잉크가 0이었다. 한글이 든
+  글자열만 한글 글꼴(Malgun Gothic, `resolveAnnotationFont`)을 맨 앞에 두고 그린다. 라틴 글자는 그대로.
+- **제품 버그 — 너무 긴 이름이 "파일 없음"**: Windows는 255 UTF-16 단위를 넘는 이름을 ENOENT로 알린다. 입력 검증이 NTFS 한도
+  (이름 255, 경로 32,767 단위)를 직접 확인해 macOS처럼 `PATH_TOO_LONG`. MAX_PATH(260)를 넘는 경로는 계속 동작한다.
+- **제품 버그 — helper MSVC 빌드 실패**: `renderer.cpp`의 변수 이름 `small`(Windows SDK `rpcndr.h`의 `#define small char`).
+- **빌드 도구 버그(Windows 패키징)**: after-pack이 app.asar 항목을 `/`로 넘겨 `@electron/asar`가 찾지 못함, 네이티브 모듈 검사가
+  `\\?\` 접두사 때문에 "패키지 밖에서 로드"로 판정 — 둘 다 고침.
+- **플랫폼 차이 — 산술 부호화 JPEG**: sharp의 Windows libvips는 산술 부호화 디코딩 없이 빌드됐다("arithmetic coding is not
+  implemented"). `IMAGE_CORRUPT`(손상) 대신 `ENGINE_UNAVAILABLE`(이 빌드에서 읽을 수 없음, `detail: jpeg-arithmetic: …`)로 알린다.
+- **POSIX를 가정한 테스트**: 경로 기대값(`join`/`resolve`), `.cmd` 실행(Node는 셸 없이 `.cmd`를 실행하지 않음 — Electron 실행 파일을
+  직접 실행), 읽기 전용 폴더(아래), 긴 경로를 `sharp(path)`로 읽음(libvips는 MAX_PATH 제한 — Node로 읽어 넘김), libvips 캐시가 연
+  파일을 지우려다 EBUSY, utilityProcess의 `exit`가 stdout 마지막 데이터보다 먼저 와서 결과 줄 유실, 닫히는 창의 `getURL()`,
+  MFT에 들어가는 작은 파일(할당 블록 0)이 macOS 흉내 테스트에서 iCloud 자리 표시자로 보임, OLE 테스트의 임시 객체 참조(MSVC에서 드러난 UB),
+  설치 테스트가 레지스트리 키를 파일보다 먼저 확인(NSIS는 파일을 먼저 지움).
+
+Windows 러너에서 측정한 사실: 폴더의 읽기 전용 특성은 쓰기를 막지 않는다. 거부 ACL(`icacls … /deny *S-1-1-0:(WD,AD)`)은
+PowerShell·.NET은 막지만 **Node는 막지 못한다** — libuv가 `FILE_FLAG_BACKUP_SEMANTICS`로 열고 러너 작업 토큰은 백업/복원 권한이
+켜져 있다(일반 사용자 세션에서는 ACL이 적용된다). 다른 프로세스가 삭제 공유 없이(`FileShare.Read`) 연 파일은 이름 변경·교체·삭제가
+EBUSY/EPERM으로 막힌다 — 설정 파일 테스트는 Windows에서 이 방법(동기화 클라이언트·백신이 파일을 잡은 상황)을 쓴다.
+
+같은 워크플로의 macOS 작업(GitHub `macos-26-arm64` 20261102.0473.1, macOS 26.7.2 25G332, 가상 머신): 단위·통합 96 파일·1,183 통과,
+Swift 167개 통과(건너뜀 0), helper 빌드·smoke 19/19(arm64, x64는 Rosetta 2), E2E 39/39, arm64 DMG에서 패키지 smoke 통과, 두 아키텍처의
+네이티브 모듈 검사 통과. 이 러너에서 처음 돈 macOS 작업은 Swift 테스트에서 60분 동안 멈췄고(아래 표의 Swift 줄), x64 패키지의 smoke는 Rosetta 2
+환경 때문에 best effort로 돈다(아래 표). main 병합 뒤 드러난 E2E 두 건(창 충돌 3단계 정책, preload의 새 API 8개)은 Windows와 무관하게
+두 러너에서 같이 실패해 테스트를 새 동작에 맞췄다.
+
+### CI에서 건너뛰거나 플랫폼별로 나뉜 테스트
+
+| 테스트 | 대상 | 이유 |
+|---|---|---|
+| `validate.test` 경로 길이: 경로 전체 한도 | Windows에서 더 긴 경로 사용 | macOS PATH_MAX 1,024바이트, Windows(Node는 `\\?\` 경로)는 32,767 단위 — 같은 동작, 다른 한도 |
+| `validate.test` 255단위 한글 이름 + 260자 넘는 폴더, `validate-timeout` UNC·매핑 드라이브 → `NETWORK_PATH_FAILED`, `lifecycle` Windows 명령줄 | Windows만 실행 | Windows 경로 규칙에서만 성립(macOS에서는 절대 경로가 아님) |
+| `hardening-inputs` 산술 부호화 JPEG | Windows: `ENGINE_UNAVAILABLE`·아무것도 쓰지 않음 확인 / 그 밖: 같은 픽셀 확인 | sharp Windows 빌드에 산술 디코딩 없음 |
+| `convert-pdf-image` 내장되지 않은 한글 CID 글꼴 | 한글 글꼴이 있는 곳(macOS·Windows)에서 실행 | 글자는 시스템 글꼴에서 옴 |
+| `lifecycle` 읽기 전용 앱 데이터 폴더 | 거부 ACL이 이 프로세스에 적용될 때만(POSIX 항상, Windows 일반 세션) — **GitHub Windows 러너에서는 건너뜀** | 위 측정: 러너의 Node는 ACL을 무시. "만들 수 없는 폴더" 경우는 모든 OS에서 실행 |
+| `stores` 옮길 수 없는 설정 파일 | Windows: 삭제 공유 없이 열린 파일 / POSIX: 읽기 전용 폴더 | Windows에는 읽기 전용 폴더가 없음 |
+| (기존) 심볼릭 링크·chmod 권한 11건: `validate` 4, `output` 1, `convert-image`·`convert-pdf-image`·`tools-preview`·`hardening-inputs` 각 1, `hardening-pipeline` 2 | Windows에서 건너뜀 | Windows 심볼릭 링크는 개발자 모드·관리자 필요, 폴더 쓰기 금지는 chmod가 아니라 ACL이고 러너의 Node에는 적용되지 않음(위 측정) |
+| (기존) ImageIO helper 9건: `codecs-imageio` 6, `tools-output-format`·`tools-thumbnail` HEIC 각 1, `codecs-bmp` sips 1 | Windows에서 건너뜀 | macOS ImageIO 전용 기능(Windows는 HEIC 미지원으로 표시) |
+| (기존) 실제 볼륨 테스트 4건: `output-fat` 1, `hardening-diskfull` 3 | 모든 OS에서 옵트인 | FAT32·4 MB HFS+ 볼륨을 만들어야 함(`ORBITDROP_FS_TESTS=1`) |
+| (기존) E2E 8건: stub helper 4(`helper-drop`, `lifecycle` 2, `drag-failure`), `lifecycle` 쓸 수 없는 앱 데이터 폴더(chmod), `offline`(lsof), `shell` 멈춘 읽기(FIFO), `close-guard` ⌘W 메뉴 | Windows에서 건너뜀 | stub helper가 셸뱅 스크립트라 Windows에서 실행할 수 없음, chmod·lsof·FIFO는 POSIX 전용, ⌘W 메뉴는 macOS 전용 |
+| Swift `ImageIOTests` 3건(probe 모양, HEIC 왕복, 품질), `HelperProcessTests` imageio 2건, helper smoke `imageio --probe` | ImageIO 왕복이 60초 안에 끝나지 않을 때만 건너뜀(사유 출력) — 마지막 macOS 러너 실행에서는 모두 실행됨(167개, 건너뜀 0, smoke 19/19) | macOS 러너(가상 머신, HEVC 하드웨어 없음)에서 probe가 수 초 걸리고, 그 stdout 파이프가 helper 종료 뒤에도 열려 있어 파이프를 끝까지 읽던 테스트가 작업 시간 제한(60분)까지 멈췄다. 이제 CLI 출력은 파일로 받고 모든 실행에 시간 제한이 있으며(Swift 단계 10분), 프로세스 안 probe는 메인 런루프를 돌리며 기다린다. 제품은 같은 probe를 3초로 제한한다(초과 시 HEIC "사용할 수 없음") |
+| 패키지 smoke test, macOS x64(Rosetta 2) | CI(`--rosetta-smoke best-effort`)에서는 두 번 실행하고 결과를 보고하되 작업을 실패시키지 않음. arm64 smoke는 그대로 필수 | GitHub macOS 러너(macOS 26.7.2, 가상 머신)의 Rosetta 2에서 전체 앱이 불안정했다: 한 번은 숨긴 창이 15초 안에 로드되지 않았고(나머지 검사는 통과, 개발 Mac에서는 6.7초), 다음에는 76초쯤 모든 하위 프로세스(GPU·네트워크·작업 worker)가 SIGTERM으로 끝났다. x64 패키지의 빌드·`lipo`/codesign/fuse 검사·네이티브 모듈 검사(Rosetta 2)와 helper smoke 19/19(Rosetta 2)는 계속 필수. 로컬·release 빌드는 기본값 `strict`. x64 macOS의 창 대기 시간은 60초로 늘렸다 |
