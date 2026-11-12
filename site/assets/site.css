@@ -1209,7 +1209,8 @@ kbd {
   font-size: 0.95em;
 }
 
-.dl-which {
+.dl-which,
+.dl-policy {
   margin-top: 20px;
   color: var(--text-muted);
   font-size: 0.9375rem;
@@ -1421,6 +1422,38 @@ kbd {
 }
 
 .doc .summary ul {
+  margin: 0;
+}
+
+/* code signing policy: the state line (pending until signing starts) and the SignPath attribution */
+.doc .status {
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.doc .status[data-state="pending"] {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+.doc .status[data-state="pending"] a {
+  color: var(--warning-text);
+}
+
+.doc .attribution {
+  margin: 0 0 1em;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 14px;
+  background: var(--surface);
+  font-weight: 650;
+}
+
+.doc .attribution p {
   margin: 0;
 }
 

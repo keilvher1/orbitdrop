@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Code signing policy — OrbitDrop</title>
+<meta name="description" content="Who signs OrbitDrop's installers and how: Windows through SignPath Foundation's free open source code signing (applied for), macOS with the developer's own Apple Developer ID.">
+<link rel="canonical" href="https://keilvher1.github.io/orbitdrop/en/code-signing-policy/">
+<link rel="alternate" hreflang="ko" href="https://keilvher1.github.io/orbitdrop/code-signing-policy/">
+<link rel="alternate" hreflang="en" href="https://keilvher1.github.io/orbitdrop/en/code-signing-policy/">
+<link rel="alternate" hreflang="x-default" href="https://keilvher1.github.io/orbitdrop/code-signing-policy/">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#FFF6EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#221A15" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" sizes="32x32" href="../../assets/icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="../../assets/icons/favicon-16.png">
+<link rel="apple-touch-icon" href="../../assets/icons/apple-touch-icon.png">
+<link rel="stylesheet" href="../../assets/site.css">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OrbitDrop">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="OrbitDrop code signing policy">
+<meta property="og:description" content="Who signs OrbitDrop's installers, how a signed release is made, and which files are signed.">
+<meta property="og:url" content="https://keilvher1.github.io/orbitdrop/en/code-signing-policy/">
+<meta property="og:image" content="https://keilvher1.github.io/orbitdrop/assets/og-en.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The OrbitDrop icon and convert wheel">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="../"><img src="../../assets/icons/icon-64.png" width="32" height="32" alt="" aria-hidden="true"><span>OrbitDrop</span></a>
+    <nav class="site-nav" aria-label="Main">
+      <ul>
+        <li class="nav-section"><a href="../#how">How it works</a></li>
+        <li class="nav-section"><a href="../#faq">FAQ</a></li>
+        <li><a class="nav-lang" href="../../code-signing-policy/" hreflang="ko" lang="ko">한국어</a></li>
+        <li><a class="nav-download" href="../#download">Download</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+  <article class="doc">
+    <h1>Code signing policy</h1>
+    <p class="updated">Last updated: 12 November 2026</p>
+
+    <div class="summary">
+      <ul>
+        <li>This page explains who signs OrbitDrop's installers and executables, and how.</li>
+        <li><strong>Windows</strong>: prepared for SignPath Foundation's free code signing for open source projects. The current state is the first line of the <a href="#windows">Windows</a> section below.</li>
+        <li><strong>macOS</strong>: signed with the developer's own Apple Developer ID and notarized by Apple. SignPath is not involved.</li>
+        <li>Only files built on GitHub-hosted build machines from tagged commits of this repository are signed, and every release is approved by a person.</li>
+      </ul>
+    </div>
+
+    <h2 id="windows">Windows</h2>
+    <!-- After SignPath Foundation accepts the project and the first signed release is published, replace the next line with:
+         <p class="status" data-state="active"><strong>Current state:</strong> since OrbitDrop 1.0.1, Windows releases are signed as described below.</p> -->
+    <p class="status" data-state="pending"><strong>Current state:</strong> the Windows installers are not code-signed yet (their file names contain <code>-unsigned</code>). The project has applied to SignPath Foundation for free code signing; once it is accepted, the next releases are signed as described below. Until then, the statement below is a plan.</p>
+    <blockquote class="attribution">
+      <p>Free code signing provided by <a href="https://about.signpath.io">SignPath.io</a>, certificate by <a href="https://signpath.org">SignPath Foundation</a></p>
+    </blockquote>
+    <p>Windows shows files signed this way with <strong>SignPath Foundation</strong> as the publisher. The certificate is issued to SignPath Foundation and the signing happens inside the SignPath.io service, so the OrbitDrop developer never holds the signing key.</p>
+
+    <h3 id="signed-files">What is signed</h3>
+    <p>Only files made from the sources and settings of the OrbitDrop repository are signed.</p>
+    <table class="data-table">
+      <caption class="visually-hidden">Signed Windows files</caption>
+      <thead>
+        <tr><th scope="col">File</th><th scope="col">What it is</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>OrbitDrop.exe</code></th><td>The app executable. electron-builder makes it from the Electron runtime with this repository's settings (icon, version information, Electron fuses).</td></tr>
+        <tr><th scope="row"><code>resources\helper\OrbitDropHelper.exe</code></th><td>The global drag helper, built from this repository's C++ sources (<code>native/windows</code>).</td></tr>
+        <tr><th scope="row"><code>OrbitDrop-&lt;version&gt;-win-x64-setup.exe</code></th><td>The installer (NSIS).</td></tr>
+        <tr><th scope="row"><code>Uninstall OrbitDrop.exe</code></th><td>The uninstaller (NSIS). It travels inside the installer and is placed in the installation folder.</td></tr>
+      </tbody>
+    </table>
+    <p>All four carry the product name <code>OrbitDrop</code> and the release version (for example <code>1.0.1</code>) in their version information. The build scripts check this, and SignPath checks it again before signing; if any file differs, nothing is signed.</p>
+
+    <h3 id="unsigned-files">What is not signed</h3>
+    <p>These files are made by other projects. They are included exactly as those projects publish them, and OrbitDrop does not sign them:</p>
+    <ul>
+      <li><strong>Electron (Chromium)</strong>: <code>ffmpeg.dll</code>, <code>d3dcompiler_47.dll</code>, <code>dxcompiler.dll</code>, <code>dxil.dll</code>, <code>vk_swiftshader.dll</code>, <code>vulkan-1.dll</code></li>
+      <li><strong>sharp and libvips</strong> (image processing): <code>sharp-win32-x64-&lt;version&gt;.node</code>, <code>libvips-42.dll</code>, <code>libvips-cpp-&lt;version&gt;.dll</code></li>
+      <li><strong>@napi-rs/canvas</strong> (Skia, PDF rendering): <code>skia.win32-x64-msvc.node</code></li>
+    </ul>
+    <p>Their licences and origins are listed in the <a href="https://github.com/keilvher1/orbitdrop/blob/main/THIRD_PARTY_LICENSES.md">third-party licences</a>.</p>
+
+    <h3 id="process">How a signed release is made</h3>
+    <ul>
+      <li>The files to sign are built by the Release workflow on GitHub Actions, on a GitHub-hosted Windows build machine, from a tagged commit (a version tag starting with <code>v</code>) of this repository (<a href="https://github.com/keilvher1/orbitdrop">github.com/keilvher1/orbitdrop</a>). Files built on a personal computer are never signed.</li>
+      <li>The workflow uploads the files to sign as a GitHub workflow artifact and then asks SignPath to sign them. SignPath checks with GitHub directly that the request comes from this repository's workflow (build origin).</li>
+      <li>For every release, the approver listed below reviews the signing requests in SignPath and approves them by hand; nothing is signed without that approval. A release has two requests: first <code>OrbitDrop.exe</code>, <code>OrbitDropHelper.exe</code> and the uninstaller, then the installer that contains them.</li>
+      <li>The signed installer goes to a draft release, which a person checks before publishing it. The files of a published release are never replaced.</li>
+    </ul>
+
+    <h3 id="roles">Team roles</h3>
+    <table class="data-table">
+      <caption class="visually-hidden">Code signing roles and their members</caption>
+      <thead>
+        <tr><th scope="col">Role</th><th scope="col">Members</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Committers and reviewers</th><td><a href="https://github.com/keilvher1">keilvher1</a></td></tr>
+        <tr><th scope="row">Approvers</th><td><a href="https://github.com/keilvher1">keilvher1</a></td></tr>
+      </tbody>
+    </table>
+    <p>Only people with commit access accept changes, and changes from anyone else (pull requests) are merged only after review. Build scripts and CI configuration count as source code and are handled the same way. Every member must protect their GitHub and SignPath accounts with multi-factor authentication (MFA).</p>
+
+    <h3 id="privacy">Privacy</h3>
+    <p>OrbitDrop's <a href="../privacy/">privacy statement</a> (<a href="../../privacy/" hreflang="ko" lang="ko">한국어</a>) applies. The only feature that connects to a system the user did not choose is the <strong>automatic update check</strong> (GitHub); it never sends files, file names or usage data. The Windows installer (from 1.0.1) shows this during installation and offers an option to turn the automatic update check off (<code>/NOUPDATECHECK</code> for unattended installs). It can also be turned off in the welcome window shown on the first run and in Settings › General.</p>
+
+    <h2 id="macos">macOS</h2>
+    <p>The macOS DMGs and the app are signed with the developer's own <strong>Apple Developer ID</strong> certificate and notarized by Apple. SignPath is not involved, and the signing key lives only in the keychain of the release Mac.</p>
+
+    <h2 id="verify">How to check</h2>
+    <ul>
+      <li><strong>Windows</strong>: open the installer's Properties › Digital Signatures in File Explorer, or run <code>Get-AuthenticodeSignature .\OrbitDrop-&lt;version&gt;-win-x64-setup.exe</code> in PowerShell. A signed file shows the status <code>Valid</code> and SignPath Foundation as the signer.</li>
+      <li><strong>macOS</strong>: <code>spctl -a -vv /Applications/OrbitDrop.app</code> in Terminal reports <code>source=Notarized Developer ID</code>.</li>
+      <li>Every release has <code>SHA256SUMS.txt</code> with the SHA-256 of each file (see “Check the download” under <a href="../#download">Download</a>).</li>
+    </ul>
+
+    <h2 id="contact">Questions and changes</h2>
+    <p>If a signed file does not match this policy, or something looks wrong, please report it in <a href="https://github.com/keilvher1/orbitdrop/issues">GitHub issues</a>. If this policy changes, this page and its date are updated; earlier versions are in the <a href="https://github.com/keilvher1/orbitdrop/commits/main/site/en/code-signing-policy/index.html">change history on GitHub</a>.</p>
+  </article>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div>
+      <p class="footer-brand"><img src="../../assets/icons/icon-64.png" width="28" height="28" alt="" aria-hidden="true">OrbitDrop</p>
+      <p>A desktop app that converts and edits files on your own computer. Free, MIT licence.</p>
+    </div>
+    <nav aria-label="Site information">
+      <ul class="footer-links">
+        <li><a href="https://github.com/keilvher1/orbitdrop">GitHub</a></li>
+        <li><a href="https://github.com/keilvher1/orbitdrop/blob/main/LICENSE">Licence (MIT)</a></li>
+        <li><a href="https://github.com/keilvher1/orbitdrop/blob/main/THIRD_PARTY_LICENSES.md">Third-party licences</a></li>
+        <li><a href="../privacy/">Privacy</a></li>
+        <li><a href="./" aria-current="page">Code signing policy</a></li>
+        <li><a href="../../code-signing-policy/" hreflang="ko" lang="ko">한국어</a></li>
+      </ul>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>

@@ -9,6 +9,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { findSigningIdentity, notaryCredentials, signAndNotarizeDmg } from '../../scripts/mac-dmg.mjs';
 import { collectAssets, checkAssets, publishDraftAssets } from '../../scripts/release-assets.mjs';
 import {
+  CODE_SIGNING_POLICY_URL,
+  ROOT,
   SUMS_FILE,
   checkUpdateInfo,
   ensureDraftRelease,
@@ -17,6 +19,7 @@ import {
   parseReleaseTag,
   parseSums,
   refreshSha256Sums,
+  releaseNotes,
   sha256File,
   sha512File,
   yaml,
@@ -239,6 +242,16 @@ function githubRunner(releases: GitHubRelease[], extra: Record<string, Handler> 
 }
 
 describe('draft releases', () => {
+  it('the release notes link the code signing policy, a page the website really has', () => {
+    const notes = releaseNotes('1.0.1');
+    expect(notes).toContain(`Code signing policy (who signs what, and how): ${CODE_SIGNING_POLICY_URL}`);
+    expect(notes).toContain('`-unsigned`'); // true whether or not this release's installer is signed
+    const page = new URL(CODE_SIGNING_POLICY_URL);
+    expect(page.origin + page.pathname.slice(0, '/orbitdrop/'.length)).toBe('https://keilvher1.github.io/orbitdrop/');
+    const file = join(ROOT, 'site', ...page.pathname.slice('/orbitdrop/'.length).split('/').filter(Boolean), 'index.html');
+    expect(readFileSync(file, 'utf8')).toContain('<h1>Code signing policy</h1>');
+  });
+
   it('creates the draft when it is missing, reuses a draft, and never touches a published release', () => {
     const releases: GitHubRelease[] = [];
     const fake = githubRunner(releases);

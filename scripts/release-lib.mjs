@@ -243,6 +243,9 @@ export async function refreshSha256Sums({ tag, run, repo = REPO, localHashes = n
   return entries;
 }
 
+/** The website's code signing policy (SignPath Foundation asks for it on every release page). */
+export const CODE_SIGNING_POLICY_URL = 'https://keilvher1.github.io/orbitdrop/en/code-signing-policy/';
+
 export function releaseNotes(version) {
   return [
     `OrbitDrop ${version}.`,
@@ -250,6 +253,7 @@ export function releaseNotes(version) {
     '- macOS 14+: `OrbitDrop-' + version + '-mac-arm64.dmg` (Apple silicon) or `…-mac-x64.dmg` (Intel). Signed with a Developer ID and notarized by Apple.',
     '- Windows 11 x64: `OrbitDrop-' + version + '-win-x64-…-setup.exe` (per-user installer). The file name says `-unsigned` while the installer is not Authenticode-signed.',
     '- `SHA256SUMS.txt` lists the SHA-256 of every file (`shasum -a 256 -c SHA256SUMS.txt`).',
+    `- Code signing policy (who signs what, and how): ${CODE_SIGNING_POLICY_URL}`,
     '',
     'Installed copies update themselves (Settings › General › Check for updates automatically).',
   ].join('\n');

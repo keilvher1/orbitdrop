@@ -58,4 +58,6 @@ export function findRelease(options: { tag: string; run: Runner; repo?: string }
 export function ensureDraftRelease(options: { tag: string; title: string; notes: string; prerelease?: boolean; run: Runner; repo?: string; workDir: string }): GitHubRelease;
 export function uploadAssets(options: { tag: string; files: readonly string[]; run: Runner; repo?: string }): void;
 export function refreshSha256Sums(options: { tag: string; run: Runner; repo?: string; localHashes?: Map<string, string>; workDir: string }): Promise<{ name: string; sha256: string }[]>;
+/** The website's code signing policy, linked from every release's notes. */
+export const CODE_SIGNING_POLICY_URL: string;
 export function releaseNotes(version: string): string;
