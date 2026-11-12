@@ -43,6 +43,17 @@
 기본 조작: 드래그 중 **Shift** = 변환 휠, **Option+Shift**(macOS) / **Alt+Shift**(Windows) = 도구 휠(설정에서 변경 가능).
 관찰된 사실과 제품 결정의 구분: [docs/requirements.md](docs/requirements.md).
 
+## 개인정보
+
+파일은 이 컴퓨터에서만 처리되고 어디로도 보내지 않습니다. OrbitDrop이 네트워크를 쓰는 곳은 **업데이트 확인** 하나뿐입니다: 실행 1분 뒤와
+6시간마다 GitHub Releases(`github.com/keilvher1/orbitdrop`)에서 새 버전을 확인하고, 있으면 내려받아 종료할 때 설치합니다. GitHub에는 IP 주소
+같은 일반 접속 정보와 이 운영체제용 업데이트 파일 요청만 전달되며, 기기 식별자·파일·사용 기록은 보내지 않습니다. 설정 › 일반 ›
+"업데이트 자동 확인"으로 끌 수 있습니다(정보 창의 "지금 확인"은 그대로 동작). 자세히: [packaging.md §9](docs/packaging.md#9-자동-업데이트).
+
+> Privacy: files never leave your computer. The only network use is the update check against GitHub Releases (60 s after launch,
+> then every 6 h; Settings › General turns it off). GitHub sees standard connection details such as your IP address and which update
+> file is requested — no device ID, files or usage data.
+
 ## 요구 사항
 
 * 사용: **macOS 14 이상**(Apple Silicon; Intel x64 산출물은 Intel 실기 미검증) · **Windows 11 x64**(사용자별 설치, 관리자 권한 불필요).
@@ -65,7 +76,8 @@
   시스템 설정 › 일반 › 로그인 항목에서 지웁니다. 손쉬운 사용·입력 모니터링을 허용했다면 시스템 설정 › 개인정보 보호 및 보안의
   해당 목록에서 OrbitDrop을 지웁니다.
 * 사용자 데이터(앱을 지워도 남음, 필요하면 직접 삭제): `~/Library/Application Support/OrbitDrop`(설정 `settings.json`, 작업 기록
-  `history.json`, `logs/main.log`, 캐시), `~/Library/Preferences/io.github.keilvher1.orbitdrop.plist`.
+  `history.json`, `logs/main.log`, 캐시), `~/Library/Preferences/io.github.keilvher1.orbitdrop.plist`, 내려받은 업데이트
+  `~/Library/Caches/@orbitdropdesktop-updater`.
 
 **Windows (11 x64)**
 
@@ -73,7 +85,7 @@
   `%LOCALAPPDATA%\Programs\OrbitDrop`(변경 가능 — OrbitDrop 전용 폴더를 고릅니다), 시작 메뉴·바탕 화면 바로가기가 생깁니다.
 * 제거: 설정 › 앱 › 설치된 앱 › OrbitDrop › 제거(또는 설치 폴더의 `Uninstall OrbitDrop.exe`). 설치 폴더 전체, 바로가기, 제거 항목,
   "로그인 시 실행" 시작 항목을 지웁니다.
-* 사용자 데이터 `%APPDATA%\OrbitDrop`(설정, 작업 기록, 로그, 캐시)은 남깁니다. 함께 지우려면 폴더를 직접 지우거나
+* 사용자 데이터 `%APPDATA%\OrbitDrop`(설정, 작업 기록, 로그, 캐시)과 업데이트 캐시 `%LOCALAPPDATA%\@orbitdropdesktop-updater`는 남깁니다. 함께 지우려면 폴더를 직접 지우거나
   `"%LOCALAPPDATA%\Programs\OrbitDrop\Uninstall OrbitDrop.exe" --delete-app-data`로 제거합니다.
 
 변환·편집 결과 파일은 원본 옆에 저장되므로 앱 제거와 무관하게 남습니다.
