@@ -211,6 +211,59 @@ internal sealed class Wheel
         return $"sector {Math.Min(count - 1, (int)Math.Floor(rel / span))}";
     }
 
+    /// <summary>
+    /// Text lines in the centre capsule, read from the screen: bands of rows with dark ("ink") pixels
+    /// inside the capsule's text box (renderer: capsule 104×46 DIP, text box inset by height/4 and 2 DIP).
+    /// Returns each band's height and width in pixels, top first.
+    /// </summary>
+    public List<(int top, int height, int width)> CapsuleInk(double capsuleWidth = 104, double capsuleHeight = 46)
+    {
+        int halfW = (int)Math.Round((capsuleWidth / 2 - capsuleHeight / 4) * Scale);
+        int halfH = (int)Math.Round((capsuleHeight / 2 - 2) * Scale);
+        int x0 = (int)Math.Round(CenterX) - halfW;
+        int y0 = (int)Math.Round(CenterY) - halfH;
+        using System.Drawing.Bitmap bitmap = Shots.Capture(x0, y0, 2 * halfW, 2 * halfH);
+        var rows = new (int min, int max)?[bitmap.Height];
+        for (int y = 0; y < bitmap.Height; y++)
+        {
+            for (int x = 0; x < bitmap.Width; x++)
+            {
+                System.Drawing.Color px = bitmap.GetPixel(x, y);
+                if (0.299 * px.R + 0.587 * px.G + 0.114 * px.B >= 110) continue;
+                rows[y] = rows[y] is { } seen ? (Math.Min(seen.min, x), Math.Max(seen.max, x)) : (x, x);
+            }
+        }
+        // Rows with ink form one band per text line; a gap of up to 3 px stays inside a line (Hangul jamo).
+        var bands = new List<(int top, int height, int width)>();
+        int start = -1;
+        int last = -1;
+        int left = int.MaxValue;
+        int right = int.MinValue;
+        for (int y = 0; y <= bitmap.Height; y++)
+        {
+            bool ink = y < bitmap.Height && rows[y] != null;
+            if (ink && start >= 0 && y - last > 4)
+            {
+                bands.Add((start, last - start + 1, right - left + 1));
+                start = -1;
+            }
+            if (ink)
+            {
+                if (start < 0)
+                {
+                    start = y;
+                    left = int.MaxValue;
+                    right = int.MinValue;
+                }
+                last = y;
+                left = Math.Min(left, rows[y]!.Value.min);
+                right = Math.Max(right, rows[y]!.Value.max);
+            }
+        }
+        if (start >= 0) bands.Add((start, last - start + 1, right - left + 1));
+        return bands;
+    }
+
     public override string ToString() =>
         $"window {Rect} at {Dpi} dpi, disc centre ({CenterX:F1},{CenterY:F1}) radius {Radius:F1} px, caption strip {Placement}";
 }

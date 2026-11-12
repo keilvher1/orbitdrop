@@ -14,7 +14,8 @@ internal static class Shots
 {
     public static string? Directory { get; set; }
 
-    private static Bitmap Capture(int x, int y, int w, int h)
+    /// <summary>A screen rectangle (physical pixels) as a 24-bit bitmap, layered windows included.</summary>
+    public static Bitmap Capture(int x, int y, int w, int h)
     {
         var bitmap = new Bitmap(w, h, PixelFormat.Format24bppRgb);
         using Graphics g = Graphics.FromImage(bitmap);

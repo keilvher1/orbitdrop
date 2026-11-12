@@ -562,6 +562,12 @@ internal static class Suite
             Thread.Sleep(500);
             string text = Wheel.Text();
             c.Add($"still '{ctx.G.NotAFile}' over a sector (nothing armed)", text == ctx.G.NotAFile, $"wheel text '{text}'");
+            // The capsule's text as drawn: one line, or lines broken at the space ("파일이" / "아님"); never
+            // inside the word ("파일이 아" / "님", what the first runs showed): read from the screen's ink rows.
+            List<(int top, int height, int width)> ink = wheel.CapsuleInk();
+            bool wordsWhole = ink.Count == 1 || (ink.Count == 2 && ink[1].width >= 0.4 * ink[0].width);
+            c.Add($"'{ctx.G.NotAFile}' in the capsule is not broken inside a word", ink.Count > 0 && wordsWhole,
+                $"{ink.Count} line(s) of ink, width x height: {string.Join(" / ", ink.Select(b => $"{b.width}x{b.height} px"))}");
             c.Shot("text-drag-2-over-sector", $"text-drag: over a sector, wheel text '{text}'");
             Input.LeftUp();
             Thread.Sleep(100);
