@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration, slug "windows-installer": request 2 of a Windows release
+  (.github/workflows/release.yml, step "SignPath 2/2"). Paste it into SignPath › the OrbitDrop project ›
+  Artifact Configurations (docs/packaging.md §5 "Windows 코드 서명 (SignPath Foundation)").
+
+  The GitHub workflow artifact is a ZIP with the NSIS installer at its root, built by
+  scripts/package.mjs, SignPath stage "installer" (release/signpath/request-2/), from the app folder whose
+  OrbitDrop.exe, OrbitDropHelper.exe and uninstaller request 1 signed:
+    OrbitDrop-<version>-win-x64-setup.exe
+  NSIS installers are not a composite format for SignPath: only the installer file itself is signed here.
+
+  Metadata restrictions: ProductName "OrbitDrop" and ProductVersion = the release version (the parameter
+  "version", e.g. "1.0.1"); the file name must carry the same version.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="OrbitDrop-${version}-win-x64-setup.exe" product-name="OrbitDrop" product-version="${version}">
+      <authenticode-sign hash-algorithm="sha256" description="OrbitDrop" description-url="https://keilvher1.github.io/orbitdrop/" />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

@@ -80,6 +80,18 @@ export async function checkAssets(found, version) {
     const report = found.has('build-report-win32-x64.json') ? JSON.parse(readFileSync(found.get('build-report-win32-x64.json'), 'utf8')) : null;
     if (!report) problems.push('Windows: no build report');
     else if (report.version !== version) problems.push(`build-report-win32-x64.json: version ${report.version}`);
+    // The name tells users whether the installer is signed (scripts/package.mjs labels unsigned builds "-unsigned"):
+    // a name without the label needs a build report that verified Valid signatures on every own executable
+    // (OrbitDrop.exe, the helper, the installer, the uninstaller), e.g. after SignPath signed them.
+    for (const name of names.filter((n) => /-win-.*-setup\.exe$/.test(n))) {
+      const mode = String(report?.signing?.mode ?? '');
+      if (/-rehearsal-/.test(name) || /rehearsal/i.test(mode)) problems.push(`${name}: a rehearsal of the SignPath flow (self-signed stand-in) never goes to a release`);
+      else if (/-unsigned-/.test(name)) {
+        if (/Authenticode/.test(mode)) problems.push(`${name} is labelled unsigned, but its build report says "${mode}"`);
+      } else if (report && (!/Authenticode/.test(mode) || report.signatures?.expected !== 'signed' || report.signatures?.ok !== true)) {
+        problems.push(`${name} is named as a signed installer, but build-report-win32-x64.json shows no verified Authenticode signatures ("${mode || 'no signing mode'}")`);
+      }
+    }
   }
   if (!mac.length && !win.length) problems.push('no packages to upload');
   return problems;

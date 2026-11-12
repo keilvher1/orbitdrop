@@ -114,16 +114,40 @@ jobs:
           run-id: ${{ inputs.reuse_app_run }}
           github-token: ${{ github.token }}
 
-      - name: Install per user (silent NSIS)
+      # The interactive installer, page by page through UI Automation: folder → privacy notice (the box "Check for
+      # updates automatically" unticked) → install → finish ("Run OrbitDrop" unticked). The suite then checks that
+      # the first run starts with automatic update checks off (installer-preferences.json, apps/desktop/build/installer.nsh).
+      - name: Install per user (interactive installer, update check unticked on its privacy page)
+        id: install-ui
+        continue-on-error: true
+        run: |
+          $setup = Get-ChildItem apps/desktop/release -Filter '*-setup.exe' | Select-Object -First 1
+          if (-not $setup) { throw 'no *-setup.exe' }
+          C:\odgui\driver\OrbitDropGuiDriver.exe install --setup $setup.FullName --out C:\odgui\out\install --untick-update-check
+          exit $LASTEXITCODE
+
+      # Only when the interactive install failed: the same choice silently (/NOUPDATECHECK), so the drag cases still
+      # run; the job still fails at the end.
+      - name: Fallback install (silent, /NOUPDATECHECK)
+        if: steps.install-ui.outcome == 'failure'
+        run: |
+          $setup = Get-ChildItem apps/desktop/release -Filter '*-setup.exe' | Select-Object -First 1
+          if (-not $setup) { throw 'no *-setup.exe' }
+          # An interactive installer left running would make the silent one quit (one installer at a time).
+          Get-Process | Where-Object { $_.ProcessName -like 'OrbitDrop-*-setup' } | Stop-Process -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
+          $uninstaller = Join-Path $env:LOCALAPPDATA 'Programs\OrbitDrop\Uninstall OrbitDrop.exe'
+          if (Test-Path $uninstaller) { Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait; Start-Sleep -Seconds 10 }
+          Start-Process -FilePath $setup.FullName -ArgumentList '/S', '/NOUPDATECHECK' -Wait
+
+      - name: Installed app
         run: |
           $out = New-Item -ItemType Directory -Force C:\odgui\out\app
           $setup = Get-ChildItem apps/desktop/release -Filter '*-setup.exe' | Select-Object -First 1
-          if (-not $setup) { throw 'no *-setup.exe' }
-          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
           $exe = Join-Path $env:LOCALAPPDATA 'Programs\OrbitDrop\OrbitDrop.exe'
           for ($i = 0; $i -lt 60 -and -not (Test-Path $exe); $i++) { Start-Sleep -Seconds 1 }
           if (-not (Test-Path $exe)) { throw "not installed: $exe" }
-          # A silent install must not start the app; if it did, stop it so this test starts it fresh.
+          # The installer must not leave the app running; if it did, stop it so this test starts it fresh.
           Get-Process OrbitDrop -ErrorAction SilentlyContinue | Stop-Process -Force
           $helper = Join-Path (Split-Path $exe) 'resources\helper\OrbitDropHelper.exe'
           $lines = @(
@@ -131,7 +155,9 @@ jobs:
             "installer sha256: $((Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLower())",
             "OrbitDrop.exe sha256: $((Get-FileHash $exe -Algorithm SHA256).Hash.ToLower())",
             "OrbitDropHelper.exe sha256: $((Get-FileHash $helper -Algorithm SHA256).Hash.ToLower())",
-            "installed to: $(Split-Path $exe)"
+            "installed to: $(Split-Path $exe)",
+            "installed by: $(if ('${{ steps.install-ui.outcome }}' -eq 'success') { 'the interactive installer (driver)' } else { 'the silent fallback /S /NOUPDATECHECK' })",
+            "installer-preferences.json: $((Get-Content (Join-Path (Split-Path $exe) 'installer-preferences.json') -Raw -ErrorAction SilentlyContinue))".Trim()
           )
           $report = Get-ChildItem apps/desktop/release -Filter 'build-report-*.json' | Select-Object -First 1
           if ($report) {
@@ -182,7 +208,7 @@ jobs:
           if (Test-Path $data) { throw "an OrbitDrop profile already exists: $data" }
           $exe = Join-Path $env:LOCALAPPDATA 'Programs\OrbitDrop\OrbitDrop.exe'
           C:\odgui\driver\OrbitDropGuiDriver.exe suite --launch $exe --out C:\odgui\out\suite --work C:\odgui\work `
-            --fixtures C:\odgui\fixtures --geometry C:\odgui\geometry.json --main-log "$data\logs\main.log"
+            --fixtures C:\odgui\fixtures --geometry C:\odgui\geometry.json --main-log "$data\logs\main.log" --expect-update-check off
           exit $LASTEXITCODE
 
       - name: Collect OrbitDrop logs
@@ -215,3 +241,9 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
           path: C:\odgui\out
+
+      - name: The interactive install must have passed
+        if: always() && steps.install-ui.outcome == 'failure'
+        run: |
+          "::error::The interactive installer case failed (C:\odgui\out\install in the evidence); the drag cases ran on the silent fallback install."
+          exit 1

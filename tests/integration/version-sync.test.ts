@@ -35,16 +35,18 @@ describe('version sync (scripts/set-version.mjs)', () => {
   it('sets a release version everywhere and keeps package.json formatting', () => {
     const dir = copyOfVersionFiles();
     const before = readFileSync(join(dir, VERSION_FILES.packageJson), 'utf8');
-    expect(setVersion('2.3.4', dir)).toEqual({ packageJson: '2.3.4', swift: '2.3.4', plist: '2.3.4', cmake: '2.3.4' });
+    expect(setVersion('2.3.4', dir)).toEqual({ packageJson: '2.3.4', swift: '2.3.4', plist: '2.3.4', cmake: '2.3.4', cmakeString: '2.3.4' });
     expect(checkVersions(dir)).toEqual([]);
     const after = readFileSync(join(dir, VERSION_FILES.packageJson), 'utf8');
     expect(after.split('\n').length).toBe(before.split('\n').length);
   });
 
-  it('a prerelease keeps its suffix where it can (package.json, Swift) and numbers elsewhere', () => {
+  it('a prerelease keeps its suffix where it can (package.json, Swift, the helper version string) and numbers elsewhere', () => {
     const dir = copyOfVersionFiles();
-    expect(setVersion('1.1.0-beta.2', dir)).toEqual({ packageJson: '1.1.0-beta.2', swift: '1.1.0-beta.2', plist: '1.1.0', cmake: '1.1.0' });
+    expect(setVersion('1.1.0-beta.2', dir)).toEqual({ packageJson: '1.1.0-beta.2', swift: '1.1.0-beta.2', plist: '1.1.0', cmake: '1.1.0', cmakeString: '1.1.0-beta.2' });
     expect(checkVersions(dir)).toEqual([]);
+    // The Windows helper's VERSIONINFO strings come from that variable: ProductVersion = the app's version.
+    expect(readFileSync(join(ROOT, 'native', 'windows', 'res', 'OrbitDropHelper.rc.in'), 'utf8')).toMatch(/VALUE "ProductVersion", "@ORBITDROP_VERSION_STRING@"/);
   });
 
   it('refuses versions the update channels cannot follow and reports drift', () => {
@@ -58,6 +60,7 @@ describe('version sync (scripts/set-version.mjs)', () => {
       expect.stringContaining('HelperInfo.version "3.0.0", expected "3.0.1"'),
       expect.stringContaining('CFBundleShortVersionString "3.0.0", expected "3.0.1"'),
       expect.stringContaining('project VERSION "3.0.0", expected "3.0.1"'),
+      expect.stringContaining('ORBITDROP_VERSION_STRING "3.0.0", expected "3.0.1"'),
     ]);
   });
 });

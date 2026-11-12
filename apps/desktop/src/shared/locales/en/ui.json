@@ -454,6 +454,7 @@
   "welcome.openDropZone": "Open Drop Zone",
   "welcome.launchAtLogin": "Open at login",
   "welcome.launchAtLoginHint": "When on, OrbitDrop starts automatically when you log in. You can change this any time in Settings › General.",
+  "welcome.autoCheckHint": "When on, OrbitDrop asks GitHub whether a new version exists (one minute after launch, then every six hours). GitHub receives only standard connection details such as your IP address — no files or usage data. You can change this any time in Settings › General.",
   "welcome.privacy": "Everything is processed on this computer. No account is needed and no usage data is sent.",
   "welcome.start": "Get Started",
   "diag.title": "Troubleshooting",

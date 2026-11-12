@@ -24,4 +24,16 @@
     <xhtml:link rel="alternate" hreflang="ko" href="https://keilvher1.github.io/orbitdrop/privacy/"/>
     <xhtml:link rel="alternate" hreflang="en" href="https://keilvher1.github.io/orbitdrop/en/privacy/"/>
   </url>
+  <url>
+    <loc>https://keilvher1.github.io/orbitdrop/code-signing-policy/</loc>
+    <lastmod>2026-11-12</lastmod>
+    <xhtml:link rel="alternate" hreflang="ko" href="https://keilvher1.github.io/orbitdrop/code-signing-policy/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://keilvher1.github.io/orbitdrop/en/code-signing-policy/"/>
+  </url>
+  <url>
+    <loc>https://keilvher1.github.io/orbitdrop/en/code-signing-policy/</loc>
+    <lastmod>2026-11-12</lastmod>
+    <xhtml:link rel="alternate" hreflang="ko" href="https://keilvher1.github.io/orbitdrop/code-signing-policy/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://keilvher1.github.io/orbitdrop/en/code-signing-policy/"/>
+  </url>
 </urlset>

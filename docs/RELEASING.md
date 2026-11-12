@@ -31,14 +31,20 @@ OrbitDrop은 GitHub 저장소 [keilvher1/orbitdrop](https://github.com/keilvher1
 
   API 키 대신 notarytool 키체인 프로필도 된다:
   `xcrun notarytool store-credentials <profile> --key … --key-id … --issuer …` 후 `export APPLE_KEYCHAIN_PROFILE=<profile>`.
-* CI 시크릿은 필요 없다. Windows 서명 인증서를 사면 `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD`를 넣는다. macOS도 CI에서 서명하려면
+* **Windows 서명(SignPath Foundation)**: 승인을 받은 뒤 한 번만 — SignPath 쪽 설정(GitHub.com 신뢰 빌드 시스템, 아티팩트 구성
+  `windows-binaries`·`windows-installer`, 서명 정책, API 토큰)과 저장소의 시크릿 `SIGNPATH_API_TOKEN`, 변수 `SIGNPATH_ORGANIZATION_ID`,
+  `SIGNPATH_PROJECT_SLUG`, `SIGNPATH_SIGNING_POLICY_SLUG`. 순서는 [packaging.md §5 "Windows 코드 서명"](packaging.md#windows-코드-서명-signpath-foundation)의
+  "소유자가 할 일". 넷이 모두 있어야 CI가 SignPath로 서명하고, 없으면 지금처럼 미서명(`-unsigned`)이다.
+* 그 밖의 CI 시크릿은 필요 없다. Windows 서명 인증서를 사면 `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD`를 넣는다(SignPath가 설정되어 있으면 쓰이지 않는다). macOS도 CI에서 서명하려면
   `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD`와 공증 시크릿(`APPLE_API_KEY_P8`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`)을 넣는다 —
   그러면 CI의 macOS 작업이 서명·공증된 패키지를 만들고 4단계를 건너뛸 수 있다(부록).
 
 ## 1. 버전 올리기
 
 1. `node scripts/set-version.mjs <버전>`으로 버전을 올린다(semver). `apps/desktop/package.json`과 두 네이티브 helper(macOS
-   `HelperInfo.version`·`Info.plist`, Windows `CMakeLists.txt` → VERSIONINFO)를 함께 바꾸며, 어긋나면 `--check`와 테스트가 실패한다.
+   `HelperInfo.version`·`Info.plist`, Windows `CMakeLists.txt`의 `project(VERSION)`과 `ORBITDROP_VERSION_STRING` → VERSIONINFO)를 함께 바꾸며,
+   어긋나면 `--check`와 테스트가 실패한다. Windows의 직접 만든 실행 파일 네 개는 모두 이 버전을 ProductVersion으로 가져야 한다(SignPath 조건,
+   `package.mjs`가 확인).
    업데이트는 **더 높은 버전**만 받으므로 반드시 올라가야 한다.
    `0.2.0-beta.1` 같은 프리릴리스 버전은 GitHub에서 pre-release로 공개하며, 정식 버전 설치본은 프리릴리스를 받지 않는다.
    프리릴리스 이름은 `-alpha.N`/`-beta.N`만 쓴다: 그런 설치본은 더 새 프리릴리스와 정식 버전으로 넘어가지만, 다른 이름(`-rc.N` 등)은
@@ -63,15 +69,33 @@ git push origin main v0.2.0
 | 작업 | 하는 일 |
 |---|---|
 | Plan | 태그 형식·버전 일치 확인. macOS 서명·공증 시크릿이 없으면 macOS 작업을 건너뛰고 작업 요약에 "macOS packages are built locally: `node scripts/release-mac.mjs <tag>`"를 남긴다(실패 아님) |
-| Windows (x64) | 검사·테스트 → helper → 번들 → `package.mjs win --install-test`. 인증서가 없으면 미서명이며 파일 이름에 `-unsigned`가 붙는다 |
+| Windows (x64) | 검사·테스트 → helper → 번들 → `package.mjs win --install-test`. 인증서가 없으면 미서명이며 파일 이름에 `-unsigned`가 붙는다. **SignPath가 설정되어 있으면** 서명 요청 두 개(아래 "SignPath 승인")를 거쳐 서명된 설치 프로그램을 만든다(`-unsigned` 없음) |
 | macOS | 시크릿이 있을 때만: 임시 키체인에 인증서를 넣고 `package.mjs mac --arch all --require-signing --require-notarization` |
 | Draft release | 유일하게 쓰기 권한(`contents: write`)이 있는 작업. [`scripts/third-party-sources.mjs`](../scripts/third-party-sources.mjs)로 이 버전이 싣는 LGPL·MPL 구성요소의 대응 소스 묶음(`OrbitDrop-<버전>-third-party-sources.tar.gz`)을 만들고, [`scripts/release-assets.mjs`](../scripts/release-assets.mjs)가 초안을 만들거나 갱신하고(이미 공개된 릴리스는 거부; 소스 묶음이 없으면 올리지 않음) 파일을 올린 뒤 `SHA256SUMS.txt`를 릴리스의 **모든** 파일에 대해 다시 쓴다 |
 
-초안에 올라가는 것(Windows): `OrbitDrop-<버전>-win-x64-unsigned-setup.exe`, `latest.yml`, `build-report-win32-x64.json`,
-`SHA256SUMS.txt`. 서명되지 않은 macOS 패키지는 어떤 경우에도 릴리스에 올라가지 않는다.
+초안에 올라가는 것(Windows): `OrbitDrop-<버전>-win-x64-unsigned-setup.exe`(SignPath로 서명했으면 `OrbitDrop-<버전>-win-x64-setup.exe`),
+`latest.yml`, `build-report-win32-x64.json`, `SHA256SUMS.txt`. `-unsigned`가 없는 이름은 build report가 네 실행 파일의 Valid 서명을 보여 줄 때만
+올라가고(`release-assets.mjs`), 서명 흐름 리허설(`-rehearsal`)은 올라가지 않는다. 서명되지 않은 macOS 패키지는 어떤 경우에도 릴리스에 올라가지 않는다.
 
-다시 돌리기: Actions › Release › Run workflow에서 `tag`에 `v0.2.0`을 넣는다(초안의 같은 이름 파일을 교체). `tag`를 비우면 빌드만 하고
-릴리스는 건드리지 않는다.
+### SignPath 승인 (Windows, 릴리스마다)
+
+SignPath Foundation은 **모든 릴리스를 승인자가 직접 승인**해야 서명한다. 한 릴리스에 요청이 두 번 온다(같은 작업 안에서 몇 분 간격, 각각 최대
+90분 기다린다 — 그 안에 승인하지 않으면 작업이 실패하고 Windows 파일은 초안에 올라가지 않는다).
+
+1. 태그를 push하면 Windows 작업이 빌드·검사 뒤 **요청 1**을 보낸다: `OrbitDrop.exe`, `OrbitDropHelper.exe`, `Uninstall OrbitDrop.exe`
+   (아티팩트 구성 `windows-binaries`). SignPath 알림 메일이나 <https://app.signpath.io>의 서명 요청을 연다.
+2. 승인 전에 확인한다: 출처(origin)가 `github.com/keilvher1/orbitdrop`, ref가 `refs/tags/v<버전>`, 커밋이 그 태그의 커밋이고 빌드 링크가 이
+   실행의 Windows 작업인지; 매개변수 `version`이 태그와 같은지; 파일이 위 세 개뿐인지. 이상하면 **거부**한다(그 실행은 실패하고 아무것도
+   공개되지 않는다).
+3. 승인하면 작업이 돌아온 파일을 보낸 파일과 대조하고 설치 프로그램을 만든 뒤 **요청 2**(`OrbitDrop-<버전>-win-x64-setup.exe`, 아티팩트 구성
+   `windows-installer`)를 보낸다. 같은 방식으로 확인하고 승인한다.
+4. 작업이 서명된 설치 프로그램으로 모든 검사·설치 시험을 다시 하고 초안에 올린다. 재실행(Re-run)은 SignPath 정책이 재실행을 막으면 서명되지
+   않는다 — 필요하면 Run workflow로 같은 태그를 새로 실행한다("Use workflow from"을 그 태그로; 다른 브랜치에서 `tag` 입력만 주면 SignPath가
+   출처를 확인할 수 없어 Plan 작업이 거부한다).
+
+다시 돌리기: Actions › Release › Run workflow에서 `tag`에 `v0.2.0`을 넣는다(초안의 같은 이름 파일을 교체). SignPath가 설정되어 있으면
+"Use workflow from"도 그 태그로 고른다(위 4번). `tag`를 비우면 빌드만 하고 릴리스는 건드리지 않는다(Windows는 미서명; `signpath_rehearsal`을
+켜면 서명 흐름을 자체 서명 인증서로 리허설한다 — [packaging.md §5](packaging.md#windows-코드-서명-signpath-foundation)).
 
 ## 4. macOS 패키지 (릴리스용 Mac)
 
@@ -108,7 +132,11 @@ build report(`apps/desktop/release/build-report-darwin-*.json`)는 공증 ID를 
 - [ ] `latest-mac.yml`이 arm64·x64 zip을, `latest.yml`이 setup.exe를 가리키고 버전이 태그와 같다(스크립트가 확인하지만 눈으로도)
 - [ ] macOS(가능하면 깨끗한 Mac 또는 VM): 브라우저로 DMG를 내려받아 열고 응용 프로그램 폴더로 옮긴 뒤 실행 — Gatekeeper 경고 없음,
       정보 창에 버전과 커밋, 설정 › 일반의 "업데이트 자동 확인"
-- [ ] Windows 11: 설치·실행·제거(미서명이면 SmartScreen 경고가 정상), 정보 창
+- [ ] Windows 11: 설치·실행·제거(미서명이면 SmartScreen 경고가 정상), 정보 창. 설치 중 "개인정보와 업데이트" 페이지(상자를 해제하면
+      첫 실행의 설정 › 일반 "업데이트 자동 확인"이 꺼져 있다)
+- [ ] SignPath로 서명했으면: `Get-AuthenticodeSignature .\OrbitDrop-<버전>-win-x64-setup.exe`가 `Valid`, 서명자 SignPath Foundation. 설치 폴더의
+      `OrbitDrop.exe`·`resources\helper\OrbitDropHelper.exe`·`Uninstall OrbitDrop.exe`도 같다(build report `signatures`). 첫 서명 릴리스를
+      공개한 뒤 웹페이지 코드 서명 정책의 상태 줄을 바꾼다([packaging.md §5](packaging.md#windows-코드-서명-signpath-foundation))
 - [ ] 릴리스 노트(초안의 자동 문구를 다듬는다), LGPL 소스 제공 방식([packaging.md](packaging.md#lgplmpl-소스-제공--결정-필요))
 - [ ] (선택) 업데이트 경로 시험: 초안은 업데이트에 보이지 않으므로, 큰 변경 전에는 `v0.2.0-beta.1`, `v0.2.0-beta.2`를 pre-release로
       공개해 beta.1 설치본이 beta.2로 업데이트되는지 본다(정식 버전 설치본은 pre-release를 받지 않고, beta 설치본은 나중에 정식 `v0.2.0`도

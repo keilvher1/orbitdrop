@@ -52,10 +52,13 @@ export function yaml(): { load(text: string): unknown; dump(value: unknown, opti
 export function formatSums(entries: Iterable<{ name: string; sha256: string }>): string;
 export function parseSums(text: string): Map<string, string>;
 export function mergeUpdateInfo(infos: readonly (UpdateInfo | null | undefined)[]): UpdateInfo | null;
+export function refreshUpdateInfo(info: UpdateInfo, dir: string): Promise<UpdateInfo>;
 export function checkUpdateInfo(info: unknown, dir: string, options: { platform: 'darwin' | 'win32'; version: string; archs?: readonly string[] }): Promise<string[]>;
 export function findReleases(options: { tag: string; run: Runner; repo?: string }): GitHubRelease[];
 export function findRelease(options: { tag: string; run: Runner; repo?: string }): GitHubRelease | null;
 export function ensureDraftRelease(options: { tag: string; title: string; notes: string; prerelease?: boolean; run: Runner; repo?: string; workDir: string; findAttempts?: number; findDelayMs?: number }): GitHubRelease;
 export function uploadAssets(options: { tag: string; files: readonly string[]; run: Runner; repo?: string }): void;
 export function refreshSha256Sums(options: { tag: string; run: Runner; repo?: string; localHashes?: Map<string, string>; workDir: string }): Promise<{ name: string; sha256: string }[]>;
+/** The website's code signing policy, linked from every release's notes. */
+export const CODE_SIGNING_POLICY_URL: string;
 export function releaseNotes(version: string): string;

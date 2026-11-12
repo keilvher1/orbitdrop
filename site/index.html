@@ -294,6 +294,7 @@
       </article>
     </div>
     <p class="dl-which"><strong>Apple silicon인지 Intel인지 모르겠다면</strong> Apple 메뉴 › 이 Mac에 관하여를 여세요. ‘칩’ 항목에 Apple M1 같은 이름이 있으면 Apple silicon, ‘프로세서’ 항목에 Intel이 있으면 Intel입니다.</p>
+    <p class="dl-policy"><strong>코드 서명</strong> 설치 파일을 누가 어떻게 서명하는지, Windows 서명 준비 상황과 서명하는 파일 목록은 <a href="code-signing-policy/">코드 서명 정책(Code signing policy)</a>에 있습니다.</p>
     <div class="verify card">
       <h3>내려받은 파일 확인하기 (SHA-256)</h3>
       <p>릴리스에 <code>SHA256SUMS.txt</code>가 있으면, 아래 명령으로 계산한 값을 그 파일에서 같은 파일 이름 줄의 값과 비교해 파일이 중간에 바뀌지 않았는지 확인할 수 있습니다. 두 값이 같아야 합니다.</p>
@@ -366,7 +367,7 @@
       <details id="faq-windows">
         <summary>Windows 판은 왜 베타인가요?</summary>
         <div class="answer">
-          <p>Windows 판은 아직 실제 Windows 11 PC에서 사람이 확인하지 않았기 때문입니다. 설치 파일은 GitHub의 Windows Server 2025 러너(가상 머신)에서 빌드해 설치·제거와 실행 시험을 통과했고, 같은 러너의 실제 탐색기 창에서 파일을 끌며 <kbd>Shift</kbd>로 휠을 띄워 놓고 변환하는 자동 시험(취소·링 바깥 드롭·텍스트 드래그 등 9가지 경우)도 통과했습니다. 다만 그 입력은 프로그램이 만든 것이고, 100% 배율·모니터 하나에서만 확인했으며 도구 메뉴와 편집기는 아직 Windows에서 확인하지 않았습니다. 또 설치 파일에 아직 코드 서명이 없어 Windows가 경고를 표시할 수 있습니다. macOS 판은 macOS 14와 macOS 26 가상 머신의 실제 Finder에서 드래그부터 변환·편집까지 확인했습니다.</p>
+          <p>Windows 판은 아직 실제 Windows 11 PC에서 사람이 확인하지 않았기 때문입니다. 설치 파일은 GitHub의 Windows Server 2025 러너(가상 머신)에서 빌드해 설치·제거와 실행 시험을 통과했고, 같은 러너의 실제 탐색기 창에서 파일을 끌며 <kbd>Shift</kbd>로 휠을 띄워 놓고 변환하는 자동 시험(취소·링 바깥 드롭·텍스트 드래그 등 9가지 경우)도 통과했습니다. 다만 그 입력은 프로그램이 만든 것이고, 100% 배율·모니터 하나에서만 확인했으며 도구 메뉴와 편집기는 아직 Windows에서 확인하지 않았습니다. 또 설치 파일에 아직 코드 서명이 없어 Windows가 경고를 표시할 수 있습니다(서명 준비 상황은 <a href="code-signing-policy/">코드 서명 정책</a>에 있습니다). macOS 판은 macOS 14와 macOS 26 가상 머신의 실제 Finder에서 드래그부터 변환·편집까지 확인했습니다.</p>
           <ul>
             <li>OrbitDrop과 탐색기 중 한쪽만 관리자 권한으로 실행하면 드래그를 받을 수 없습니다.</li>
             <li>HEIC 변환은 Windows에서 지원하지 않습니다.</li>
@@ -413,6 +414,7 @@
         <li><a href="https://github.com/keilvher1/orbitdrop/blob/main/LICENSE">라이선스(MIT)</a></li>
         <li><a href="https://github.com/keilvher1/orbitdrop/blob/main/THIRD_PARTY_LICENSES.md">제3자 라이선스</a></li>
         <li><a href="privacy/">개인정보 처리방침</a></li>
+        <li><a href="code-signing-policy/">코드 서명 정책</a></li>
         <li><a href="en/" hreflang="en" lang="en">English</a></li>
       </ul>
     </nav>

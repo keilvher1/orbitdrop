@@ -102,7 +102,7 @@ function gitDescribe() {
 
 function helperVersion() {
   const text = readFileSync(join(src, 'CMakeLists.txt'), 'utf8');
-  return /project\(OrbitDropHelper VERSION ([0-9.]+)/.exec(text)?.[1] ?? 'unknown';
+  return /set\(ORBITDROP_VERSION_STRING "([^"]+)"\)/.exec(text)?.[1] ?? /project\(OrbitDropHelper VERSION ([0-9.]+)/.exec(text)?.[1] ?? 'unknown';
 }
 
 function stageHelper(builtExe, status, toolchain, strip) {

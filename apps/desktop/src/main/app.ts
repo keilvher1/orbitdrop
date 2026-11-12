@@ -68,6 +68,7 @@ import { ProcessorPool, type PoolRunContext } from './processing/pool';
 import { servePreviews } from './preview/protocol';
 import { PreviewStore } from './preview/store';
 import { hardenSession, installWebContentsHardening, isRendererExternalUrl } from './security';
+import { readInstallerPreferences } from './settings/installer-preferences';
 import { SettingsStore } from './settings/store';
 import { SupportController } from './support/controller';
 import { HelperCrashNotifier, RendererErrorLog } from './support/crash';
@@ -188,9 +189,13 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
     readonly paths: AppPaths,
   ) {
     configureLogSink({ file: join(paths.userData, 'logs', 'main.log'), debug: options.debug });
-    // First run: the UI language follows the OS (automation keeps Korean, the app default, for stable tests).
+    // First run: the UI language follows the OS (automation keeps Korean, the app default, for stable tests),
+    // and a Windows installation starts with the update-check choice made in the installer
+    // (installer-preferences.json next to OrbitDrop.exe; never read when settings exist, or in automation).
+    const installed = process.platform === 'win32' && app.isPackaged && !options.e2e && !options.smokeTest;
     this.settings = new SettingsStore(paths.userData, createLogger('settings'), process.platform, {
       systemLanguages: options.e2e || options.smokeTest ? () => [] : systemLanguages,
+      installerPreferences: installed ? () => readInstallerPreferences(dirname(process.execPath)) : undefined,
     });
     this.history = new HistoryStore(paths.userData, createLogger('history'));
     this.t = bindTranslate(() => this.settings.get().locale);

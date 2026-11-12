@@ -90,6 +90,7 @@
 
     <h3 id="network">Network</h3>
     <p>The only time OrbitDrop uses the internet is the <strong>optional update check</strong>. When it checks for updates, OrbitDrop asks GitHub for the latest version. With that request GitHub receives the app version and normal HTTP metadata (your IP address, the time of the request and so on). No files, file names, settings or job history are sent. GitHub handles this information under the <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">GitHub General Privacy Statement</a>.</p>
+    <p id="update-check-off">The automatic update check is on at first (one minute after launch, then every six hours). There are three ways to turn it off: untick “Check for updates automatically” on the “Privacy and updates” step of the Windows installer (from 1.0.1; <code>/NOUPDATECHECK</code> for unattended installs), the same switch in the welcome window shown on the first run, or Settings › General › “Check for updates automatically”. With it off, “Check Now” in the About window still checks when you ask.</p>
     <p>If you do not use the update check, OrbitDrop does not connect to the internet. Links inside the app (for example to GitHub) open in your default web browser.</p>
 
     <h3 id="permissions">Permissions</h3>
@@ -120,6 +121,7 @@
         <li><a href="https://github.com/keilvher1/orbitdrop/blob/main/LICENSE">Licence (MIT)</a></li>
         <li><a href="https://github.com/keilvher1/orbitdrop/blob/main/THIRD_PARTY_LICENSES.md">Third-party licences</a></li>
         <li><a href="./" aria-current="page">Privacy</a></li>
+        <li><a href="../code-signing-policy/">Code signing policy</a></li>
         <li><a href="../../privacy/" hreflang="ko" lang="ko">한국어</a></li>
       </ul>
     </nav>

@@ -96,17 +96,29 @@
   font-size: 12px;
 }
 
-.welcome-login {
+/* "Launch at login" and "Check for updates automatically": one box, one switch per row. */
+.welcome-options {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 10px;
   padding: 10px 12px;
   border: 1px solid var(--c-border);
   border-radius: var(--radius-control);
   background: var(--c-surface);
 }
 
-.welcome-login-label {
+.welcome-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.welcome-option + .welcome-option {
+  padding-top: 10px;
+  border-top: 1px solid var(--c-border);
+}
+
+.welcome-option-label {
   font-weight: 600;
 }
 
@@ -131,7 +143,8 @@
 }
 
 @media (forced-colors: active) {
-  .welcome-login {
+  .welcome-options,
+  .welcome-option + .welcome-option {
     border-color: CanvasText;
   }
 }

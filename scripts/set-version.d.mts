@@ -4,6 +4,8 @@ export interface Versions {
   swift: string;
   plist: string;
   cmake: string;
+  /** native/windows/CMakeLists.txt ORBITDROP_VERSION_STRING: the full version (prerelease included). */
+  cmakeString: string;
 }
 export const VERSION_FILES: { readonly packageJson: string; readonly swift: string; readonly plist: string; readonly cmake: string };
 export function readVersions(root?: string): Versions;

@@ -20,7 +20,9 @@ type WelcomeError = { readonly kind: 'save' | 'open'; readonly error: OrbitError
  * Teaches the gesture with the user's real keys and this platform's key names
  * (Option on macOS, Alt / Ctrl on Windows), says where the app lives (menu
  * bar; notification area, which Windows 11 may hide under ^), offers the Drop
- * Zone and the "launch at login" switch (off unless the user turns it on).
+ * Zone, the "launch at login" switch (off unless the user turns it on) and the
+ * "check for updates automatically" switch (settings.updates.autoCheck: on by
+ * default, or as chosen in the Windows installer), the app's only network use.
  * Keyboard: Tab through the controls, Esc closes; focus starts on the heading
  * so a screen reader reads the page from the top.
  */
@@ -33,6 +35,7 @@ export function WelcomeView() {
   const whereId = useId();
   const keysId = useId();
   const loginHintId = useId();
+  const autoCheckHintId = useId();
   const close = useCallback(() => orbit.closeWindow(), [orbit]);
   useWindowFit(rootRef);
   useEscapeKey(close);
@@ -46,6 +49,11 @@ export function WelcomeView() {
   const setLaunchAtLogin = (launchAtLogin: boolean) => {
     setProblem(null);
     updateSettings({ launchAtLogin }).catch((reason: unknown) => setProblem({ kind: 'save', error: asErrorInfo(reason) }));
+  };
+
+  const setAutoCheck = (autoCheck: boolean) => {
+    setProblem(null);
+    updateSettings({ updates: { autoCheck } }).catch((reason: unknown) => setProblem({ kind: 'save', error: asErrorInfo(reason) }));
   };
 
   const openDropZone = () => {
@@ -112,20 +120,37 @@ export function WelcomeView() {
           </div>
         </section>
 
-        <div className="welcome-login">
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              role="switch"
-              checked={settings.launchAtLogin}
-              aria-describedby={loginHintId}
-              onChange={(event) => setLaunchAtLogin(event.target.checked)}
-            />
-            <span className="welcome-login-label">{t('welcome.launchAtLogin')}</span>
-          </label>
-          <p id={loginHintId} className="welcome-hint">
-            {t('welcome.launchAtLoginHint')}
-          </p>
+        <div className="welcome-options">
+          <div className="welcome-option">
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                role="switch"
+                checked={settings.launchAtLogin}
+                aria-describedby={loginHintId}
+                onChange={(event) => setLaunchAtLogin(event.target.checked)}
+              />
+              <span className="welcome-option-label">{t('welcome.launchAtLogin')}</span>
+            </label>
+            <p id={loginHintId} className="welcome-hint">
+              {t('welcome.launchAtLoginHint')}
+            </p>
+          </div>
+          <div className="welcome-option">
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                role="switch"
+                checked={settings.updates.autoCheck}
+                aria-describedby={autoCheckHintId}
+                onChange={(event) => setAutoCheck(event.target.checked)}
+              />
+              <span className="welcome-option-label">{t('update.settings.autoCheck')}</span>
+            </label>
+            <p id={autoCheckHintId} className="welcome-hint">
+              {t('welcome.autoCheckHint')}
+            </p>
+          </div>
         </div>
 
         {problem ? (

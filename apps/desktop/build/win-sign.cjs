@@ -1,0 +1,5 @@
+// electron-builder resolves hook paths against the working directory and refuses paths outside
+// the detected workspace root (detection can fall back to apps/desktop, e.g. on Windows), so the
+// config points here and the implementation lives in scripts/win-sign.cjs.
+'use strict';
+module.exports = require('../../../scripts/win-sign.cjs');

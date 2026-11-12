@@ -61,6 +61,8 @@ describe('welcome window', () => {
     await user.tab();
     expect(document.activeElement).toBe(screen.getByRole('switch', { name: '로그인 시 실행' }));
     await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole('switch', { name: '업데이트 자동 확인' }));
+    await user.tab();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: '시작하기' }));
   });
 
@@ -73,6 +75,25 @@ describe('welcome window', () => {
     await user.click(toggle);
     expect(orbit.updateSettings).toHaveBeenCalledWith({ launchAtLogin: true });
     await waitFor(() => expect(toggle.checked).toBe(true));
+  });
+
+  it('"업데이트 자동 확인" shows the current setting (on by default, off as the installer left it) and saves updates.autoCheck', async () => {
+    const { orbit, user } = setup({ platform: 'win32' });
+    const toggle = screen.getByRole('switch', { name: '업데이트 자동 확인' }) as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+    const hint = document.getElementById(toggle.getAttribute('aria-describedby')!);
+    expect(hint?.textContent).toMatch(/GitHub에 새 버전이 있는지 확인합니다/);
+    expect(hint?.textContent).toMatch(/설정 › 일반에서 언제든 바꿀 수 있습니다/);
+    await user.click(toggle);
+    expect(orbit.updateSettings).toHaveBeenCalledWith({ updates: { autoCheck: false } });
+    await waitFor(() => expect(toggle.checked).toBe(false));
+
+    // A first run after the installer's box was unticked (or /NOUPDATECHECK) starts with the switch off.
+    const off = defaultSettingsFor('darwin');
+    setup({ settings: { ...off, locale: 'en', updates: { autoCheck: false } } });
+    const en = screen.getByRole('switch', { name: 'Check for updates automatically' }) as HTMLInputElement;
+    expect(en.checked).toBe(false);
+    expect(document.getElementById(en.getAttribute('aria-describedby')!)?.textContent).toMatch(/asks GitHub whether a new version exists/);
   });
 
   it('a failed save is shown, not swallowed', async () => {

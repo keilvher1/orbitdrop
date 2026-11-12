@@ -203,6 +203,13 @@ win:
       arch: [x64]
   icon: build/icon.ico
   requestedExecutionLevel: asInvoker
+  # Called for every file electron-builder signs (OrbitDrop.exe, the helper, the uninstaller, the
+  # installer): sets OrbitDrop.exe's ProductVersion string to the release version (electron-builder
+  # writes x.y.z.0; every signed file must say the same version), keeps a copy of the uninstaller for
+  # the version check and the SignPath flow, and signs with signtool only when a certificate is
+  # configured. Unsigned builds stay unsigned. Details: scripts/win-sign.cjs, docs/packaging.md §5.
+  signtoolOptions:
+    sign: ./build/win-sign.cjs
   extraResources:
     # Staged by scripts/build-native-win.mjs: the helper plus any app-local runtime DLLs.
     - from: resources/helper/win32-${arch}

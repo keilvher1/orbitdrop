@@ -8,7 +8,8 @@ namespace OrbitDropGui;
 /// OrbitDrop Windows GUI driver (CI only: it synthesizes real mouse and keyboard input).
 ///
 ///   OrbitDropGuiDriver probe --out &lt;dir&gt;
-///   OrbitDropGuiDriver suite --out &lt;dir&gt; --work &lt;dir&gt; --geometry &lt;json&gt; --main-log &lt;main.log&gt;
+///   OrbitDropGuiDriver install --setup &lt;installer.exe&gt; --out &lt;dir&gt; [--untick-update-check]
+///   OrbitDropGuiDriver suite --out &lt;dir&gt; --work &lt;dir&gt; --geometry &lt;json&gt; --main-log &lt;main.log&gt; [--expect-update-check on|off]
 ///   OrbitDropGuiDriver textsource            (a small window that drags plain text: the non-file case)
 ///
 /// Exit code 0 = everything passed, 3 = a check failed, 2 = usage / environment error.
@@ -21,7 +22,7 @@ internal static class Program
         Native.SetProcessDpiAwarenessContext(Native.DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         if (args.Length == 0)
         {
-            Console.Error.WriteLine("usage: OrbitDropGuiDriver probe|suite|textsource [options]");
+            Console.Error.WriteLine("usage: OrbitDropGuiDriver probe|install|suite|textsource [options]");
             return 2;
         }
         var options = ParseOptions(args);
@@ -41,6 +42,7 @@ internal static class Program
             return command switch
             {
                 "probe" => Probe.Run(outDir),
+                "install" => InstallerUi.Run(outDir, options),
                 "suite" => Suite.Run(outDir, options),
                 _ => Usage(command),
             };

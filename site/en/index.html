@@ -294,6 +294,7 @@
       </article>
     </div>
     <p class="dl-which"><strong>Not sure which Mac you have?</strong> Open Apple menu › About This Mac. If “Chip” shows a name like Apple M1, choose Apple silicon; if “Processor” shows Intel, choose Intel.</p>
+    <p class="dl-policy"><strong>Code signing</strong> Who signs the installers and how, the state of Windows signing and the list of signed files: see the <a href="code-signing-policy/">Code signing policy</a>.</p>
     <div class="verify card">
       <h3>Check the download (SHA-256)</h3>
       <p>If the release includes <code>SHA256SUMS.txt</code>, you can make sure the file was not changed on the way: compare the output of the command below with the line for the same file name in that file. The two values must match.</p>
@@ -367,7 +368,7 @@
       <details id="faq-windows">
         <summary>Why is the Windows version a beta?</summary>
         <div class="answer">
-          <p>Because no person has checked it on a real Windows 11 PC yet. The installer is built on GitHub’s Windows Server 2025 runners (virtual machines), where it passes install, uninstall and launch tests and an automated test that drags real files in a real File Explorer window, presses <kbd>Shift</kbd> to open the wheel and drops on a format (nine cases, including cancelling, dropping outside the ring and dragging text). That input is synthesized, only 100 % scaling with one monitor was covered, and the tools menu and editors have not been checked on Windows yet. The installer is not code-signed yet, so Windows may show a warning. The macOS version was checked from drag to result in the real Finder on macOS 14 and macOS 26 virtual machines.</p>
+          <p>Because no person has checked it on a real Windows 11 PC yet. The installer is built on GitHub’s Windows Server 2025 runners (virtual machines), where it passes install, uninstall and launch tests and an automated test that drags real files in a real File Explorer window, presses <kbd>Shift</kbd> to open the wheel and drops on a format (nine cases, including cancelling, dropping outside the ring and dragging text). That input is synthesized, only 100 % scaling with one monitor was covered, and the tools menu and editors have not been checked on Windows yet. The installer is not code-signed yet, so Windows may show a warning (the <a href="code-signing-policy/">Code signing policy</a> describes the signing plan). The macOS version was checked from drag to result in the real Finder on macOS 14 and macOS 26 virtual machines.</p>
           <ul>
             <li>If only one of OrbitDrop and File Explorer runs as administrator, drags between them are blocked.</li>
             <li>HEIC conversion is not supported on Windows.</li>
@@ -414,6 +415,7 @@
         <li><a href="https://github.com/keilvher1/orbitdrop/blob/main/LICENSE">Licence (MIT)</a></li>
         <li><a href="https://github.com/keilvher1/orbitdrop/blob/main/THIRD_PARTY_LICENSES.md">Third-party licences</a></li>
         <li><a href="privacy/">Privacy</a></li>
+        <li><a href="code-signing-policy/">Code signing policy</a></li>
         <li><a href="../" hreflang="ko" lang="ko">한국어</a></li>
       </ul>
     </nav>
