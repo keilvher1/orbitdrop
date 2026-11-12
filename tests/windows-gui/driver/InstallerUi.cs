@@ -18,8 +18,13 @@ namespace OrbitDropGui;
 /// it), the progress page, the finish page ("Run OrbitDrop" unticked: the suite starts the app itself with
 /// debug logging). Then the installation folder must hold installer-preferences.json with the choice.
 ///
-/// The controls are found and used through UI Automation (Invoke for buttons, Toggle for check boxes), so
-/// the installer works whether or not its window is in front; every page is captured on screen.
+/// The controls are found through UI Automation; buttons are pressed with a real mouse click (the installer
+/// brought to the front first), check boxes are set with UI Automation's Toggle. UI Automation's Invoke is
+/// only a fallback: it delivers the click as a message sent from this process, and NSIS switches pages while
+/// handling that click — on the way into an nsDialogs page the sender waits until UI Automation's 10 s timeout,
+/// and the next page's button then did not react (first runner attempt). A page that does not move on after a
+/// press gets one more press. Every page is captured on screen, and the state (with the text of any message
+/// box the installer shows) is logged every 15 s while it works.
 ///
 ///   OrbitDropGuiDriver install --setup &lt;installer.exe&gt; --out &lt;dir&gt; [--untick-update-check]
 /// </summary>
@@ -58,10 +63,20 @@ internal static class InstallerUi
         Log.Info($"started {Path.GetFileName(setup)} (pid {installer.Id})");
         IntPtr window = WaitForWindow(installer, TimeSpan.FromSeconds(60));
         c.Add("the installer window opens", window != IntPtr.Zero, window == IntPtr.Zero ? "no window within 60 s" : $"'{Native.WindowText(window)}'");
-        if (window == IntPtr.Zero) return;
+        if (window == IntPtr.Zero)
+        {
+            Stop(installer);
+            return;
+        }
 
         bool sawFolder = false, sawPrivacy = false, sawFinish = false;
+        // The page a button was last pressed on, when, and whether the mouse already repeated that press.
+        string pressedOn = "";
+        var sincePress = Stopwatch.StartNew();
+        bool mouseRetried = false;
         var deadline = Stopwatch.StartNew();
+        var sinceReport = Stopwatch.StartNew();
+        int progressShots = 0;
         while (!installer.HasExited && deadline.Elapsed < TimeSpan.FromMinutes(5))
         {
             Thread.Sleep(700);
@@ -79,26 +94,42 @@ internal static class InstallerUi
             AutomationElement? next = Child(root, "1");
             string nextName = Clean(Name(next));
             AutomationElement? updateBox = Descendant(root, ControlType.CheckBox, UpdateCheckLabels);
-            if (updateBox != null && !sawPrivacy)
+            bool onFinish = FinishLabels.Any(label => nextName.StartsWith(label, StringComparison.Ordinal));
+            string page = updateBox != null ? "privacy" : onFinish ? "finish" : Descendant(root, ControlType.Edit, null) != null ? "folder" : "other";
+
+            if (sinceReport.Elapsed > TimeSpan.FromSeconds(15))
+            {
+                sinceReport.Restart();
+                Log.Info($"installer: page {page}, button 1 '{nextName}' enabled={Enabled(next)}, foreground {(Native.GetForegroundWindow() == window ? "installer" : Native.ClassName(Native.GetForegroundWindow()))}, windows: {InstallerWindows(installer)}");
+                if (progressShots < 8)
+                {
+                    progressShots++;
+                    c.Shot($"wait-{progressShots}", $"installer: page {page} after {deadline.Elapsed.TotalSeconds:F0} s");
+                }
+            }
+
+            if (page == "privacy" && !sawPrivacy)
             {
                 sawPrivacy = true;
                 c.Shot("1-privacy-page", "installer: privacy page as it opens");
                 string text = string.Join(" ", root.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Text)).Cast<AutomationElement>().Select(Name));
                 c.Add("the privacy page explains the update check and names GitHub", text.Contains("GitHub", StringComparison.Ordinal), Shorten(text));
                 c.Add("the privacy page links the privacy statement", Descendant(root, null, PrivacyLinkLabels) != null, "");
-                ToggleState before = State(updateBox);
+                ToggleState before = State(updateBox!);
                 c.Add($"'{Name(updateBox)}' is ticked by default", before == ToggleState.On, before.ToString());
                 if (untick)
                 {
-                    Toggle(updateBox);
-                    ToggleState after = WaitForState(updateBox, ToggleState.Off, TimeSpan.FromSeconds(3));
+                    Toggle(updateBox!);
+                    ToggleState after = WaitForState(updateBox!, ToggleState.Off, TimeSpan.FromSeconds(3));
                     c.Add($"'{Name(updateBox)}' unticked", after == ToggleState.Off, after.ToString());
                     c.Shot("2-privacy-unticked", "installer: update check unticked");
                 }
-                Invoke(next, "Install");
+                Press(window, next, "Install");
+                (pressedOn, mouseRetried) = ("privacy", false);
+                sincePress.Restart();
                 continue;
             }
-            if (FinishLabels.Any(label => nextName.StartsWith(label, StringComparison.Ordinal)) && !sawFinish)
+            if (page == "finish" && !sawFinish)
             {
                 sawFinish = true;
                 AutomationElement? run = Descendant(root, ControlType.CheckBox, null);
@@ -109,19 +140,39 @@ internal static class InstallerUi
                 }
                 c.Add("the finish page", true, run == null ? "no run box" : $"'{Name(run)}' {State(run)}");
                 c.Shot("3-finish", "installer: finish page");
-                Invoke(next, "Finish");
+                Press(window, next, "Finish");
+                (pressedOn, mouseRetried) = ("finish", false);
+                sincePress.Restart();
                 continue;
             }
-            if (!sawPrivacy && !sawFolder && Descendant(root, ControlType.Edit, null) != null)
+            if (page == "folder" && !sawFolder && !sawPrivacy)
             {
                 sawFolder = true;
                 c.Shot("0-folder-page", "installer: folder page");
-                Invoke(next, "Next");
+                Press(window, next, "Next");
+                (pressedOn, mouseRetried) = ("folder", false);
+                sincePress.Restart();
+                continue;
+            }
+            // Still on the page whose button was pressed: once, press it again through UI Automation.
+            if (page == pressedOn && !mouseRetried && sincePress.Elapsed > TimeSpan.FromSeconds(10) && next != null)
+            {
+                mouseRetried = true;
+                Log.Info($"installer: still on the {page} page {sincePress.Elapsed.TotalSeconds:F0} s after pressing '{nextName}'; pressing it through UI Automation");
+                c.Shot($"{page}-retry", $"installer: still on the {page} page");
+                InvokeButton(next);
+                sincePress.Restart();
             }
         }
         bool exited = installer.WaitForExit(30_000);
+        if (!exited)
+        {
+            c.Shot("installer-stuck", "installer: still running at the deadline");
+            Log.Info($"installer: still running at the deadline; windows: {InstallerWindows(installer)}");
+            Stop(installer);
+        }
         c.Add("the installer went through the folder, privacy and finish pages and exited", exited && sawFolder && sawPrivacy && sawFinish,
-            $"folder={sawFolder} privacy={sawPrivacy} finish={sawFinish} exit={(exited ? installer.ExitCode.ToString() : "still running")}");
+            $"folder={sawFolder} privacy={sawPrivacy} finish={sawFinish} exit={(exited ? installer.ExitCode.ToString() : "still running, stopped")}");
 
         string exe = Path.Combine(installDir, "OrbitDrop.exe");
         c.Add("OrbitDrop.exe installed for the current user", File.Exists(exe), exe);
@@ -153,6 +204,88 @@ internal static class InstallerUi
     }
 
     // ------------------------------------------------------------ UI Automation helpers
+
+    /// <summary>Visible top-level windows of the installer process with their texts (a message box shows up here).</summary>
+    private static string InstallerWindows(Process installer)
+    {
+        try
+        {
+            var windows = Native.TopLevelWindows().Where(h => Native.IsWindowVisible(h) && Native.WindowPid(h) == (uint)installer.Id)
+                .Select(h => $"{Native.ClassName(h)} '{Native.WindowText(h)}' [{Texts(h)}]").ToList();
+            return windows.Count == 0 ? "none" : string.Join("; ", windows);
+        }
+        catch (InvalidOperationException)
+        {
+            return "process gone";
+        }
+    }
+
+    private static string Texts(IntPtr hwnd)
+    {
+        try
+        {
+            var texts = AutomationElement.FromHandle(hwnd).FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Text))
+                .Cast<AutomationElement>().Select(Name).Where(t => t.Length > 0).ToList();
+            return Shorten(string.Join(" | ", texts));
+        }
+        catch (Exception error) when (error is ElementNotAvailableException or COMException or ArgumentException)
+        {
+            return "?";
+        }
+    }
+
+    private static bool Enabled(AutomationElement? element)
+    {
+        try
+        {
+            return element?.Current.IsEnabled ?? false;
+        }
+        catch (ElementNotAvailableException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Brings the installer to the front: a button click in an inactive dialog may be ignored (BM_CLICK).</summary>
+    private static void Activate(IntPtr window)
+    {
+        if (Native.GetForegroundWindow() == window) return;
+        Native.SetForegroundWindow(window);
+        Thread.Sleep(200);
+        if (Native.GetForegroundWindow() == window) return;
+        Native.GetWindowRect(window, out Native.RECT r);
+        Input.Click((r.Left + r.Right) / 2, r.Top + 14); // the title bar, as a user would
+        Thread.Sleep(300);
+    }
+
+    /// <summary>A real mouse click on the button, the installer in front.</summary>
+    private static void Press(IntPtr window, AutomationElement? button, string what)
+    {
+        if (button == null) throw new InvalidOperationException($"no {what} button");
+        Activate(window);
+        System.Windows.Rect r = button.Current.BoundingRectangle;
+        if (r.IsEmpty) throw new InvalidOperationException($"'{Name(button)}' has no position on screen");
+        Log.Info($"click '{Name(button)}' ({what}) at {r}, enabled={Enabled(button)}, foreground={(Native.GetForegroundWindow() == window ? "installer" : Native.ClassName(Native.GetForegroundWindow()))}");
+        Input.Click((int)Math.Round(r.Left + r.Width / 2), (int)Math.Round(r.Top + r.Height / 2));
+    }
+
+    private static void InvokeButton(AutomationElement button)
+    {
+        if (!button.TryGetCurrentPattern(InvokePattern.Pattern, out object pattern)) throw new InvalidOperationException($"'{Name(button)}' cannot be pressed");
+        ((InvokePattern)pattern).Invoke();
+    }
+
+    private static void Stop(Process installer)
+    {
+        try
+        {
+            if (!installer.HasExited) installer.Kill(entireProcessTree: true);
+        }
+        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            // gone already
+        }
+    }
 
     private static IntPtr WaitForWindow(Process installer, TimeSpan timeout)
     {
@@ -219,14 +352,6 @@ internal static class InstallerUi
             Thread.Sleep(100);
         } while (watch.Elapsed < timeout);
         return state;
-    }
-
-    private static void Invoke(AutomationElement? button, string what)
-    {
-        if (button == null) throw new InvalidOperationException($"no {what} button");
-        if (!button.TryGetCurrentPattern(InvokePattern.Pattern, out object pattern)) throw new InvalidOperationException($"'{Name(button)}' cannot be pressed");
-        Log.Info($"press '{Name(button)}' ({what})");
-        ((InvokePattern)pattern).Invoke();
     }
 
     private static void Write(string outDir, CaseResult result, string setup)

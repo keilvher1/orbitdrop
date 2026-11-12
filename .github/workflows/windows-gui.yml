@@ -133,6 +133,9 @@ jobs:
         run: |
           $setup = Get-ChildItem apps/desktop/release -Filter '*-setup.exe' | Select-Object -First 1
           if (-not $setup) { throw 'no *-setup.exe' }
+          # An interactive installer left running would make the silent one quit (one installer at a time).
+          Get-Process | Where-Object { $_.ProcessName -like 'OrbitDrop-*-setup' } | Stop-Process -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
           $uninstaller = Join-Path $env:LOCALAPPDATA 'Programs\OrbitDrop\Uninstall OrbitDrop.exe'
           if (Test-Path $uninstaller) { Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait; Start-Sleep -Seconds 10 }
           Start-Process -FilePath $setup.FullName -ArgumentList '/S', '/NOUPDATECHECK' -Wait
