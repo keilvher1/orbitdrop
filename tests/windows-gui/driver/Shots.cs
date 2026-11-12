@@ -6,13 +6,31 @@ using System.IO;
 namespace OrbitDropGui;
 
 /// <summary>
-/// Desktop screenshots. CopyFromScreen with CaptureBlt so layered windows (the
-/// wheel, the shell's drag image) are included. The mouse pointer itself is not
-/// captured, so a small red cross marks where it is.
+/// Desktop screenshots: BitBlt from the screen with CAPTUREBLT, so layered windows (the wheel,
+/// the shell's drag image) are included. The mouse pointer itself is not captured, so a small
+/// red cross marks where it is.
 /// </summary>
 internal static class Shots
 {
     public static string? Directory { get; set; }
+
+    private static Bitmap Capture(int x, int y, int w, int h)
+    {
+        var bitmap = new Bitmap(w, h, PixelFormat.Format24bppRgb);
+        using Graphics g = Graphics.FromImage(bitmap);
+        IntPtr dest = g.GetHdc();
+        IntPtr screen = Native.GetDC(IntPtr.Zero);
+        try
+        {
+            if (!Native.BitBlt(dest, 0, 0, w, h, screen, x, y, Native.SRCCOPY | Native.CAPTUREBLT)) throw new InvalidOperationException("BitBlt failed");
+        }
+        finally
+        {
+            Native.ReleaseDC(IntPtr.Zero, screen);
+            g.ReleaseHdc(dest);
+        }
+        return bitmap;
+    }
 
     public static string? Take(string name, string? note = null)
     {
@@ -23,10 +41,9 @@ internal static class Shots
             int y = Native.GetSystemMetrics(Native.SM_YVIRTUALSCREEN);
             int w = Native.GetSystemMetrics(Native.SM_CXVIRTUALSCREEN);
             int h = Native.GetSystemMetrics(Native.SM_CYVIRTUALSCREEN);
-            using var bitmap = new Bitmap(w, h, PixelFormat.Format32bppArgb);
+            using Bitmap bitmap = Capture(x, y, w, h);
             using (Graphics g = Graphics.FromImage(bitmap))
             {
-                g.CopyFromScreen(x, y, 0, 0, new Size(w, h), CopyPixelOperation.SourceCopy | CopyPixelOperation.CaptureBlt);
                 Native.POINT p = Input.Cursor();
                 int px = p.X - x;
                 int py = p.Y - y;
@@ -39,10 +56,10 @@ internal static class Shots
                 }
                 if (!string.IsNullOrEmpty(note))
                 {
-                    using var font = new Font("Segoe UI", 10f, FontStyle.Bold, GraphicsUnit.Pixel);
+                    using var font = new Font("Segoe UI", 12f, FontStyle.Bold, GraphicsUnit.Pixel);
                     SizeF size = g.MeasureString(note, font);
-                    g.FillRectangle(Brushes.Black, 0, h - size.Height - 6, size.Width + 12, size.Height + 6);
-                    g.DrawString(note, font, Brushes.White, 6, h - size.Height - 3);
+                    g.FillRectangle(Brushes.Black, 0, 0, size.Width + 12, size.Height + 6);
+                    g.DrawString(note, font, Brushes.White, 6, 3);
                 }
             }
             System.IO.Directory.CreateDirectory(Directory);
@@ -54,24 +71,6 @@ internal static class Shots
         catch (Exception error)
         {
             Log.Info($"screenshot {name} failed: {error.Message}");
-            return null;
-        }
-    }
-
-    /// <summary>The colour of one screen pixel (null when the screen cannot be read).</summary>
-    public static Color? Pixel(int x, int y)
-    {
-        try
-        {
-            using var bitmap = new Bitmap(1, 1, PixelFormat.Format32bppArgb);
-            using (Graphics g = Graphics.FromImage(bitmap))
-            {
-                g.CopyFromScreen(x, y, 0, 0, new Size(1, 1), CopyPixelOperation.SourceCopy | CopyPixelOperation.CaptureBlt);
-            }
-            return bitmap.GetPixel(0, 0);
-        }
-        catch
-        {
             return null;
         }
     }

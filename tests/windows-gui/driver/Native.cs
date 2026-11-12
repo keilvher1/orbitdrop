@@ -183,6 +183,16 @@ internal static class Native
     [DllImport("advapi32.dll")] public static extern IntPtr GetSidSubAuthority(IntPtr sid, uint index);
     [DllImport("advapi32.dll")] public static extern IntPtr GetSidSubAuthorityCount(IntPtr sid);
 
+    [DllImport("user32.dll")] public static extern IntPtr GetDC(IntPtr hwnd);
+    [DllImport("user32.dll")] public static extern int ReleaseDC(IntPtr hwnd, IntPtr hdc);
+    [DllImport("gdi32.dll")] public static extern bool BitBlt(IntPtr dest, int x, int y, int width, int height, IntPtr source, int sx, int sy, uint rop);
+    public const uint SRCCOPY = 0x00CC0020;
+    public const uint CAPTUREBLT = 0x40000000;
+
+    /// <summary>SHGetSetSettings(SHELLSTATE*, mask, set): SSF_SHOWEXTENSIONS = 0x2 (bit 1 of the first DWORD).</summary>
+    [DllImport("shell32.dll")] public static extern void SHGetSetSettings(IntPtr state, uint mask, bool set);
+    public const uint SSF_SHOWEXTENSIONS = 0x00000002;
+
     public const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
     public const uint TOKEN_QUERY = 0x0008;
     public const int TokenElevationType = 18;
