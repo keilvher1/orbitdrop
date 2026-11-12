@@ -51,6 +51,7 @@ pnpm install
 | 아이콘 | `node scripts/gen-icons.mjs [--verify]` |
 | 제3자 라이선스 | `node scripts/licenses.mjs [--check]` → `THIRD_PARTY_LICENSES.md` (오프라인) |
 | 라이선스 원문 스냅숏 갱신 | `node scripts/licenses-fetch.mjs [--refresh]` (네트워크) → `docs/licenses/upstream/`; `--librsvg-crates`(cargo 필요) → `docs/licenses/librsvg-crates.json` ([packaging.md §7](packaging.md#7-제3자-라이선스-목록)) |
+| LGPL·MPL 대응 소스 묶음 | `node scripts/third-party-sources.mjs [--out <dir>]` (네트워크, 캐시 `apps/desktop/release/.third-party-cache/`) → `apps/desktop/release/OrbitDrop-<ver>-third-party-sources.tar.gz`; `--list`: 아카이브를 내려받지 않고 목록만, 맞출 수 없으면 종료 코드 1 ([packaging.md](packaging.md#lgplmpl-소스-제공)) |
 
 모든 스크립트는 Node `.mjs`라 macOS·Windows에서 같은 명령으로 동작한다(POSIX 셸 문법 없음).
 

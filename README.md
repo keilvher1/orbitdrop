@@ -121,11 +121,11 @@ docs/                요구사항 · 결정(ADR) · 개발 · 지원표 · 검�
 
 ## 라이선스
 
-* OrbitDrop 자체 코드의 라이선스는 **아직 정해지지 않았습니다**(프로젝트 소유자 결정 사항). 정해지기 전에는 별도 허가 없이
-  재배포할 수 없습니다.
+* OrbitDrop 자체 코드: [MIT](LICENSE).
 * 함께 배포되는 제3자 구성요소와 라이선스 원문: [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
   (`node scripts/licenses.mjs`로 생성, 설치본에도 포함; npm 패키지에 원문이 없는 libvips 구성요소·Rust 크레이트·컴파일되어 들어간
   패키지의 원문은 `docs/licenses/upstream/` 스냅숏). libvips와 일부 라이브러리, Electron에 든 FFmpeg는 **LGPL**이며 교체 가능한
-  동적 라이브러리로 포함됩니다. 공개 배포 전에 LGPL·MPL 소스 제공 방법을 정해야 합니다([docs/packaging.md](docs/packaging.md#lgplmpl-소스-제공--결정-필요)).
+  동적 라이브러리로 포함됩니다. LGPL·MPL 구성요소의 대응 소스는 릴리스마다 `OrbitDrop-<버전>-third-party-sources.tar.gz`로 함께
+  올립니다(`node scripts/third-party-sources.mjs`, [docs/packaging.md](docs/packaging.md#lgplmpl-소스-제공)).
   Electron/Chromium 고지는 `LICENSES.chromium.html`로 함께 배포됩니다.
 * 앱 아이콘(`apps/desktop/build/icon.svg`)은 이 프로젝트의 자체 디자인입니다.
