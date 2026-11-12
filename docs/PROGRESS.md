@@ -410,3 +410,35 @@ Not testable without SignPath: the action call itself, SignPath's origin verific
 restrictions and the real certificate. Next: the owner applies (docs/packaging.md §5 "소유자가 할 일"),
 configures SignPath and the repository secret/variables, runs a rehearsal, then releases 1.0.1 and switches
 the website's state line.
+
+## Stage 10 — wheel opacity (2026-11-13, branch `feat/wheel-opacity`)
+
+The owner asked for a see-through wheel while dragging ("사용할때 배경이 좀 opacity를 넣어서 투명하게").
+
+- Setting `globalDrag.wheelOpacity`: whole percent, `WHEEL_OPACITY_RANGE` 40–100, default **70**. Additive (no
+  SETTINGS_VERSION bump; a 1.0.0 settings file gets 70). Settings › 드래그 has a "휠 불투명도" slider under the size
+  slider with a hint; the preview follows it live over a stand-in file list.
+- `wheelTokens(theme, reduceMotion, opacityPercent = 100)` multiplies the alpha of the background only: wheelDisc,
+  sector, sectorHover, sectorDisabled and wheelShadow. Text, icons, sectorActive, the ring and the capsule keep their
+  colours, and high contrast stays opaque. design-tokens.json and the helpers' built-in copies stay at the 100 %
+  values, so the native code is unchanged: both renderers already apply token alpha, and alphas stay ≥ 1/255 for
+  hit-testing. main passes the setting in `buildConfigureMessage`. A change reaches the running helper through the
+  existing globalDrag → `reconfigure` path, which sends a new configure only when the message changed (macOS keeps
+  the wheel under the pointer unchanged until the next drag). macOS Reduce Transparency still draws an opaque disc.
+- React wheel (picker, Drop Zone) and the Settings preview: `--wheel-opacity` sets the fill-opacity of the disc and
+  sectors and scales the disc shadow's colour. The highlighted sector (a disabled one under the pointer too), text,
+  ring and capsule stay solid; high contrast and forced colours use 1.
+- The default comes from native `--render-snapshot` renders (scaled tokens via `--config`) at 100/85/70/55/40 % in
+  light and dark over a Finder list and a photo with text. At 70 % the Finder rows read through the wheel: 15–17 % of
+  the backdrop shows through the sector band and about half through the gaps and the centre, while the labels stay
+  crisp. Worst-case label contrast (sector band over pure black or white) is 7.8:1 light and 6.5:1 dark, and stays
+  ≥ 4.5:1 (AA) down to 55 %; at 40 % it falls to 3.0:1 in dark over white (the user's choice). The labels need no
+  halo at the default, so the native renderers are unchanged.
+
+Verified on the dev Mac: vitest 1314 passed / 7 skipped, typecheck clean, Playwright 39/39 (helper-drop also checks
+the opacity re-configure), electron-verify 38/38 (new check: the real Chromium paint of the opacity), swift test 167;
+licences, golden vectors and versions up to date.
+
+Not verified: the live macOS panel's window-server shadow behind a translucent disc and a real Finder/Explorer drag
+with the new default (no synthesized input on this Mac; snapshots paint their own shadow outside the disc). The
+Windows renderer was checked by reading the code only (Direct2D brushes with token alpha, per-pixel alpha hit shape).

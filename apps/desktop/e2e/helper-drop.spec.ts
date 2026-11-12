@@ -10,7 +10,15 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { HelperConfigureSchema, type EditorContext, type OrbitApi } from '@orbitdrop/contracts';
+import {
+  DEFAULT_SETTINGS,
+  DESIGN_TOKENS,
+  HelperConfigureSchema,
+  wheelTokens,
+  type EditorContext,
+  type HelperConfigureMessage,
+  type OrbitApi,
+} from '@orbitdrop/contracts';
 import { appDir, hooks, imageMeta, launchApp, makeJpeg, makePdf, windowOf } from './support';
 
 declare global {
@@ -103,6 +111,25 @@ test('helper drops: configure round-trip, one job per session, notification, edi
             .map((m) => m.locale),
         )
         .toEqual(['ko', 'en']);
+
+      // So does the wheel opacity (Settings › 드래그): the wheel's background colours arrive scaled. In high
+      // contrast the wheel stays opaque, the message does not change and nothing new is sent.
+      const configures = async () =>
+        (await readFile(stubLog, 'utf8'))
+          .trim()
+          .split('\n')
+          .map((line) => JSON.parse(line) as HelperConfigureMessage)
+          .filter((m) => m.type === 'configure');
+      const current = (await configures()).at(-1)!;
+      const theme = current.highContrast ? 'highContrast' : current.tokens.sectorText === DESIGN_TOKENS.color.dark.sectorText ? 'dark' : 'light';
+      expect(current.tokens).toEqual(wheelTokens(theme, current.reduceMotion, DEFAULT_SETTINGS.globalDrag.wheelOpacity));
+      if (!current.highContrast) {
+        await h.updateSettings({ globalDrag: { wheelOpacity: 55 } });
+        await expect.poll(async () => (await configures()).length).toBe(3);
+        const translucent = (await configures()).at(-1)!;
+        expect(HelperConfigureSchema.safeParse(translucent).success).toBe(true);
+        expect(translucent.tokens).toEqual(wheelTokens(theme, translucent.reduceMotion, 55));
+      }
     } finally {
       await launched.close();
     }
