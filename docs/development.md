@@ -72,6 +72,11 @@ pnpm install
 (`src/main/launch-options.ts`). 패키지된 앱의 작업자(utilityProcess)는 물려받은 `ORBITDROP_*` 변수를 하나도 받지 않는다
 (`ORBITDROP_PDFJS_DIR` 등은 main이 직접 정한다).
 
+처음 실행 UI: 설정 파일이 없으면 환영 창이 열리고 UI 언어는 OS 언어를 따른다(`src/main/onboarding.ts`, `settings/defaults.ts`).
+개발 실행에서 보려면 빈 폴더를 `ORBITDROP_USER_DATA_DIR`로 준다. 응용 프로그램 폴더 이동 제안은 패키지된 macOS 앱에서만 나온다.
+자동화(`ORBITDROP_E2E=1`, `--smoke-test`)는 둘 다 띄우지 않고 언어도 한국어로 두며, 충돌 보고서(crash reporter)도 켜지 않는다
+(임시 앱 데이터 폴더를 바로 지우기 때문). E2E에서 환영 창은 테스트 훅 `openWindow('welcome')`으로 연다.
+
 helper 탐색 순서: (개발 빌드만) `ORBITDROP_HELPER_PATH` → 패키지: `<resources>/helper/OrbitDropHelper[.exe]` →
 개발: `apps/desktop/resources/helper/<platform>-<arch>/`(`darwin-arm64`, `darwin-x64`, `win32-x64`).
 

@@ -511,14 +511,17 @@ as `log` messages. Record the OS build, display setup and result for each item.
 4. **Drop on JPG**: exactly one conversion job. `Page 001.jpg` appears next to the PDF and
    **the PDF is still there**. The wheel disappears.
 5. **Copy vs Move**: hold Shift the whole time (Explorer's Shift default is Move) and drop
-   on a sector. The source file must not be moved or deleted. Repeat with Ctrl+Shift
-   (must not open the wheel; Explorer creates a link where you drop) and with Alt+Shift.
-6. **Alt+Shift → tools wheel** with a JPG: COMPRESS, METADATA, EDIT, ANNOTATE, ADD BG, CROP,
-   REDACT clockwise, with icons.
-   - Press Shift then Alt quickly: tools without a visible convert flash.
-   - Press Shift, wait, then add Alt: switches to tools.
-   - Check that Alt+Shift does not switch the input language (OS hotkey conflict). If it
-     does, note it and change the combo in settings.
+   on a sector. The source file must not be moved or deleted. Repeat with Ctrl+Shift (the
+   tools wheel since 2026-11-12; Explorer's own meaning is "create link") and with
+   Ctrl+Alt (no wheel; Explorer acts normally where you drop).
+6. **Ctrl+Shift → tools wheel** (the Windows default since 2026-11-12, decisions.md ADR-12)
+   with a JPG: COMPRESS, METADATA, EDIT, ANNOTATE, ADD BG, CROP, REDACT clockwise, with icons.
+   - Press Shift then Ctrl quickly: tools without a visible convert flash.
+   - Press Shift, wait, then add Ctrl: switches to tools.
+   - Check that Ctrl+Shift does not switch the keyboard layout (it is Windows' "switch
+     keyboard layout" hotkey when one language has several layouts). Note the result.
+   - Set the tools keys to Alt+Shift in Settings (it warns) and check whether the input
+     language switches during the drag.
 7. **Modifier release**: after the wheel appears, release Shift and keep dragging. The
    wheel stays and a drop still works.
 8. **Esc** during the drag: the wheel disappears (main gets `cancelled escape`) and does
@@ -647,7 +650,7 @@ Added with the secondary caption (2026-10-23):
   - Whether the constant-alpha fade affects layered-window hit-testing during the first
     ~140 ms.
   - The Segoe icon code points (visual check).
-  - Alt+Shift as the input-language hotkey (item 6).
+  - Ctrl+Shift as the keyboard-layout hotkey, Alt+Shift as the input-language hotkey (item 6).
 * There is no global "OLE drag in progress" signal without hooks.
   - Ordinary Shift + drags (Shift held before the button) never show the wheel.
   - Pressing the combo *during* a non-file mouse drag (e.g. pressing Shift mid text
