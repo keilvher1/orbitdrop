@@ -14,7 +14,7 @@ export interface OrbitTestHooks {
   registerPaths(paths: string[]): Promise<unknown>;
   openPicker(paths: string[], mode?: WheelMode): Promise<unknown>;
   submit(paths: string[], actionId: ActionId, options?: unknown): Promise<unknown>;
-  openWindow(kind: 'jobs' | 'settings' | 'dropzone' | 'about'): Promise<void>;
+  openWindow(kind: 'jobs' | 'settings' | 'dropzone' | 'about' | 'welcome'): Promise<void>;
   waitForJob(jobId: string): Promise<unknown>;
   jobs(): Promise<unknown>;
   capabilities(): Promise<unknown>;

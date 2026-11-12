@@ -97,7 +97,8 @@
 ## ADR-09. 설정: 버전 있는 JSON
 
 * **결정**: `app.getPath('userData')/settings.json`, `SETTINGS_VERSION = 1`, `migrateSettings()`가 이전 형식을
-  변환하고 잘못된 필드는 기본값으로 되돌린다(앱이 죽지 않음). 로그인 시 실행 기본 꺼짐, 기본 언어 한국어.
+  변환하고 잘못된 필드는 기본값으로 되돌린다(앱이 죽지 않음). 로그인 시 실행 기본 꺼짐, 기본 언어 한국어 — 처음 실행에서는 OS 언어를
+  따르고(ADR-13), 빠진 값은 플랫폼 기본값으로 채운다(Windows 도구 휠: ADR-12). `onboarding` 섹션은 버전을 올리지 않고 덧붙였다.
 
 ## ADR-10. 최소 OS 버전
 
@@ -117,3 +118,37 @@
   `apps/desktop/build/icon.svg`로 관리하고 `scripts/gen-icons.mjs`가 sharp로 렌더링해 PNG/ICNS/ICO를 만든다
   (자체 ICNS/ICO 기록기, PNG 압축 항목, 추가 의존성 없음). macOS 메뉴 막대는 템플릿 이미지(검정+알파),
   Windows 알림 영역은 컬러 ICO. 참고 앱의 아이콘·이름은 쓰지 않는다.
+
+## ADR-12. Windows 도구 휠 기본 조합: Ctrl+Shift
+
+* **결정** (2026-11-12): Windows의 도구 휠 기본 조합은 **Ctrl+Shift**(`WINDOWS_TOOLS_MODIFIERS`, `defaultSettingsFor('win32')`).
+  macOS는 **Option+Shift** 그대로. 변환 휠은 두 OS 모두 Shift. 기본값은 처음 실행·설정 초기화·쓸 수 없는 조합의 복구에만 쓰이고,
+  이미 저장된 사용자 조합(Alt+Shift 포함)은 바꾸지 않는다.
+* **이유**: Alt+Shift는 Windows의 기본 입력 언어 전환 단축키(왼쪽 Alt+Shift)라 드래그 중 입력 언어가 바뀔 수 있고, 설정 창도 이를
+  경고한다(`comboWarnings` → `altShift`). Ctrl+Shift는 설정 창의 검증을 경고 없이 통과하고, Windows helper가 OLE 드래그 중에도
+  다른 보조키와 같은 방식(`GetAsyncKeyState(VK_CONTROL)` 폴링, `native/windows/src/win/app.cpp`)으로 읽는다. 드롭 대상은 누른 키와
+  상관없이 원본이 허용하면 Copy만 수락하므로(ADR-07) 탐색기의 Ctrl+Shift = 바로 가기 만들기 의미가 휠 드롭에 영향을 주지 않는다.
+  Shift → Ctrl+Shift는 macOS의 Shift → Option+Shift처럼 키 하나를 더하는 동작이다.
+* **대안**: Ctrl 단독(탐색기에서 Ctrl 드래그 = 복사, 아주 흔한 동작이라 매번 휠이 뜸), Alt 계열(Alt를 떼면 창 메뉴가 활성화될 수 있음,
+  Ctrl+Alt는 여러 자판에서 AltGr), Windows 키(떼면 시작 메뉴).
+* **남은 위험**: 한 언어에 키보드 배열이 여럿이면 Ctrl+Shift가 "키보드 배열 전환" 단축키일 수 있다(Windows 기본 설정). 실제 PC에서
+  확인할 항목으로 [windows-helper.md](workstreams/windows-helper.md) 점검표에 남긴다.
+
+## ADR-13. 처음 실행·도움말·진단·충돌 처리는 모두 로컬
+
+* **결정** (2026-11-12):
+  * 처음 실행(설정 파일 없음): OS 언어(한국어 → ko, 그 밖 → en)와 플랫폼 기본값, 환영 창 1회(`onboarding.welcomeDone`, 창을 닫으면
+    기록). 이 섹션이 생기기 전의 설정 파일은 기존 사용자로 보고 환영 창을 띄우지 않으며 언어도 그대로 둔다. macOS 패키지를 응용 프로그램
+    폴더 밖에서 실행하면 `app.moveToApplicationsFolder`를 한 번 제안한다(`onboarding.moveToApplicationsAsked`). 자동화(E2E·smoke)에서는
+    둘 다 하지 않고 언어도 한국어로 둔다.
+  * 도움말: 웹사이트(ko, /en/)와 GitHub 새 이슈만 허용 목록에 정확한 origin + path로 둔다(`ALLOWED_WEB_PAGES`). 이슈 양식에는 앱 버전·OS
+    버전·아키텍처만 넣고, 값은 짧은 일반 토큰일 때만 쓴다(경로처럼 보이면 `?`).
+  * 진단 정보: main이 만들어 main이 클립보드에 쓴다(렌더러는 줄 수만 받음). 이미 경로를 가린 main.log의 마지막 200줄을 다시 가린다
+    (홈 폴더, 경로, 제어 문자, 64 KB 상한).
+  * 충돌: `crashReporter.start({ uploadToServer: false })` — 덤프는 앱 데이터 폴더의 `Crashpad`에만 남는다. main의 잡히지 않은 예외는
+    기록하고 번역된 대화상자(계속 사용 / 로그 폴더 열기 / 종료, 한 번에 하나·1분에 하나), 처리되지 않은 Promise 거부는 기록만, 시작
+    실패는 대화상자 후 종료. helper가 포기하면 알림 1회(누르면 다시 시작). 창의 페이지가 죽으면 다시 불러오며 무엇이 사라졌는지 알리고,
+    두 번째에는 충돌 화면만, 세 번째에는 창을 닫고 알린다. 렌더러 ErrorBoundary 오류는 검증·크기 제한된 IPC로 main.log에 남긴다(창마다 분당 5건).
+* **이유**: 계정·텔레메트리 없이 공개 배포한다(소유자 결정). 문제 신고에 필요한 정보는 사용자가 직접 복사해 붙이고, 앱은 어디로도 보내지 않는다.
+* **결과**: 네트워크 사용 없음(업데이트 확인은 별도 작업, 켠 경우에만). 테스트: `onboarding.test.ts`, `support.test.ts`, `crash.test.ts`,
+  `welcome.test.tsx`, `crash-screens.test.tsx`, `support-views.test.tsx`.

@@ -48,6 +48,14 @@
   align-self: center;
 }
 
+/* Names the real drag key: the Drop Zone is the fallback, global drag works without it. */
+.dropzone-keys-hint {
+  color: var(--c-text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: center;
+}
+
 .dropzone-status {
   min-height: 0;
 }

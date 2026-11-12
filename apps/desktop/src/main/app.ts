@@ -1,11 +1,13 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
   BrowserWindow,
   Menu,
   Notification,
   app,
+  clipboard,
   dialog,
   ipcMain,
   nativeTheme,
@@ -50,6 +52,7 @@ import { HistoryStore } from './history/store';
 import { bindTranslate, type Translate } from './i18n';
 import { registerOrbitIpc, type OrbitIpcServices } from './ipc/channels';
 import { IpcRouter, type IpcMainLike } from './ipc/router';
+import { registerSupportIpc, type SupportIpcServices } from './ipc/support';
 import { JobManager, type JobRecordView } from './jobs/manager';
 import { SubmissionService, type SubmitContext } from './jobs/submission';
 import type { LaunchOptions } from './launch-options';
@@ -57,12 +60,16 @@ import { ReopenFilter, type LifecycleTarget, type PowerTarget } from './lifecycl
 import { closeLogSink, configureLogSink, createLogger, describeError, type Logger } from './log';
 import { applyLoginItem, loginItemToAdopt, type LoginItems } from './login-item';
 import { Notifier, needsAnotherFolder } from './notifications';
+import { runOnboarding, type MoveToApplications } from './onboarding';
 import { createUtilityWorkerFactory, workerEnv } from './processing/electron-worker';
 import { ProcessorPool, type PoolRunContext } from './processing/pool';
 import { servePreviews } from './preview/protocol';
 import { PreviewStore } from './preview/store';
 import { hardenSession, installWebContentsHardening, isRendererExternalUrl } from './security';
 import { SettingsStore } from './settings/store';
+import { SupportController } from './support/controller';
+import { HelperCrashNotifier, RendererErrorLog } from './support/crash';
+import { trayTooltip } from './support/keys';
 import { TrayController } from './tray/controller';
 import type { RecentItem, TrayState } from './tray/menu';
 import { threadpoolSize } from './uv-threadpool';
@@ -92,6 +99,20 @@ function runningTranslated(): boolean {
   return process.platform === 'darwin' && app.runningUnderARM64Translation === true;
 }
 
+/** The OS's preferred languages, most preferred first (a first run takes the UI language from them). */
+function systemLanguages(): string[] {
+  const languages = app.getPreferredSystemLanguages();
+  return languages.length > 0 ? languages : [app.getLocale()];
+}
+
+function homeFolder(): string | null {
+  try {
+    return homedir();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * E2E only (ORBITDROP_E2E=1, unpackaged builds — see test-hooks.ts): decides
  * what happens before a job attempt reaches the processor pool, so tests can
@@ -119,6 +140,12 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
   windows: WindowManager | null = null;
   tray: TrayController | null = null;
   readonly notifier: Notifier;
+  /** Help menu, diagnostics, data folder, licence files. */
+  readonly support: SupportController;
+  /** The drag helper gave up: one notification per episode, a click restarts it. */
+  private readonly helperCrash: HelperCrashNotifier;
+  /** Views that crashed (ErrorBoundary) → main.log, rate-limited. */
+  private readonly rendererErrors = new RendererErrorLog(createLogger('renderer'));
   private router: IpcRouter<WindowRecord> | null = null;
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
   /** Windows: re-reads the OS animation setting (no change event exists). */
@@ -151,7 +178,10 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
     readonly paths: AppPaths,
   ) {
     configureLogSink({ file: join(paths.userData, 'logs', 'main.log'), debug: options.debug });
-    this.settings = new SettingsStore(paths.userData, createLogger('settings'));
+    // First run: the UI language follows the OS (automation keeps Korean, the app default, for stable tests).
+    this.settings = new SettingsStore(paths.userData, createLogger('settings'), process.platform, {
+      systemLanguages: options.e2e || options.smokeTest ? () => [] : systemLanguages,
+    });
     this.history = new HistoryStore(paths.userData, createLogger('history'));
     this.t = bindTranslate(() => this.settings.get().locale);
 
@@ -222,6 +252,33 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
           onStatus: (status) => this.onHelperStatus(status),
           log: createLogger('helper'),
         });
+    this.support = new SupportController({
+      platform: process.platform,
+      arch: process.arch,
+      translated: runningTranslated(),
+      appVersion: app.getVersion(),
+      packaged: app.isPackaged,
+      versions: { electron: process.versions.electron ?? '', chrome: process.versions.chrome ?? '', node: process.versions.node },
+      osVersion: () => process.getSystemVersion(),
+      homeDir: homeFolder(),
+      paths: { userData: paths.userData, logFile: join(paths.userData, 'logs', 'main.log'), resourcesPath: paths.resourcesPath, appPath: paths.appPath },
+      locale: () => this.settings.get().locale,
+      t: this.t,
+      helperStatus: () => this.helperStatus(),
+      capabilities: () => this.capabilities.current(),
+      shell: { openExternal: (url) => shell.openExternal(url), openPath: (path) => shell.openPath(path), showItemInFolder: (path) => shell.showItemInFolder(path) },
+      writeClipboard: (text) => clipboard.writeText(text),
+      exists: (path) => existsSync(path),
+      ensureDir: (path) => mkdirSync(path, { recursive: true }),
+      log: createLogger('support'),
+    });
+    this.helperCrash = new HelperCrashNotifier({
+      notify: (title, body, onClick) => this.showNotification(title, body, onClick),
+      enabled: () => this.settings.get().notifications,
+      restart: () => void this.helper?.restart().catch((error: unknown) => this.log.warn('helper restart failed', { error: describeError(error) })),
+      t: this.t,
+      log: createLogger('helper'),
+    });
   }
 
   /** JobManager's runner: the processor pool (an E2E script may act on the attempt first). */
@@ -303,6 +360,7 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
       onOpened: (record) => {
         if (record.kind === 'dropzone') this.tray?.refresh();
       },
+      onPageCrashClosed: (record) => this.onPageCrashClosed(record),
       log: createLogger('windows'),
     });
     this.windows = windows;
@@ -310,6 +368,7 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
 
     this.router = new IpcRouter<WindowRecord>(ipcMain as unknown as IpcMainLike, { lookup: (sender) => windows.recordFor(sender as never), isTrustedUrl: (url) => windows.isTrustedUrl(url) }, createLogger('ipc'));
     registerOrbitIpc(this.router, this.ipcServices());
+    registerSupportIpc(this.router, this.supportIpcServices());
     return windows;
   }
 
@@ -355,8 +414,13 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
           openSettings: () => windows.open('settings'),
           openAbout: () => windows.open('about'),
           quit: () => app.quit(),
+          openGuide: () => this.openWelcome(),
+          openWebsite: () => void this.support.openWebsite().catch((error: unknown) => this.log.warn('could not open the website', { error: describeError(error) })),
+          reportProblem: () => void this.support.reportProblem().catch((error: unknown) => this.log.warn('could not open the issue form', { error: describeError(error) })),
+          openLogFolder: () => void this.support.openLogFolder().catch(() => undefined),
         },
         t: this.t,
+        tooltip: () => trayTooltip(this.settings.get(), process.platform, this.t),
         log: createLogger('tray'),
       });
       this.tray.create();
@@ -367,6 +431,68 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
     this.announceStartupNotices();
     this.log.info('ui started', { tray: this.tray !== null, helper: this.helper !== null });
     this.markStarted();
+    void this.runFirstRun();
+  }
+
+  /**
+   * First run (onboarding.ts): macOS — offer once to move the app into Applications; then the welcome
+   * window until it was closed once. Never in automation.
+   */
+  private async runFirstRun(): Promise<void> {
+    try {
+      await runOnboarding({
+        settings: this.settings,
+        automated: this.options.e2e || this.options.smokeTest,
+        moveToApplications: process.platform === 'darwin' && app.isPackaged ? this.moveToApplications() : null,
+        openWelcome: () => this.openWelcome(),
+        log: this.log,
+      });
+    } catch (error) {
+      this.log.warn('first-run flow failed', { error: describeError(error) });
+    }
+  }
+
+  /** The welcome window (first run, Help › 사용법), centred on the display with the pointer. */
+  openWelcome(): void {
+    if (this.quitting || !this.windows) return;
+    const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+    this.windows.open('welcome', { x: Math.round(area.x + area.width / 2), y: Math.round(area.y + area.height / 2) });
+  }
+
+  /** macOS, packaged, outside Applications (DMG, Downloads…): 이동 / 나중에, asked once. */
+  private moveToApplications(): MoveToApplications {
+    return {
+      needed: () => !app.isInApplicationsFolder(),
+      ask: async () => {
+        app.focus({ steal: true });
+        const { response } = await dialog.showMessageBox({
+          type: 'question',
+          buttons: [this.t('welcome.move.move'), this.t('welcome.move.later')],
+          defaultId: 0,
+          cancelId: 1,
+          noLink: true,
+          message: this.t('welcome.move.title'),
+          detail: this.t('welcome.move.body'),
+        });
+        return response === 0;
+      },
+      move: () =>
+        app.moveToApplicationsFolder({
+          // An older OrbitDrop in Applications (not running — that one would hold the single-instance lock):
+          // replaced (Electron moves it to the Trash) only if the user says so.
+          conflictHandler: (conflict) =>
+            conflict !== 'exists' ||
+            dialog.showMessageBoxSync({
+              type: 'question',
+              buttons: [this.t('welcome.move.replace'), this.t('welcome.move.cancel')],
+              defaultId: 0,
+              cancelId: 1,
+              noLink: true,
+              message: this.t('welcome.move.replaceTitle'),
+              detail: this.t('welcome.move.replaceBody'),
+            }) === 0,
+        }),
+    };
   }
 
   /** A second launch without files, or (macOS) re-opening the running app from Finder: the Drop Zone (also when it comes during startup). */
@@ -524,6 +650,28 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
     };
   }
 
+  /** First run, help, diagnostics and crash handling (ipc/support.ts). */
+  private supportIpcServices(): SupportIpcServices<WindowRecord> {
+    return {
+      windowNotice: (record) => this.windows?.notice(record) ?? null,
+      rendererError: (report, record) => {
+        this.rendererErrors.report({ kind: record.kind, windowId: record.windowId }, report);
+      },
+      copyDiagnostics: () => this.support.copyDiagnostics(),
+      openLogFolder: () => this.support.openLogFolder(),
+      openDataFolder: () => this.support.openDataFolder(),
+      resetSettings: async () => {
+        this.log.info('settings reset to the defaults (Settings › General)');
+        return this.settings.reset();
+      },
+      openLicense: (which) => this.support.openLicense(which),
+      restartHelper: async () => {
+        if (!this.helper) throw new OrbitError('HELPER_UNAVAILABLE', 'The drag helper is not used in this run');
+        await this.helper.restart();
+      },
+    };
+  }
+
   appInfo(): AppInfo {
     return {
       name: app.getName(),
@@ -616,6 +764,17 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
   private onWindowClosed(record: WindowRecord): void {
     if (record.context.kind === 'editor') this.editors.dispose(record.context.editorId);
     if (record.kind === 'dropzone') this.tray?.refresh();
+    // The welcome was seen (시작하기, ×, Esc, ⌘W…): it no longer opens by itself; Help › 사용법 still opens it.
+    if (record.kind === 'welcome' && !this.quitting) {
+      void this.settings.update({ onboarding: { welcomeDone: true } }).catch((error: unknown) => this.log.warn('could not store the welcome state', { error: describeError(error) }));
+    }
+  }
+
+  /** A window closed because its page kept crashing (WindowManager): tell the user. */
+  private onPageCrashClosed(record: WindowRecord): void {
+    if (this.quitting || !this.settings.get().notifications) return;
+    const title = this.t('crash.window.closedTitle', { window: this.windowTitle(record.context) });
+    this.showNotification(title, this.t(record.crash.unsavedLost ? 'crash.window.closedBodyUnsaved' : 'crash.window.closedBody'), () => undefined);
   }
 
   /**
@@ -750,6 +909,7 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
   private onHelperStatus(status: HelperStatus): void {
     this.windows?.broadcast(IPC_CHANNELS.helperStatusChanged, localizeHelperStatus(status, this.t));
     this.tray?.refresh();
+    this.helperCrash.onStatus(status);
   }
 
   // ------------------------------------------------------------------ settings & UI state
@@ -767,7 +927,8 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
     ) {
       this.helper?.reconfigure();
     }
-    if (next.locale !== previous.locale || next.globalDrag.enabled !== previous.globalDrag.enabled) this.tray?.refresh();
+    // The tray tooltip names the drag keys.
+    if (next.locale !== previous.locale || JSON.stringify(next.globalDrag) !== JSON.stringify(previous.globalDrag)) this.tray?.refresh();
     if (next.locale !== previous.locale) this.windows?.broadcast(IPC_CHANNELS.helperStatusChanged, this.publicHelperStatus());
     if (next.launchAtLogin !== previous.launchAtLogin) {
       const items = this.loginItems();
@@ -859,6 +1020,7 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
       settings: 'window.settings',
       dropzone: 'window.dropzone',
       about: 'window.about',
+      welcome: 'window.welcome',
     };
     return this.t(keys[context.kind]);
   }

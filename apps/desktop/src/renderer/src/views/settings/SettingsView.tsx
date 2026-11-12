@@ -22,6 +22,8 @@ import { SliderField } from '../../components/SliderField';
 import { TitleBar } from '../../components/TitleBar';
 import type { Translator } from '../../i18n/catalog';
 import { AboutContent } from './AboutView';
+import { DataActions } from './DataActions';
+import { RestartHelperButton } from './RestartHelperButton';
 import { WheelSizePreview } from './WheelSizePreview';
 import {
   MODIFIER_ORDER,
@@ -319,6 +321,7 @@ function GeneralPanel({ settings, apply }: PanelProps) {
       </SettingsField>
       <CheckboxField label={t('settings.launchAtLogin')} checked={settings.launchAtLogin} onChange={(launchAtLogin) => apply({ launchAtLogin })} />
       <CheckboxField label={t('settings.notifications')} checked={settings.notifications} onChange={(notifications) => apply({ notifications })} />
+      <DataActions />
     </div>
   );
 }
@@ -664,6 +667,7 @@ function HelperStatusPanel() {
         tone = 'danger';
         message = t('settings.helper.crashed', { restarts: status.restarts, reason: status.reason });
         fallback = true;
+        if (orbit.restartHelper) actions = <RestartHelperButton />;
         break;
       default:
         break;

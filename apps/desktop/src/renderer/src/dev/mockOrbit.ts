@@ -6,6 +6,7 @@ import {
   FORMAT_INFO,
   TERMINAL_JOB_STATES,
   applySettingsPatch,
+  defaultSettingsFor,
   formatFromExtension,
   inputKindOf,
   menuKeyFor,
@@ -63,7 +64,7 @@ const TOOLS: readonly MockTool[] = ['crop', 'addBackground', 'compress', 'metada
 export function scenarioFromQuery(search: string): MockScenario | null {
   const q = new URLSearchParams(search);
   const view = q.get('view');
-  const views: readonly WindowContext['kind'][] = ['picker', 'editor', 'jobs', 'settings', 'dropzone', 'about'];
+  const views: readonly WindowContext['kind'][] = ['picker', 'editor', 'jobs', 'settings', 'dropzone', 'about', 'welcome'];
   if (view === null || !views.includes(view as WindowContext['kind'])) return null;
   const pick = <T extends string>(name: string, allowed: readonly T[], fallback: T): T => {
     const value = q.get(name);
@@ -349,7 +350,7 @@ function notifyHarness(message: string): void {
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export function createMockOrbit(scenario: MockScenario): OrbitApi {
-  let settings: Settings = applySettingsPatch(DEFAULT_SETTINGS, {
+  let settings: Settings = applySettingsPatch(defaultSettingsFor(scenario.platform), {
     locale: scenario.locale,
     accessibility: { reduceMotion: scenario.reduceMotion, highContrast: scenario.highContrast },
   }) ?? DEFAULT_SETTINGS;
@@ -710,6 +711,34 @@ export function createMockOrbit(scenario: MockScenario): OrbitApi {
       runJob(newId, 3, () => ({ outputs: [{ outputId: nextId('out'), name: job.inputName.replace(/\.[^.]+$/, '.png'), dirDisplay: 'Desktop', format: 'png', bytes: 980_000 }] }));
       emitJobs();
       return { kind: 'jobs', jobIds: [newId] };
+    },
+    async getWindowNotice() {
+      return null;
+    },
+    reportRendererError(report) {
+      notifyHarness(`reportRendererError(${report.source}: ${report.message.slice(0, 80)})`);
+    },
+    async copyDiagnostics() {
+      notifyHarness('copyDiagnostics() — main writes the clipboard');
+      return { logLines: 200 };
+    },
+    async openLogFolder() {
+      notifyHarness('openLogFolder()');
+    },
+    async openDataFolder() {
+      notifyHarness('openDataFolder()');
+    },
+    async resetSettings() {
+      settings = { ...defaultSettingsFor(scenario.platform), locale: settings.locale, onboarding: settings.onboarding };
+      for (const listener of settingsListeners) listener(settings);
+      notifyHarness('resetSettings()');
+      return settings;
+    },
+    async openLicense(which) {
+      notifyHarness(`openLicense(${which})`);
+    },
+    async restartHelper() {
+      notifyHarness('restartHelper()');
     },
   };
   return api;

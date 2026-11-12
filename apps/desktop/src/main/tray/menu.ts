@@ -5,7 +5,8 @@ import type { MainStringKey, Translate } from '../i18n';
 /**
  * Tray / menu-bar menu (pure template; the controller turns it into a Menu):
  *   파일 열기… · Drop Zone 열기/닫기 · 최근 작업 ▸ · 작업 창 ·
- *   전역 드래그 상태 (+ 권한/다시 시작 항목) · 전역 드래그 사용 ☑ · 설정… · 정보 · 종료
+ *   전역 드래그 상태 (+ 권한/다시 시작 항목) · 전역 드래그 사용 ☑ · 설정… ·
+ *   도움말 ▸ (사용법 · OrbitDrop 웹사이트 · 문제 신고 · 로그 폴더 열기) · 정보 · 종료
  */
 
 export interface RecentItem {
@@ -34,6 +35,14 @@ export interface TrayActions {
   openSettings(): void;
   openAbout(): void;
   quit(): void;
+  /** 도움말 › 사용법: the welcome window. */
+  openGuide(): void;
+  /** 도움말 › OrbitDrop 웹사이트 (in the UI language). */
+  openWebsite(): void;
+  /** 도움말 › 문제 신고: a new GitHub issue prefilled with the app version, OS version and architecture only. */
+  reportProblem(): void;
+  /** 도움말 › 로그 폴더 열기. */
+  openLogFolder(): void;
 }
 
 export function helperStatusKey(status: HelperStatus): MainStringKey {
@@ -92,8 +101,20 @@ export function buildTrayTemplate(state: TrayState, actions: TrayActions, t: Tra
     },
     { type: 'separator' },
     { label: t('tray.settings'), click: () => actions.openSettings() },
+    { label: t('help.menu'), submenu: helpSubmenu(actions, t) },
     { label: t('tray.about'), click: () => actions.openAbout() },
     { type: 'separator' },
     { label: t('tray.quit'), click: () => actions.quit() },
+  ];
+}
+
+/** 도움말 ▸ */
+export function helpSubmenu(actions: TrayActions, t: Translate): MenuItemConstructorOptions[] {
+  return [
+    { label: t('help.guide'), click: () => actions.openGuide() },
+    { label: t('help.website'), click: () => actions.openWebsite() },
+    { label: t('help.reportProblem'), click: () => actions.reportProblem() },
+    { type: 'separator' },
+    { label: t('help.openLogs'), click: () => actions.openLogFolder() },
   ];
 }
