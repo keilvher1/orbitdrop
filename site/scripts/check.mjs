@@ -6,14 +6,16 @@
  *   node site/scripts/check.mjs
  *
  * Checks
- *  - every internal link, image, stylesheet and script resolves to a file in site/, and every
- *    #anchor exists on its target page (the site is served under /orbitdrop/);
+ *  - every internal link, image, stylesheet and script resolves to a file in site/ with the exact
+ *    letter case (GitHub Pages is case-sensitive), and every #anchor exists on its target page
+ *    (the site is served under /orbitdrop/);
  *  - every page has <html lang>, a <title> and a meta description, and exactly one <h1>;
  *  - every <img> has alt text (alt="" only with aria-hidden="true"), its width/height match the
  *    file, and every inline <svg> is either named (role="img" + accessible name) or aria-hidden;
  *  - ids are unique and ARIA/label references point at existing ids;
- *  - no URL outside the allow-list appears in any file: github.com/keilvher1/orbitdrop…,
- *    api.github.com, docs.github.com and the site's own https://keilvher1.github.io/orbitdrop/;
+ *  - no URL outside the allow-list appears in any text file (any extension, any letter case,
+ *    protocol-relative included): github.com/keilvher1/orbitdrop…, api.github.com,
+ *    docs.github.com and the site's own https://keilvher1.github.io/orbitdrop/;
  *  - no inline scripts, inline styles or event-handler attributes (the pages' CSP forbids them);
  *  - 404.html uses root-absolute links only (GitHub Pages serves it at any depth);
  *  - screenshots stay within 300 KB, the generated <!-- build:… --> blocks are filled in;
@@ -51,7 +53,8 @@ function walk(dir) {
 const files = walk(SITE);
 const rel = (file) => path.relative(SITE, file).split(path.sep).join('/');
 const htmlFiles = files.filter((f) => f.endsWith('.html'));
-const textFiles = files.filter((f) => /\.(html|css|js|xml|txt|svg|json|webmanifest)$/.test(f));
+// Every file without NUL bytes counts as text, whatever its extension, so no new file escapes the URL scan.
+const textFiles = files.filter((f) => !readFileSync(f).includes(0));
 
 /** URL path a file is served at, e.g. site/en/index.html → /orbitdrop/en/ */
 function servedPath(file) {
@@ -61,20 +64,42 @@ function servedPath(file) {
   return BASE + r;
 }
 
+/**
+ * True when every segment exists with exactly this spelling. GitHub Pages is case-sensitive; a
+ * Mac's disk usually is not, so stat() alone would accept href="Privacy/".
+ */
+function existsExactly(parts) {
+  let dir = SITE;
+  for (const part of parts) {
+    let entries;
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      return false;
+    }
+    if (!entries.includes(part)) return false;
+    dir = path.join(dir, part);
+  }
+  return true;
+}
+
 /** Site file for a URL path under /orbitdrop/, or null. */
 function fileForPath(pathname) {
   if (!pathname.startsWith(BASE)) return null;
-  let r = decodeURIComponent(pathname.slice(BASE.length));
+  let r;
+  try {
+    r = decodeURIComponent(pathname.slice(BASE.length));
+  } catch {
+    return null;
+  }
   if (r === '' || r.endsWith('/')) r += 'index.html';
-  const full = path.join(SITE, ...r.split('/'));
-  if (!full.startsWith(SITE)) return null;
+  const parts = r.split('/');
+  const full = path.join(SITE, ...parts);
+  if (!full.startsWith(SITE + path.sep) || !existsExactly(parts)) return null;
   try {
     const s = statSync(full);
     if (s.isFile()) return full;
-    if (s.isDirectory()) {
-      const index = path.join(full, 'index.html');
-      return statSync(index).isFile() ? index : null;
-    }
+    if (s.isDirectory() && existsExactly([...parts, 'index.html'])) return path.join(full, 'index.html');
   } catch {
     return null;
   }
@@ -90,18 +115,68 @@ const decode = (s) =>
     return ENTITIES[e.toLowerCase()] ?? m;
   });
 
-/** Tags with attributes and line numbers. Comments are blanked first (keeping line breaks). */
+/**
+ * Tags with attributes and line numbers, read the way an HTML tokenizer does (so attributes that
+ * are not separated by whitespace, such as src="a"alt="", are still seen). Comments are blanked
+ * first, keeping line breaks.
+ */
 function parseTags(source) {
   const text = source.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '));
+  const newlines = [];
+  for (let i = text.indexOf('\n'); i !== -1; i = text.indexOf('\n', i + 1)) newlines.push(i);
+  const lineAt = (index) => {
+    let lo = 0;
+    let hi = newlines.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (newlines[mid] < index) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo + 1;
+  };
+  const space = (ch) => ch === ' ' || ch === '\n' || ch === '\t' || ch === '\r' || ch === '\f';
   const tags = [];
-  const tagRe = /<(\/?)([a-zA-Z][\w:-]*)((?:\s+[^\s=>/]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>"']+))?)*)\s*(\/?)>/g;
+  const start = /<(\/?)([a-zA-Z][\w:-]*)/g;
   let m;
-  while ((m = tagRe.exec(text))) {
+  while ((m = start.exec(text))) {
     const attrs = {};
-    const attrRe = /([^\s=>/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+)))?/g;
-    let a;
-    while ((a = attrRe.exec(m[3]))) attrs[a[1].toLowerCase()] = decode(a[2] ?? a[3] ?? a[4] ?? '');
-    tags.push({ name: m[2].toLowerCase(), closing: m[1] === '/', attrs, index: m.index, line: text.slice(0, m.index).split('\n').length });
+    let j = start.lastIndex;
+    while (j < text.length) {
+      while (j < text.length && space(text[j])) j++;
+      if (text[j] === '>') {
+        j++;
+        break;
+      }
+      if (text[j] === '/') {
+        j++;
+        continue;
+      }
+      let k = j;
+      while (k < text.length && !space(text[k]) && !'=>/'.includes(text[k])) k++;
+      const name = text.slice(j, k).toLowerCase();
+      j = k;
+      while (j < text.length && space(text[j])) j++;
+      let value = '';
+      if (text[j] === '=') {
+        j++;
+        while (j < text.length && space(text[j])) j++;
+        const quote = text[j];
+        if (quote === '"' || quote === "'") {
+          const end = text.indexOf(quote, j + 1);
+          value = text.slice(j + 1, end === -1 ? text.length : end);
+          j = end === -1 ? text.length : end + 1;
+        } else {
+          k = j;
+          while (k < text.length && !space(text[k]) && text[k] !== '>') k++;
+          value = text.slice(j, k);
+          j = k;
+        }
+      }
+      if (name) attrs[name] = decode(value);
+      else if (j < text.length && text[j] !== '>') j++; // stray character: skip it
+    }
+    tags.push({ name: m[2].toLowerCase(), closing: m[1] === '/', attrs, index: m.index, line: lineAt(m.index) });
+    start.lastIndex = Math.max(j, start.lastIndex);
   }
   return { text, tags };
 }
@@ -166,9 +241,13 @@ function checkReference(file, line, raw, { pageUrl, requireAbsolutePath = false,
   }
 }
 
-/** Every http(s) URL written anywhere in a text file must be allowed (namespace URIs aside). */
+/**
+ * Every http(s) URL written anywhere in a text file must be allowed (namespace URIs aside), in any
+ * letter case, and so must protocol-relative URLs in quotes ('//host/…').
+ */
 function scanUrls(file, text) {
-  const re = /https?:\/\/[^\s"'<>()\\`]+/g;
+  const lineOf = (index) => text.slice(0, index).split('\n').length;
+  const re = /https?:\/\/[^\s"'<>()\\`]+/gi;
   let m;
   while ((m = re.exec(text))) {
     const found = m[0].replace(/[.,;:]+$/, '');
@@ -178,18 +257,26 @@ function scanUrls(file, text) {
     try {
       url = new URL(found);
     } catch {
-      error(rel(file), `unparseable URL ${found}`);
+      error(rel(file), `line ${lineOf(m.index)}: unparseable URL ${found}`);
       continue;
     }
     if (url.origin === ORIGIN) {
-      if (url.protocol !== 'https:') error(rel(file), `own URL must use https: ${found}`);
-      else if (!fileForPath(url.pathname)) error(rel(file), `own URL has no file behind it: ${found}`);
+      const target = fileForPath(url.pathname);
+      if (url.protocol !== 'https:') error(rel(file), `line ${lineOf(m.index)}: own URL must use https: ${found}`);
+      else if (!target) error(rel(file), `line ${lineOf(m.index)}: own URL has no file behind it: ${found}`);
+      else if (url.hash.length > 1) {
+        const id = decodeURIComponent(url.hash.slice(1));
+        if (!pages.get(target)?.ids.has(id)) error(rel(file), `line ${lineOf(m.index)}: anchor #${id} not found in ${rel(target)}`);
+      }
       continue;
     }
-    if (!isAllowedExternal(url)) {
-      const line = text.slice(0, m.index).split('\n').length;
-      error(rel(file), `line ${line}: external URL not allowed: ${found}`);
-    } else if (!externalSeen.has(url.href)) externalSeen.set(url.href, rel(file));
+    if (!isAllowedExternal(url)) error(rel(file), `line ${lineOf(m.index)}: external URL not allowed: ${found}`);
+    else if (!externalSeen.has(url.href)) externalSeen.set(url.href, rel(file));
+  }
+  for (const p of text.matchAll(/["'`(]\s*(\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)+[^\s"'`)]*)/gi)) {
+    const url = new URL('https:' + p[1]);
+    if (url.origin === ORIGIN) continue;
+    if (!isAllowedExternal(url)) error(rel(file), `line ${lineOf(p.index)}: protocol-relative URL not allowed: ${p[1]}`);
   }
 }
 
@@ -417,9 +504,10 @@ console.log(`checked ${htmlFiles.length} pages, ${textFiles.length} text files, 
 console.log(`external URLs (${externalSeen.size}, all on the allow-list):`);
 for (const [url, file] of [...externalSeen].sort()) console.log(`  ${url}  (${file})`);
 for (const note of notes) console.log(`note: ${note}`);
-if (errors.length > 0) {
-  console.error(`\n${errors.length} problem(s):`);
-  for (const e of errors) console.error(`  ✗ ${e}`);
+const problems = [...new Set(errors)]; // the attribute check and the text scan can report the same URL
+if (problems.length > 0) {
+  console.error(`\n${problems.length} problem(s):`);
+  for (const e of problems) console.error(`  ✗ ${e}`);
   process.exit(1);
 }
 console.log('ok');
