@@ -58,6 +58,21 @@ internal static class Suite
         public Dictionary<string, string> Hashes { get; } = new(StringComparer.OrdinalIgnoreCase);
         public string OutDir { get; init; } = "";
         public string Fixtures { get; init; } = "";
+        public string ReadyLine { get; set; } = "";
+        public Process? App { get; init; }
+    }
+
+    /// <summary>Waits for a main.log line; gives up early when the app process has exited.</summary>
+    private static string? WaitForLine(MainLog log, string needle, Process? app, TimeSpan timeout)
+    {
+        var watch = Stopwatch.StartNew();
+        while (true)
+        {
+            string? line = log.Lines().FirstOrDefault(l => l.Contains(needle, StringComparison.Ordinal));
+            if (line != null) return line;
+            if (app is { HasExited: true } || watch.Elapsed >= timeout) return null;
+            Thread.Sleep(250);
+        }
     }
 
     private const string PdfFixture = "Page 001.pdf";
@@ -85,16 +100,28 @@ internal static class Suite
         var environment = new Dictionary<string, object?>();
         var results = new List<CaseResult>();
 
-        // ------------------------------------------------------------ OrbitDrop ready?
+        // ------------------------------------------------------------ start OrbitDrop and wait until it is ready
+        // The driver starts the installed app itself, so the app lives exactly as long as the cases run
+        // (a process started by an earlier workflow step may not survive that step) and its exit is seen.
+        Process? app = null;
+        string? launch = options.GetValueOrDefault("launch");
+        if (launch != null)
+        {
+            app = AppProcess.Start(launch, Path.Combine(outDir, "app-stdio"));
+            environment["app"] = $"{launch} pid {app.Id}";
+        }
         Log.Info($"waiting for OrbitDrop: {appLog.FilePath}");
-        string? ready = appLog.WaitFor(l => l.Contains("native helper ready", StringComparison.Ordinal), TimeSpan.FromSeconds(240));
-        string? capabilities = appLog.WaitFor(l => l.Contains("capabilities ready", StringComparison.Ordinal), TimeSpan.FromSeconds(240));
+        var startWatch = Stopwatch.StartNew();
+        string? ready = WaitForLine(appLog, "native helper ready", app, TimeSpan.FromSeconds(240));
+        string? capabilities = WaitForLine(appLog, "capabilities ready", app, TimeSpan.FromSeconds(240) - startWatch.Elapsed);
         environment["helperReady"] = ready;
         environment["capabilities"] = capabilities;
+        environment["readyAfter"] = $"{startWatch.Elapsed.TotalSeconds:F1} s";
         if (ready == null || capabilities == null)
         {
-            Log.Info("OrbitDrop did not report 'native helper ready' and 'capabilities ready'");
-            WriteResults(outDir, environment, results, fatal: "OrbitDrop did not start (no 'native helper ready' / 'capabilities ready' in main.log)");
+            string exited = app is { HasExited: true } ? $"; OrbitDrop exited with code {app.ExitCode} (0x{app.ExitCode:X8}) at {app.ExitTime:HH:mm:ss.fff}" : "";
+            Log.Info($"OrbitDrop did not report 'native helper ready' and 'capabilities ready'{exited}");
+            WriteResults(outDir, environment, results, fatal: $"OrbitDrop did not start (no 'native helper ready' / 'capabilities ready' in main.log){exited}");
             return 3;
         }
         if (MainLog.Field(ready, "globalDrag") != "true")
@@ -113,7 +140,7 @@ internal static class Suite
         string folder = Path.Combine(work, "OrbitDrop GUI test");
         if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
         Directory.CreateDirectory(folder);
-        var ctx = new Context { G = g, AppLog = appLog, Folder = folder, OutDir = outDir, Fixtures = fixtures, Work = work0 };
+        var ctx = new Context { G = g, AppLog = appLog, Folder = folder, OutDir = outDir, Fixtures = fixtures, Work = work0, App = app };
         foreach ((string name, string fixture) in CaseFiles)
         {
             string target = Path.Combine(folder, name);
@@ -130,6 +157,8 @@ internal static class Suite
         environment["activationPoint"] = ctx.Activation.ToString();
         Shots.Take("00-explorer", "Explorer on the test folder (before the cases)");
 
+        ctx.ReadyLine = ready;
+        RunCase(results, ctx, "startup", "Fresh start of the installed app: no window, helper ready, global drag available", Startup);
         RunCase(results, ctx, "pdf-to-jpg", "PDF → JPG: Explorer drag, Shift, drop on JPG (Shift held through the drop)", PdfToJpg);
         RunCase(results, ctx, "jpg-to-png", "JPG → PNG: 8-sector image menu, drop on PNG (top)", JpgToPng);
         RunCase(results, ctx, "escape", "Esc during the drag cancels: wheel gone, no output", Escape);
@@ -179,6 +208,7 @@ internal static class Suite
         {
             Input.ReleaseAll();
             if (!Wheel.WaitHidden(TimeSpan.FromSeconds(3), out _)) Log.Info("  the wheel is still visible after the case");
+            if (ctx.App is { HasExited: true } gone) result.Add("OrbitDrop still running", false, $"exited with code {gone.ExitCode} (0x{gone.ExitCode:X8})");
             result.Seconds = Math.Round(watch.Elapsed.TotalSeconds, 1);
             Log.Info($"=== {id}: {(result.Passed ? "PASS" : "FAIL")} ({result.Seconds} s)");
             Thread.Sleep(800);
@@ -338,6 +368,37 @@ internal static class Suite
     }
 
     // ------------------------------------------------------------ cases
+
+    private static void Startup(Context ctx, CaseResult c)
+    {
+        if (ctx.App != null) c.Add("OrbitDrop.exe is running", !ctx.App.HasExited, $"pid {ctx.App.Id}");
+        c.Add("main.log: native helper ready, globalDrag=true", MainLog.Field(ctx.ReadyLine, "globalDrag") == "true",
+            ctx.ReadyLine.Length > 0 ? ctx.ReadyLine[(ctx.ReadyLine.IndexOf("native helper ready", StringComparison.Ordinal))..] : "");
+        Process[] apps = Process.GetProcessesByName("OrbitDrop");
+        Process[] helpers = Process.GetProcessesByName("OrbitDropHelper");
+        c.Add("one OrbitDropHelper.exe process", helpers.Length == 1, $"{helpers.Length}");
+        var appPids = new HashSet<uint>(apps.Select(p => (uint)p.Id));
+        List<string> windows = Native.TopLevelWindows()
+            .Where(h => Native.IsWindowVisible(h) && appPids.Contains(Native.WindowPid(h)))
+            .Select(h =>
+            {
+                Native.GetWindowRect(h, out Native.RECT r);
+                return $"{Native.ClassName(h)} '{Native.WindowText(h)}' {r}";
+            })
+            .Where(text => !text.EndsWith(" 0x0]", StringComparison.Ordinal))
+            .ToList();
+        c.Add("no OrbitDrop window on screen after the start (tray app)", windows.Count == 0, windows.Count == 0 ? "none" : string.Join("; ", windows));
+        if (helpers.Length > 0)
+        {
+            string helperLevel = Native.IntegrityOfProcess((uint)helpers[0].Id);
+            string explorerLevel = Native.IntegrityOfProcess(ctx.Explorer.Pid);
+            c.Add("the helper runs at Explorer's integrity level (no UIPI block)", helperLevel == explorerLevel, $"helper {helperLevel}, Explorer {explorerLevel}");
+        }
+        IntPtr wheel = Wheel.FindWindow();
+        c.Add("the wheel window exists, hidden, owned by the helper", wheel != IntPtr.Zero && !Native.IsWindowVisible(wheel) && helpers.Any(p => (uint)p.Id == Native.WindowPid(wheel)),
+            wheel == IntPtr.Zero ? "no OrbitDropWheelWindow" : $"ex-style 0x{Native.GetWindowLongPtr(wheel, Native.GWL_EXSTYLE).ToInt64():X}");
+        c.Shot("1-desktop", "startup: OrbitDrop running (tray only), Explorer on the test folder");
+    }
 
     private static void PdfToJpg(Context ctx, CaseResult c) =>
         ConvertCase(ctx, c, PdfFixture, "PDF", "pdf", "convert.jpeg", "Page 001.jpg", "JPEG", releaseShiftFirst: false);
