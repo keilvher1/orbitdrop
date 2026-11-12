@@ -52,6 +52,15 @@ const AccessibilitySettings = z.strictObject({
   highContrast: z.enum(['system', 'on', 'off']).default('system'),
 });
 
+/**
+ * Added for automatic updates (additive: files without it get the defaults, SETTINGS_VERSION is
+ * unchanged). autoCheck: look for a new release on GitHub 60 s after launch and every 6 h; a check
+ * the user starts (About, tray) works either way.
+ */
+const UpdateSettings = z.strictObject({
+  autoCheck: z.boolean().default(true),
+});
+
 export const SettingsSchema = z.strictObject({
   version: z.literal(SETTINGS_VERSION),
   locale: LocaleSchema.default('ko'),
@@ -65,6 +74,7 @@ export const SettingsSchema = z.strictObject({
   launchAtLogin: z.boolean().default(false),
   /** System notification when a job started from a drag finishes. */
   notifications: z.boolean().default(true),
+  updates: UpdateSettings.prefault({}),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 

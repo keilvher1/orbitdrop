@@ -125,6 +125,11 @@ export class HelperManager {
     return this.invalidLines;
   }
 
+  /** A drag session is open (its wheel may be on screen): a restart to update waits for it. */
+  get dragInProgress(): boolean {
+    return this.openSessions.size > 0;
+  }
+
   async start(): Promise<void> {
     this.stopped = false;
     if (!this.location) {

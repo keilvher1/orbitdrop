@@ -30,12 +30,18 @@ import {
   type SubmitActionResult,
   type ThumbnailRequest,
   type ThumbnailResponse,
+  type UpdateState,
   type WheelMenu,
   type WheelMode,
   type WindowContext,
   type WindowKind,
 } from '@orbitdrop/contracts';
-import type { IpcRouter } from './router';
+import type { IpcRouter, SafeParser } from './router';
+
+/** Channels without a payload that refuse one (a page sending data where none belongs is not ours). */
+const NO_PAYLOAD: SafeParser<undefined> = {
+  safeParse: (value: unknown) => (value === undefined ? { success: true as const, data: undefined } : { success: false as const }),
+};
 
 /**
  * The OrbitApi surface as main-side services. Every method receives only
@@ -76,10 +82,14 @@ export interface OrbitIpcServices<R> {
   retryJob(jobId: string, record: R): Promise<SubmitActionResult>;
   /** setCloseGuard: the window reports whether closing it would lose unsaved work. */
   setCloseGuard(record: R, guard: boolean): void;
+  /** Automatic updates (update/service.ts). */
+  updateState(): UpdateState;
+  checkForUpdates(): Promise<UpdateState>;
+  restartToUpdate(): UpdateState;
 }
 
 /**
- * Wire every OrbitApi channel. Events (settingsChanged, helperStatusChanged, jobsChanged) are broadcast by
+ * Wire every OrbitApi channel. Events (settingsChanged, helperStatusChanged, jobsChanged, updateStateChanged) are broadcast by
  * main; windowCloseRequested goes to the one window whose close was held back.
  */
 export function registerOrbitIpc<R>(router: IpcRouter<R>, s: OrbitIpcServices<R>): void {
@@ -115,7 +125,16 @@ export function registerOrbitIpc<R>(router: IpcRouter<R>, s: OrbitIpcServices<R>
   router.handle(C.jobsClearFinished, ClearFinishedJobsRequestSchema, (p) => s.clearFinishedJobs(p.finishedUpTo));
   router.handle(C.jobRetry, IdRequestSchema, (p, record) => s.retryJob(p.id, record));
   router.on(C.windowCloseGuard, WindowCloseGuardRequestSchema, (p, record) => s.setCloseGuard(record, p.guard));
+  router.handle(C.updateState, NO_PAYLOAD, () => s.updateState());
+  router.handle(C.updateCheck, NO_PAYLOAD, () => s.checkForUpdates());
+  router.handle(C.updateRestart, NO_PAYLOAD, () => s.restartToUpdate());
 }
 
 /** Channels main pushes to renderers. */
-export const EVENT_CHANNELS = [IPC_CHANNELS.settingsChanged, IPC_CHANNELS.helperStatusChanged, IPC_CHANNELS.jobsChanged, IPC_CHANNELS.windowCloseRequested] as const;
+export const EVENT_CHANNELS = [
+  IPC_CHANNELS.settingsChanged,
+  IPC_CHANNELS.helperStatusChanged,
+  IPC_CHANNELS.jobsChanged,
+  IPC_CHANNELS.windowCloseRequested,
+  IPC_CHANNELS.updateStateChanged,
+] as const;

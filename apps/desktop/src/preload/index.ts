@@ -86,6 +86,10 @@ const api: OrbitApi = {
     if (typeof listener !== 'function') throw new TypeError('listener must be a function');
     return subscribe(IPC_CHANNELS.windowCloseRequested, () => listener());
   },
+  getUpdateState: () => invoke(IPC_CHANNELS.updateState),
+  onUpdateStateChanged: (listener) => subscribe(IPC_CHANNELS.updateStateChanged, listener),
+  checkForUpdates: () => invoke(IPC_CHANNELS.updateCheck),
+  restartToUpdate: () => invoke(IPC_CHANNELS.updateRestart),
 };
 
 contextBridge.exposeInMainWorld('orbit', api);

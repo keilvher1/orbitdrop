@@ -68,6 +68,14 @@ export const IPC_CHANNELS = {
    * the window asks the user exactly like its own × (onCloseRequested).
    */
   windowCloseRequested: 'orbit:window:close-requested',
+  /** Added for automatic updates: the update service's state (UpdateState). */
+  updateState: 'orbit:update:state',
+  /** Added for automatic updates (main → renderer event): the update state changed. */
+  updateStateChanged: 'orbit:update:state-changed',
+  /** Added for automatic updates: look for an update now (also when automatic checks are off). */
+  updateCheck: 'orbit:update:check',
+  /** Added for automatic updates: restart into the downloaded update (waits for running work). */
+  updateRestart: 'orbit:update:restart',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -106,7 +114,68 @@ export interface AppInfo {
   readonly translated?: true;
   /** Added by the hardening pass: problems main handled at startup that the user should know about. */
   readonly notices?: readonly StartupNotice[];
+  /** Added for automatic updates: what the package was built from (Resources/build-info.json); absent in development runs. */
+  readonly build?: BuildSummary;
 }
+
+/**
+ * How a package was signed (scripts/package.mjs → Resources/build-info.json): 'developer-id' and
+ * 'adhoc' on macOS, 'authenticode' and 'none' (unsigned) on Windows.
+ */
+export type BuildSigning = 'developer-id' | 'adhoc' | 'authenticode' | 'none';
+
+export interface BuildSummary {
+  /** Short commit (7 hex digits) the package was built from, or null when it is not known. */
+  readonly commit: string | null;
+  /** The working tree had uncommitted changes when the package was built. */
+  readonly dirty: boolean;
+  readonly signing: BuildSigning;
+}
+
+/** Where every release (and its update metadata) is published. The About window links here. */
+export const RELEASES_URL = 'https://github.com/keilvher1/orbitdrop/releases';
+
+/**
+ * Why this build never looks for updates (no network request is made):
+ *  - development: not a packaged app (electron-vite dev, E2E);
+ *  - smokeTest: the packaged self test (`--smoke-test`);
+ *  - notSigned: macOS build without a Developer ID signature (Squirrel.Mac only installs an update
+ *    signed like the running app, so an ad-hoc build can never install one);
+ *  - unknownBuild: macOS package without readable build information (its signing is unknown);
+ *  - readOnlyLocation: macOS app started from a disk image or another read-only location (also
+ *    App Translocation): the update could not replace it;
+ *  - notInstalled: Windows app that was not installed by the OrbitDrop installer (e.g. win-unpacked);
+ *  - noUpdateConfig: the package has no update configuration (Resources/app-update.yml);
+ *  - platform: an operating system without OrbitDrop updates (Linux).
+ */
+export type UpdateUnsupportedReason = 'development' | 'smokeTest' | 'notSigned' | 'unknownBuild' | 'readOnlyLocation' | 'notInstalled' | 'noUpdateConfig' | 'platform';
+
+/**
+ * Why the last check or download failed — all of them are quiet (shown in About, logged, never a
+ * dialog): offline (no connection), network (GitHub not reachable or an HTTP error), failed (anything
+ * else, e.g. a broken release or an update the OS refused).
+ */
+export type UpdateErrorKind = 'offline' | 'network' | 'failed';
+
+export type UpdatePhase =
+  | { readonly state: 'unsupported'; readonly reason: UpdateUnsupportedReason }
+  | { readonly state: 'idle' }
+  | { readonly state: 'checking' }
+  | { readonly state: 'available'; readonly version: string }
+  | { readonly state: 'downloading'; readonly version: string; readonly percent: number }
+  /** restartPending: the user asked to restart; it happens once no job, editor or drag is running. */
+  | { readonly state: 'downloaded'; readonly version: string; readonly restartPending: boolean }
+  | { readonly state: 'upToDate' }
+  | { readonly state: 'error'; readonly error: UpdateErrorKind };
+
+export type UpdateState = UpdatePhase & {
+  /** The running version. */
+  readonly currentVersion: string;
+  /** Automatic checks are on (settings.updates.autoCheck). */
+  readonly autoCheck: boolean;
+  /** When the last check finished (ms, main's clock), null before the first one. */
+  readonly lastCheckedAt: number | null;
+};
 
 /**
  * Added by the hardening pass. settingsReset: settings.json could not be used
@@ -381,4 +450,20 @@ export interface OrbitApi {
   setCloseGuard?(guard: boolean): void;
   /** An OS-level close was held back (see setCloseGuard): ask the user like the window's own × does. */
   onCloseRequested?(listener: () => void): () => void;
+
+  // ------------------------------------------------- automatic updates
+  getUpdateState(): Promise<UpdateState>;
+  onUpdateStateChanged(listener: (state: UpdateState) => void): () => void;
+  /**
+   * Look for an update now (also with automatic checks off). Resolves once the check itself is done
+   * (a download it starts goes on and is reported through onUpdateStateChanged). A build that cannot
+   * update makes no request and resolves with its 'unsupported' state.
+   */
+  checkForUpdates(): Promise<UpdateState>;
+  /**
+   * Install the downloaded update and restart. Never loses work: with jobs queued or running, an
+   * editor or the format picker open, or a drag in progress, the restart waits until they are done
+   * (`restartPending`), with no dialog. Does nothing unless the state is 'downloaded'.
+   */
+  restartToUpdate(): Promise<UpdateState>;
 }

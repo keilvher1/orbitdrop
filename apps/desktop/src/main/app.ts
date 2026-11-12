@@ -22,8 +22,10 @@ import {
   IMAGE_FORMATS,
   IPC_CHANNELS,
   OrbitError,
+  TERMINAL_JOB_STATES,
   isAllowedExternalUrl,
   type AppInfo,
+  type BuildSummary,
   type FileSelection,
   type HelperConfigureMessage,
   type HelperDropMessage,
@@ -65,6 +67,8 @@ import { hardenSession, installWebContentsHardening, isRendererExternalUrl } fro
 import { SettingsStore } from './settings/store';
 import { TrayController } from './tray/controller';
 import type { RecentItem, TrayState } from './tray/menu';
+import type { UpdateService } from './update/service';
+import { createAppUpdates } from './update/wiring';
 import { threadpoolSize } from './uv-threadpool';
 import { WindowManager, type WindowRecord } from './windows/manager';
 
@@ -119,6 +123,10 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
   windows: WindowManager | null = null;
   tray: TrayController | null = null;
   readonly notifier: Notifier;
+  /** Automatic updates (update/service.ts); unsupported builds never touch the network. */
+  readonly updates: UpdateService;
+  /** What the package was built from (Resources/build-info.json); null in development runs. */
+  private readonly build: BuildSummary | null;
   private router: IpcRouter<WindowRecord> | null = null;
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
   /** Windows: re-reads the OS animation setting (no change event exists). */
@@ -222,6 +230,27 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
           onStatus: (status) => this.onHelperStatus(status),
           log: createLogger('helper'),
         });
+    const updates = createAppUpdates({
+      smokeTest: options.smokeTest,
+      resourcesPath: paths.resourcesPath,
+      settings: this.settings,
+      work: () => ({
+        jobs: this.jobs.list().filter((job) => !TERMINAL_JOB_STATES.has(job.state)).length,
+        windows: (this.windows?.list('editor').length ?? 0) + (this.windows?.list('picker').length ?? 0),
+        drag: this.helper?.dragInProgress ?? false,
+      }),
+      announceDownloaded: (version) => {
+        if (!this.settings.get().notifications) return;
+        this.showNotification(this.t('update.notify.title', { version }), this.t('update.notify.body'), () => this.windows?.open('about'));
+      },
+      shutdown: () => this.shutdown(),
+    });
+    this.updates = updates.service;
+    this.build = updates.build;
+    this.updates.onChange((state) => {
+      this.windows?.broadcast(IPC_CHANNELS.updateStateChanged, state);
+      this.tray?.refresh();
+    });
   }
 
   /** JobManager's runner: the processor pool (an E2E script may act on the attempt first). */
@@ -354,6 +383,16 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
           restartHelper: () => void this.helper?.restart(),
           openSettings: () => windows.open('settings'),
           openAbout: () => windows.open('about'),
+          checkForUpdates: () => {
+            windows.open('about');
+            void this.updates.checkNow();
+          },
+          restartToUpdate: () => {
+            this.updates.requestRestart();
+            // Waiting for running work: About says so (nothing to show when the restart starts at once).
+            if (this.updates.restartWaiting) windows.open('about');
+          },
+          cancelRestartToUpdate: () => this.updates.cancelRestart(),
           quit: () => app.quit(),
         },
         t: this.t,
@@ -363,6 +402,7 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
     }
 
     this.adoptLoginItem();
+    this.updates.start();
     if (this.helper) void this.helper.start();
     this.announceStartupNotices();
     this.log.info('ui started', { tray: this.tray !== null, helper: this.helper !== null });
@@ -414,6 +454,7 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
   systemResumed(reason: string): void {
     if (this.quitting) return;
     this.log.info('system resumed or unlocked', { reason });
+    this.updates.resumed();
     void this.helper?.recheck(reason).catch((error: unknown) => this.log.warn('helper re-check failed', { error: describeError(error) }));
   }
 
@@ -431,6 +472,7 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
       this.windows?.setQuitting(); // quitting is never held back by an editor's unsaved work
       if (this.sweepTimer) clearInterval(this.sweepTimer);
       if (this.motionTimer) clearInterval(this.motionTimer);
+      this.updates.dispose();
       this.router?.dispose();
       this.tray?.destroy();
       if (this.accessibilityNotification !== null) systemPreferences.unsubscribeWorkspaceNotification(this.accessibilityNotification);
@@ -521,6 +563,9 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
       estimate: (request) => this.editors.estimate(request),
       clearFinishedJobs: (finishedUpTo) => this.jobs.clearFinished(finishedUpTo),
       retryJob: (jobId, record) => this.submission.retryJob(jobId, { source: 'openDialog', sessionId: null, windowId: record.windowId }),
+      updateState: () => this.updates.state(),
+      checkForUpdates: () => this.updates.checkNow(),
+      restartToUpdate: () => this.updates.requestRestart(),
     };
   }
 
@@ -537,6 +582,7 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
       locale: this.settings.get().locale,
       ...(runningTranslated() ? { translated: true as const } : {}),
       ...(this.startupNotices.length > 0 ? { notices: [...this.startupNotices] } : {}),
+      ...(this.build ? { build: this.build } : {}),
     };
   }
 
@@ -831,6 +877,7 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
       dropZoneOpen: this.windows?.isOpen('dropzone') ?? false,
       recent,
       platform: process.platform,
+      update: this.updates.trayState(),
     };
   }
 

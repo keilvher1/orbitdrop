@@ -11,6 +11,7 @@ import {
   type JobSnapshot,
   type OrbitApi,
   type Settings,
+  type UpdateState,
   type WheelMenu,
   type WheelMode,
 } from '@orbitdrop/contracts';
@@ -140,6 +141,18 @@ export function sampleJob(overrides: Partial<JobSnapshot> = {}): JobSnapshot {
   };
 }
 
+/** Update state as a packaged build reports it after a check found nothing new. */
+export function sampleUpdateState(overrides: Partial<UpdateState> = {}): UpdateState {
+  return { state: 'upToDate', currentVersion: '0.1.0', autoCheck: true, lastCheckedAt: Date.UTC(2026, 10, 12, 9, 30), ...overrides } as UpdateState;
+}
+
+const updateListeners = new WeakMap<FakeOrbit, Set<(state: UpdateState) => void>>();
+
+/** What main does when the update service changes state (onUpdateStateChanged). */
+export function pushUpdateState(orbit: FakeOrbit, state: UpdateState): void {
+  for (const listener of updateListeners.get(orbit) ?? []) listener(state);
+}
+
 export function createFakeOrbit(overrides: Partial<OrbitApi> = {}): FakeOrbit {
   let settings: Settings = DEFAULT_SETTINGS;
   const unsubscribe = () => undefined;
@@ -202,6 +215,17 @@ export function createFakeOrbit(overrides: Partial<OrbitApi> = {}): FakeOrbit {
         listeners.delete(listener);
       };
     }),
+    getUpdateState: vi.fn(async () => sampleUpdateState()),
+    onUpdateStateChanged: vi.fn((listener: (state: UpdateState) => void) => {
+      const listeners = updateListeners.get(base) ?? new Set<(state: UpdateState) => void>();
+      updateListeners.set(base, listeners);
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    }),
+    checkForUpdates: vi.fn(async () => sampleUpdateState()),
+    restartToUpdate: vi.fn(async () => sampleUpdateState()),
   };
   for (const [key, value] of Object.entries(overrides)) {
     const current = (base as Record<string, unknown>)[key];

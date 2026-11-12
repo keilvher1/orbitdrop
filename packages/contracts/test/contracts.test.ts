@@ -103,6 +103,32 @@ describe('settings', () => {
     expect(migrateSettings('nope')).toEqual(DEFAULT_SETTINGS);
   });
 
+  it('automatic update checks are on by default and settings files without `updates` get it', () => {
+    expect(DEFAULT_SETTINGS.updates).toEqual({ autoCheck: true });
+    // A settings.json written before the updates section existed (same SETTINGS_VERSION).
+    const older = { version: 1, locale: 'en', notifications: false, launchAtLogin: true };
+    const migrated = migrateSettings(older);
+    expect(migrated.updates).toEqual({ autoCheck: true });
+    expect(migrated).toMatchObject({ version: 1, locale: 'en', notifications: false, launchAtLogin: true });
+    // Also a pre-release file without a version field.
+    expect(migrateSettings({ locale: 'en' }).updates.autoCheck).toBe(true);
+  });
+
+  it('keeps a stored `updates` section and resets only that section when it is invalid', () => {
+    expect(migrateSettings({ version: 1, updates: { autoCheck: false } }).updates).toEqual({ autoCheck: false });
+    for (const bad of [{ autoCheck: 'no' }, { autoCheck: false, channel: 'beta' }, 'off', null]) {
+      const migrated = migrateSettings({ version: 1, locale: 'en', updates: bad });
+      expect(migrated.updates, JSON.stringify(bad)).toEqual({ autoCheck: true });
+      expect(migrated.locale).toBe('en');
+    }
+  });
+
+  it('patches the updates section like any other', () => {
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { updates: { autoCheck: false } })?.updates.autoCheck).toBe(false);
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { updates: { autoCheck: 'yes' } })).toBeNull();
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { updates: { url: 'https://example.com' } })).toBeNull();
+  });
+
   it('applies patches and refuses invalid ones', () => {
     expect(applySettingsPatch(DEFAULT_SETTINGS, { pdf: { dpi: 150 } })?.pdf.dpi).toBe(150);
     expect(applySettingsPatch(DEFAULT_SETTINGS, { pdf: { dpi: 72 } })).toBeNull();

@@ -59,6 +59,9 @@ function actions(): TrayActions & Record<string, ReturnType<typeof vi.fn>> {
     openSettings: vi.fn(),
     openAbout: vi.fn(),
     quit: vi.fn(),
+    checkForUpdates: vi.fn(),
+    restartToUpdate: vi.fn(),
+    cancelRestartToUpdate: vi.fn(),
   } as unknown as TrayActions & Record<string, ReturnType<typeof vi.fn>>;
 }
 
@@ -103,6 +106,29 @@ describe('tray menu', () => {
     const missing = buildTrayTemplate(state({ state: 'unavailable', reason: 'x' }), actions(), t);
     expect(labels(missing)).toContain('파일 열기나 Drop Zone으로 계속 사용할 수 있습니다');
     expect(missing.find((i) => i.type === 'checkbox')!.enabled).toBe(false);
+  });
+
+  it('offers "check for updates" and, once an update is downloaded, "restart to update"', () => {
+    const t = bindTranslate(() => 'ko');
+    const a = actions();
+    const none = labels(buildTrayTemplate(state({ state: 'disabled' }), a, t));
+    expect(none).not.toContain('업데이트 확인…'); // no update service (e.g. tests): no entries
+
+    const idle = buildTrayTemplate(state({ state: 'disabled' }, { update: { ready: false, restartPending: false, version: null } }), a, t);
+    expect(labels(idle).slice(-3)).toEqual(['정보', '업데이트 확인…', '종료']);
+    (idle.find((i) => i.label === '업데이트 확인…')!.click as () => void)();
+    expect(a.checkForUpdates).toHaveBeenCalledTimes(1);
+
+    const ready = buildTrayTemplate(state({ state: 'disabled' }, { update: { ready: true, restartPending: false, version: '0.2.0' } }), a, t);
+    expect(labels(ready).slice(-3)).toEqual(['정보', '재시작하여 업데이트', '종료']);
+    (ready.find((i) => i.label === '재시작하여 업데이트')!.click as () => void)();
+    expect(a.restartToUpdate).toHaveBeenCalledTimes(1);
+
+    const pending = buildTrayTemplate(state({ state: 'disabled' }, { update: { ready: true, restartPending: true, version: '0.2.0' } }), a, bindTranslate(() => 'en'));
+    expect(labels(pending).slice(-4)).toEqual(['About', 'Restarts when your work is done', 'Cancel Restart', 'Quit']);
+    expect(pending.find((i) => i.label === 'Restarts when your work is done')!.enabled).toBe(false);
+    (pending.find((i) => i.label === 'Cancel Restart')!.click as () => void)();
+    expect(a.cancelRestartToUpdate).toHaveBeenCalledTimes(1);
   });
 
   it('escapes & in file names on Windows', () => {
