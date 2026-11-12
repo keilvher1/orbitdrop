@@ -20,7 +20,7 @@ import {
 import { applyLoginItem, loginItemToAdopt, type LoginItems } from '../../src/main/login-item';
 import { MAX_EDITOR_WINDOWS, editorsToEvict } from '../../src/main/windows/specs';
 import { waitFor } from './helpers';
-import { allowWrites, denyWrites } from './read-only-dir';
+import { allowWrites, denyAclsApply, denyWrites } from './read-only-dir';
 
 let dir: string;
 beforeEach(async () => {
@@ -247,10 +247,12 @@ describe('app data folder', () => {
     expect(await readdir(join(dir, 'new', 'nested'))).toEqual([]);
   });
 
-  it('a read-only folder (or one that cannot be created) is reported', async () => {
+  // POSIX: mode 0555. Windows: a deny ACL (folders have no read-only mode there) — which only
+  // stops processes the ACL applies to; on the GitHub runner it does not stop Node (see denyAclsApply).
+  it.runIf(denyAclsApply())('a read-only folder is reported', async () => {
     const readOnly = join(dir, 'ro');
     await mkdir(readOnly);
-    await denyWrites(readOnly); // mode 0555; on Windows a deny ACL (folders ignore the read-only attribute there)
+    await denyWrites(readOnly);
     try {
       expect(dataDirWritable(readOnly)).toBe(false);
       expect(dataDirWritable(join(readOnly, 'child'))).toBe(false);
@@ -258,8 +260,13 @@ describe('app data folder', () => {
       await allowWrites(readOnly);
     }
     expect(await readdir(readOnly)).toEqual([]); // the probes left nothing behind
+  });
+
+  it('a folder that cannot be created is reported', async () => {
     await writeFile(join(dir, 'file'), 'x');
     expect(dataDirWritable(join(dir, 'file'))).toBe(false); // a file where the folder should be
+    expect(dataDirWritable(join(dir, 'file', 'child'))).toBe(false); // a file on the way to it
+    expect(await readdir(dir)).toEqual(['file']);
   });
 });
 

@@ -144,13 +144,15 @@ interface CanvasAndContext {
  * PDF.js draws text in a font the PDF does not embed (e.g. a CID font with a predefined CMap
  * such as UniKS-UCS2-H) with fillText in the family list `"g_d0_f1", sans-serif`: the loaded
  * name, which the canvas does not know, then the generic family. @napi-rs/canvas falls back
- * per glyph only along that list. Its generic family has Hangul on macOS (Apple SD Gothic
- * Neo), but not on Windows, where Korean text in such PDFs came out blank. So the Hangul font
- * the processors use for annotations (Malgun Gothic on Windows; see resolveAnnotationFont) is
- * appended to every font PDF.js sets: Latin text keeps the generic face, Hangul the generic
- * face cannot draw comes from that font. Embedded fonts are drawn as paths and are unaffected.
+ * per glyph only along that list, and its generic families are one default face: on macOS one
+ * with Hangul (Apple SD Gothic Neo), on Windows Arial — so Korean text in such PDFs came out
+ * blank there (measured on the Windows runner: 0 ink pixels for '한글' in `sans-serif`).
+ * Text that contains Hangul is therefore drawn (and measured) with the Hangul font the
+ * processors use for annotations (resolveAnnotationFont: Malgun Gothic on Windows) at the head
+ * of the family list; all other text keeps exactly the font PDF.js chose. Embedded fonts are
+ * drawn as paths and never reach fillText.
  */
-async function textFallbackFamily(): Promise<string | null> {
+async function hangulFamily(): Promise<string | null> {
   try {
     const { family } = await resolveAnnotationFont();
     return family === null ? null : `"${family.replace(/"/g, '')}"`;
@@ -159,43 +161,59 @@ async function textFallbackFamily(): Promise<string | null> {
   }
 }
 
-/** A CSS font shorthand with `fallback` appended to its family list (once). */
-export function withFallbackFamily(font: string, fallback: string | null): string {
-  if (fallback === null || font.trim() === '' || font.includes(fallback)) return font;
-  return `${font}, ${fallback}`;
+const HANGUL = /[\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\uac00-\ud7af\ud7b0-\ud7ff]/u;
+
+/** A CSS font shorthand (`[style] [weight] <size>[/<line-height>] <families>`) with `family` first in its family list. */
+export function withLeadingFamily(font: string, family: string): string {
+  const match = /^(.*?\d(?:px|pt|pc|em|rem|ex|ch|vw|vh|%)(?:\s*\/\s*\S+)?\s+)(.+)$/i.exec(font.trim());
+  if (match === null || match[2]!.startsWith(family)) return font;
+  return `${match[1]}${family}, ${match[2]}`;
 }
 
-/** Make `context.font = …` (as PDF.js sets it) append `fallback` to the family list. */
-function installTextFallback(context: NapiContext, fallback: string | null): NapiContext {
-  if (fallback === null) return context;
-  let proto: object | null = Object.getPrototypeOf(context) as object | null;
-  let descriptor: PropertyDescriptor | undefined;
-  while (proto !== null && descriptor === undefined) {
-    descriptor = Object.getOwnPropertyDescriptor(proto, 'font');
-    proto = Object.getPrototypeOf(proto) as object | null;
+function fontAccessor(context: NapiContext): { get: () => unknown; set: (value: unknown) => void } | null {
+  for (let proto = Object.getPrototypeOf(context) as object | null; proto !== null; proto = Object.getPrototypeOf(proto) as object | null) {
+    const descriptor = Object.getOwnPropertyDescriptor(proto, 'font');
+    if (descriptor === undefined) continue;
+    const { get, set } = descriptor;
+    return typeof get === 'function' && typeof set === 'function' ? { get, set } : null;
   }
-  const { get, set } = descriptor ?? {};
-  if (typeof get !== 'function' || typeof set !== 'function') return context;
-  Object.defineProperty(context, 'font', {
-    configurable: true,
-    enumerable: true,
-    get(this: NapiContext): unknown {
-      return get.call(this);
-    },
-    set(this: NapiContext, value: unknown): void {
-      set.call(this, withFallbackFamily(String(value), fallback));
-    },
-  });
+  return null;
+}
+
+/** Make fillText/strokeText/measureText of `context` use `family` first for text with Hangul (see above). */
+function installHangulFallback(context: NapiContext, family: string | null): NapiContext {
+  const font = family === null ? null : fontAccessor(context);
+  if (family === null || font === null) return context;
+  for (const name of ['fillText', 'strokeText', 'measureText'] as const) {
+    const original = context[name] as unknown as (this: NapiContext, text: unknown, ...rest: unknown[]) => unknown;
+    if (typeof original !== 'function') continue;
+    Object.defineProperty(context, name, {
+      configurable: true,
+      writable: true,
+      value(this: NapiContext, text: unknown, ...rest: unknown[]): unknown {
+        if (typeof text !== 'string' || !HANGUL.test(text)) return original.call(this, text, ...rest);
+        const chosen = String(font.get.call(this));
+        const withHangul = withLeadingFamily(chosen, family);
+        if (withHangul === chosen) return original.call(this, text, ...rest);
+        font.set.call(this, withHangul);
+        try {
+          return original.call(this, text, ...rest);
+        } finally {
+          font.set.call(this, chosen);
+        }
+      },
+    });
+  }
   return context;
 }
 
-function makeCanvasFactory(canvas: NapiCanvasModule, textFallback: string | null) {
+function makeCanvasFactory(canvas: NapiCanvasModule, hangul: string | null) {
   return class NapiCanvasFactory {
     create(width: number, height: number): CanvasAndContext {
       if (width <= 0 || height <= 0) throw new Error('Invalid canvas size');
       const c = canvas.createCanvas(width, height);
       // Text in transparency groups, patterns and soft masks is drawn on these canvases.
-      return { canvas: c, context: installTextFallback(c.getContext('2d'), textFallback) };
+      return { canvas: c, context: installHangulFallback(c.getContext('2d'), hangul) };
     }
 
     reset(target: CanvasAndContext, width: number, height: number): void {
@@ -334,10 +352,10 @@ export async function openPdf(bytes: Uint8Array, engine?: PdfEngine, options: { 
   const e = engine ?? (await loadPdfEngine());
   const data = ownedBytes(bytes);
   const { assets } = e;
-  const textFallback = await textFallbackFamily();
+  const hangul = await hangulFamily();
   const params = {
     data,
-    CanvasFactory: makeCanvasFactory(e.canvas, textFallback),
+    CanvasFactory: makeCanvasFactory(e.canvas, hangul),
     FilterFactory: NoopFilterFactory,
     BinaryDataFactory: LocalBinaryDataFactory,
     cMapUrl: assets.cMapUrl,
@@ -401,10 +419,10 @@ export async function renderPage(engine: PdfEngine, page: PdfPage, scale: number
   const viewport = page.getViewport({ scale });
   const width = Math.max(1, Math.round(viewport.width));
   const height = Math.max(1, Math.round(viewport.height));
-  const textFallback = await textFallbackFamily();
+  const hangul = await hangulFamily();
   signal?.throwIfAborted();
   const canvas: NapiCanvas = engine.canvas.createCanvas(width, height);
-  const context = installTextFallback(canvas.getContext('2d', { alpha: false }), textFallback);
+  const context = installHangulFallback(canvas.getContext('2d', { alpha: false }), hangul);
   context.fillStyle = background;
   context.fillRect(0, 0, width, height);
   const task = page.render({

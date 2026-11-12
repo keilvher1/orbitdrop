@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, SETTINGS_VERSION, type Settings } from '@orbitdrop/contracts';
 import { HISTORY_LIMIT, HistoryStore, type HistoryEntry } from '../../src/main/history/store';
 import { SettingsStore } from '../../src/main/settings/store';
-import { allowWrites, denyWrites } from './read-only-dir';
+import { allowWrites, denyWrites, holdOpenWithoutDeleteSharing } from './read-only-dir';
 
 let dir: string;
 beforeEach(async () => {
@@ -62,8 +62,10 @@ describe('SettingsStore', () => {
 
   it('a file that cannot be moved aside is left alone until a real change is saved', async () => {
     await writeFile(join(dir, 'settings.json'), '{ broken');
-    // Folder not writable (mode 0555; on Windows a deny ACL): neither the move nor a save can happen.
-    await denyWrites(dir);
+    // Neither the move nor a save can happen. POSIX: the folder is read-only (0555). Windows has no
+    // read-only folders; there another program holds the file open without delete sharing (a sync
+    // client, a virus scanner), so it cannot be renamed or replaced — whatever our privileges.
+    const release = process.platform === 'win32' ? await holdOpenWithoutDeleteSharing(join(dir, 'settings.json')) : await denyWrites(dir).then(() => () => allowWrites(dir));
     try {
       const store = new SettingsStore(dir);
       expect(await store.load()).toEqual(DEFAULT_SETTINGS);
@@ -72,8 +74,9 @@ describe('SettingsStore', () => {
       // Saving fails quietly (logged); the app keeps running with the in-memory settings.
       await expect(store.update({ locale: 'en' })).resolves.toMatchObject({ locale: 'en' });
       expect(await readdir(dir)).toEqual(['settings.json']); // no temp file left by the failed save
+      expect(await readFile(join(dir, 'settings.json'), 'utf8')).toBe('{ broken');
     } finally {
-      await allowWrites(dir);
+      await release();
     }
   });
 
