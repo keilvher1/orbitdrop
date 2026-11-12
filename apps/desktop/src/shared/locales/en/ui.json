@@ -473,7 +473,7 @@
   "about.legal.openFailed": "Couldn't open the license file.",
   "about.legal.privacy": "Privacy",
   "about.legal.privacyLocal": "Your files never leave this computer. There is no account and no telemetry.",
-  "about.legal.privacyUpdates": "The update check contacts GitHub only when it is on, and sends only the app version.",
+  "about.legal.privacyUpdates": "The update check (on by default) looks for a new version on GitHub. GitHub sees standard connection details such as your IP address and which update file is requested — no files, usage data or device ID. Turn it off in Settings › General.",
   "about.legal.privacyCrashes": "Crash reports are stored on this computer only and are never sent anywhere.",
   "about.legal.privacyHistory": "The job history (history.json) keeps recent file names on this computer only; Clear Finished in the Jobs window removes them.",
   "crash.recovered": "This window stopped unexpectedly and was reopened.",

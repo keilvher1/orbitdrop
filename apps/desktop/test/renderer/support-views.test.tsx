@@ -50,7 +50,7 @@ describe('About: legal, troubleshooting, privacy', () => {
       .map((item) => item.textContent ?? '');
     expect(items).toHaveLength(4);
     expect(items[0]).toMatch(/이 컴퓨터 밖으로 나가지 않습니다.*계정이 없고.*텔레메트리/);
-    expect(items[1]).toMatch(/켠 경우에만 GitHub에 연결하며, 보내는 정보는 앱 버전뿐/);
+    expect(items[1]).toMatch(/기본으로 켜짐.*GitHub.*IP 주소 같은 일반 접속 정보.*기기 식별자는 보내지 않습니다.*설정 › 일반에서 끌 수 있습니다/);
     expect(items[2]).toMatch(/충돌 보고서는 이 컴퓨터에만 저장/);
     expect(items[3]).toMatch(/history\.json.*끝난 작업 지우기/);
   });

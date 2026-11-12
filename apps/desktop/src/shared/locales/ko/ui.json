@@ -473,7 +473,7 @@
   "about.legal.openFailed": "라이선스 파일을 열지 못했습니다.",
   "about.legal.privacy": "개인정보",
   "about.legal.privacyLocal": "파일은 이 컴퓨터 밖으로 나가지 않습니다. 계정이 없고 사용 기록(텔레메트리)도 보내지 않습니다.",
-  "about.legal.privacyUpdates": "업데이트 확인은 켠 경우에만 GitHub에 연결하며, 보내는 정보는 앱 버전뿐입니다.",
+  "about.legal.privacyUpdates": "업데이트 자동 확인(기본으로 켜짐)은 GitHub에서 새 버전을 찾습니다. GitHub에는 IP 주소 같은 일반 접속 정보와 업데이트 파일 요청만 전달되고, 파일·사용 기록·기기 식별자는 보내지 않습니다. 설정 › 일반에서 끌 수 있습니다.",
   "about.legal.privacyCrashes": "충돌 보고서는 이 컴퓨터에만 저장되고 어디로도 보내지 않습니다.",
   "about.legal.privacyHistory": "작업 기록(history.json)은 최근 파일 이름을 이 컴퓨터에만 보관하며, 작업 창의 ‘끝난 작업 지우기’로 지울 수 있습니다.",
   "crash.recovered": "이 창이 예기치 않게 종료되어 다시 열었습니다.",
