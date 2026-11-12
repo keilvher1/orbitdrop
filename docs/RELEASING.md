@@ -63,7 +63,7 @@ git push origin main v0.2.0
 | Plan | 태그 형식·버전 일치 확인. macOS 서명·공증 시크릿이 없으면 macOS 작업을 건너뛰고 작업 요약에 "macOS packages are built locally: `node scripts/release-mac.mjs <tag>`"를 남긴다(실패 아님) |
 | Windows (x64) | 검사·테스트 → helper → 번들 → `package.mjs win --install-test`. 인증서가 없으면 미서명이며 파일 이름에 `-unsigned`가 붙는다 |
 | macOS | 시크릿이 있을 때만: 임시 키체인에 인증서를 넣고 `package.mjs mac --arch all --require-signing --require-notarization` |
-| Draft release | 유일하게 쓰기 권한(`contents: write`)이 있는 작업. [`scripts/release-assets.mjs`](../scripts/release-assets.mjs)가 초안을 만들거나 갱신하고(이미 공개된 릴리스는 거부) 파일을 올린 뒤 `SHA256SUMS.txt`를 릴리스의 **모든** 파일에 대해 다시 쓴다 |
+| Draft release | 유일하게 쓰기 권한(`contents: write`)이 있는 작업. [`scripts/third-party-sources.mjs`](../scripts/third-party-sources.mjs)로 이 버전이 싣는 LGPL·MPL 구성요소의 대응 소스 묶음(`OrbitDrop-<버전>-third-party-sources.tar.gz`)을 만들고, [`scripts/release-assets.mjs`](../scripts/release-assets.mjs)가 초안을 만들거나 갱신하고(이미 공개된 릴리스는 거부; 소스 묶음이 없으면 올리지 않음) 파일을 올린 뒤 `SHA256SUMS.txt`를 릴리스의 **모든** 파일에 대해 다시 쓴다 |
 
 초안에 올라가는 것(Windows): `OrbitDrop-<버전>-win-x64-unsigned-setup.exe`, `latest.yml`, `build-report-win32-x64.json`,
 `SHA256SUMS.txt`. 서명되지 않은 macOS 패키지는 어떤 경우에도 릴리스에 올라가지 않는다.
@@ -100,7 +100,8 @@ build report(`apps/desktop/release/build-report-darwin-*.json`)는 공증 ID를 
 ## 5. 공개 전 확인
 
 - [ ] 초안의 파일: `OrbitDrop-<버전>-mac-arm64.dmg`, `…-mac-x64.dmg`, 두 `.zip`과 `.zip.blockmap`, `latest-mac.yml`,
-      `…-win-x64[-unsigned]-setup.exe`, `latest.yml`, `build-report-win32-x64.json`, `SHA256SUMS.txt`
+      `…-win-x64[-unsigned]-setup.exe`, `latest.yml`, `build-report-win32-x64.json`, `OrbitDrop-<버전>-third-party-sources.tar.gz`,
+      `SHA256SUMS.txt`
 - [ ] 내려받아 대조: `gh release download v0.2.0 --dir /tmp/orbitdrop-v0.2.0 && cd /tmp/orbitdrop-v0.2.0 && shasum -a 256 -c SHA256SUMS.txt`
 - [ ] `latest-mac.yml`이 arm64·x64 zip을, `latest.yml`이 setup.exe를 가리키고 버전이 태그와 같다(스크립트가 확인하지만 눈으로도)
 - [ ] macOS(가능하면 깨끗한 Mac 또는 VM): 브라우저로 DMG를 내려받아 열고 응용 프로그램 폴더로 옮긴 뒤 실행 — Gatekeeper 경고 없음,

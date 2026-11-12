@@ -301,6 +301,12 @@ jobs:
         with:
           pattern: OrbitDrop-*
           path: ${{ runner.temp }}/packages
+      # LGPL/MPL corresponding sources for exactly the versions this release ships (docs/packaging.md).
+      # Packages of the other OSes are fetched from npm and checked against pnpm-lock.yaml.
+      - name: LGPL/MPL corresponding sources
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/third-party-sources.mjs --out "${{ runner.temp }}/packages/OrbitDrop-third-party-sources"
       - name: Create or update the draft release (never published here)
         env:
           GH_TOKEN: ${{ github.token }}

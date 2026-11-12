@@ -443,10 +443,15 @@ describe('scripts/release-assets.mjs (CI)', () => {
     const setup = await releaseFile(win, 'OrbitDrop-0.2.0-win-x64-unsigned-setup.exe');
     writeFileSync(join(win, 'latest.yml'), yaml().dump({ version: '0.2.0', files: [setup], path: setup.url, sha512: setup.sha512 }));
     writeFileSync(join(win, 'build-report-win32-x64.json'), JSON.stringify({ version: '0.2.0' }));
+    const sources = join(root, 'OrbitDrop-third-party-sources-12');
+    mkdirSync(sources);
+    writeFileSync(join(sources, 'OrbitDrop-0.2.0-third-party-sources.tar.gz'), 'sources');
 
     const windowsOnly = collectAssets(root);
-    expect([...windowsOnly.keys()].sort()).toEqual(['OrbitDrop-0.2.0-win-x64-unsigned-setup.exe', 'build-report-win32-x64.json', 'latest.yml']);
+    expect([...windowsOnly.keys()].sort()).toEqual(['OrbitDrop-0.2.0-third-party-sources.tar.gz', 'OrbitDrop-0.2.0-win-x64-unsigned-setup.exe', 'build-report-win32-x64.json', 'latest.yml']);
     expect(await checkAssets(windowsOnly, '0.2.0')).toEqual([]);
+    const noSources = new Map([...windowsOnly].filter(([name]) => !name.endsWith('-third-party-sources.tar.gz')));
+    expect(await checkAssets(noSources, '0.2.0')).toEqual([expect.stringMatching(/third-party-sources\.tar\.gz \(LGPL\/MPL corresponding sources\) is missing/)]);
     expect(await checkAssets(windowsOnly, '0.3.0')).toEqual(expect.arrayContaining([expect.stringMatching(/not a 0\.3\.0 package/)]));
 
     const withMac = new Map([...windowsOnly, ...collectAssets(mac)]);
@@ -460,6 +465,7 @@ describe('scripts/release-assets.mjs (CI)', () => {
     const setup = await releaseFile(root, 'OrbitDrop-0.2.0-win-x64-unsigned-setup.exe');
     writeFileSync(join(root, 'latest.yml'), yaml().dump({ version: '0.2.0', files: [setup], path: setup.url, sha512: setup.sha512 }));
     writeFileSync(join(root, 'build-report-win32-x64.json'), JSON.stringify({ version: '0.2.0' }));
+    writeFileSync(join(root, 'OrbitDrop-0.2.0-third-party-sources.tar.gz'), 'sources');
     const releases: GitHubRelease[] = [];
     const fake = githubRunner(releases, {
       'gh release upload': (args) => {
@@ -476,8 +482,8 @@ describe('scripts/release-assets.mjs (CI)', () => {
       },
     });
     const result = await publishDraftAssets({ tag: 'v0.2.0', dir: root, run: fake.run, workDir: tempDir() });
-    expect(result.uploaded).toEqual(['OrbitDrop-0.2.0-win-x64-unsigned-setup.exe', 'build-report-win32-x64.json', 'latest.yml']);
+    expect(result.uploaded).toEqual(['OrbitDrop-0.2.0-third-party-sources.tar.gz', 'OrbitDrop-0.2.0-win-x64-unsigned-setup.exe', 'build-report-win32-x64.json', 'latest.yml']);
     expect(releases[0]).toMatchObject({ tag_name: 'v0.2.0', draft: true });
-    expect(result.sums).toBe(3);
+    expect(result.sums).toBe(4);
   });
 });

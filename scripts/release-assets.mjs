@@ -8,6 +8,7 @@
 //   - the version in every update metadata file and build report matches the tag;
 //   - latest.yml (Windows) and latest-mac.yml (macOS, both architectures) name files that are
 //     there, with the listed sha512 and size;
+//   - the LGPL/MPL corresponding-sources archive of this version is there (scripts/third-party-sources.mjs);
 //   - macOS files are refused unless their build reports say Developer ID, notarized app and
 //     notarized + stapled DMG (CI builds macOS only with signing secrets; unsigned macOS packages
 //     never reach a release — they are built locally, scripts/release-mac.mjs).
@@ -26,7 +27,7 @@ export function collectAssets(dir) {
     for (const name of readdirSync(d)) {
       const path = join(d, name);
       if (statSync(path).isDirectory()) walk(path);
-      else if (/\.(dmg|zip|exe|blockmap)$/.test(name) || /^latest(-mac)?\.yml$/.test(name) || /^build-report-.*\.json$/.test(name)) {
+      else if (/\.(dmg|zip|exe|blockmap)$/.test(name) || /-third-party-sources\.tar\.gz$/.test(name) || /^latest(-mac)?\.yml$/.test(name) || /^build-report-.*\.json$/.test(name)) {
         if (found.has(name)) throw new Error(`${name} appears twice in ${dir}`);
         found.set(name, path);
       }
@@ -42,8 +43,10 @@ export async function checkAssets(found, version) {
   const names = [...found.keys()];
   const dirOf = (name) => found.get(name).slice(0, -name.length - 1);
   for (const name of names) {
-    if (/\.(dmg|zip|exe|blockmap)$/.test(name) && !name.startsWith(`${PRODUCT}-${version}-`)) problems.push(`${name} is not a ${version} package`);
+    if ((/\.(dmg|zip|exe|blockmap)$/.test(name) || /-third-party-sources\.tar\.gz$/.test(name)) && !name.startsWith(`${PRODUCT}-${version}-`)) problems.push(`${name} is not a ${version} package`);
   }
+  // LGPL/MPL: the corresponding sources go with every release (scripts/third-party-sources.mjs, docs/packaging.md).
+  if (!found.has(`${PRODUCT}-${version}-third-party-sources.tar.gz`)) problems.push(`${PRODUCT}-${version}-third-party-sources.tar.gz (LGPL/MPL corresponding sources) is missing`);
 
   const mac = names.filter((n) => /-mac-/.test(n) || n === 'latest-mac.yml');
   if (mac.length) {
