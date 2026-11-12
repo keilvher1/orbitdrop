@@ -91,6 +91,14 @@ export const IPC_CHANNELS = {
   updateCheck: 'orbit:update:check',
   /** Added for automatic updates: restart into the downloaded update (waits for running work). */
   updateRestart: 'orbit:update:restart',
+  // ------------------------------------------- Claude analysis (opt-in, bring your own key)
+  /** AnalysisStatus: enabled, whether a key is saved and its last four characters — never the key. */
+  analysisStatus: 'orbit:analysis:status',
+  /** Encrypt and store an API key (format checked again in main). The reply is an AnalysisStatus. */
+  analysisSaveKey: 'orbit:analysis:save-key',
+  analysisDeleteKey: 'orbit:analysis:delete-key',
+  /** Check the saved key against the API (a free models request made by main). */
+  analysisTestKey: 'orbit:analysis:test-key',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -115,6 +123,8 @@ export const ALLOWED_WEB_PAGES: readonly { readonly origin: string; readonly pat
   { origin: 'https://github.com', path: '/keilvher1/orbitdrop/issues/new', query: true },
   /** About › 업데이트: release notes (RELEASES_URL). */
   { origin: 'https://github.com', path: '/keilvher1/orbitdrop/releases' },
+  /** Settings › Claude 분석: where API keys are created (ANTHROPIC_KEYS_URL). */
+  { origin: 'https://platform.claude.com', path: '/settings/keys' },
 ];
 
 /** URLs the renderer may ask main to open externally. Anything else is refused. https: ALLOWED_WEB_PAGES only. */
@@ -467,6 +477,31 @@ export function canRetryJob(job: Pick<JobSnapshot, 'state' | 'error' | 'earlierR
 /** Errors for which retryJobElsewhere (choose another output folder and run again) can help. */
 export const RETRY_ELSEWHERE_CODES: ReadonlySet<ErrorCode> = new Set<ErrorCode>(['OUTPUT_DIR_NOT_WRITABLE', 'OUTPUT_WRITE_FAILED', 'DISK_FULL', 'PATH_TOO_LONG']);
 
+// ------------------------------------------------- Claude analysis (opt-in, bring your own key)
+
+/**
+ * What the renderer may know about Claude analysis — never the key itself. `available` (enabled
+ * and a key saved) is what puts "Claude 분석" on the wheels.
+ */
+export interface AnalysisStatus {
+  /** settings.analysis.enabled */
+  readonly enabled: boolean;
+  /** An API key is saved (encrypted) on this computer. */
+  readonly hasKey: boolean;
+  /** '…' + the saved key's last four characters (analysisKeyHint), or null without a key. */
+  readonly keyHint: string | null;
+  /** The OS can encrypt the key (Electron safeStorage); without it no key is saved. */
+  readonly encryptionAvailable: boolean;
+  /** enabled && hasKey */
+  readonly available: boolean;
+}
+
+/** testAnalysisKey: the saved key works (a free models request succeeded), or why it does not. */
+export type AnalysisKeyTestResult = { readonly ok: true } | { readonly ok: false; readonly error: OrbitErrorInfo };
+
+/** saveAnalysisKey payload: bounded here; main normalizes it and checks the format (isPlausibleAnalysisKey). */
+export const AnalysisKeyRequestSchema = z.strictObject({ key: z.string().min(1).max(1024) });
+
 /** Exposed on window.orbit by the preload script. */
 export interface OrbitApi {
   readonly platform: Platform;
@@ -567,4 +602,17 @@ export interface OrbitApi {
    * (`restartPending`), with no dialog. Does nothing unless the state is 'downloaded'.
    */
   restartToUpdate(): Promise<UpdateState>;
+  // ------------------------------------------------- Claude analysis (opt-in, bring your own key)
+  /** Enabled, whether a key is saved (and its last four characters), whether the OS can encrypt it. */
+  getAnalysisStatus(): Promise<AnalysisStatus>;
+  /**
+   * Save an API key: main checks its format (ANALYSIS_KEY_INVALID), refuses when the OS cannot
+   * encrypt it (ANALYSIS_KEY_STORAGE_UNAVAILABLE), encrypts it with safeStorage and keeps it in its
+   * own file. Resolves with the new status; the key itself never comes back.
+   */
+  saveAnalysisKey(key: string): Promise<AnalysisStatus>;
+  /** Delete the saved key: the wheels stop offering "Claude 분석". */
+  deleteAnalysisKey(): Promise<AnalysisStatus>;
+  /** Check the saved key against the API (a models request, which is free). */
+  testAnalysisKey(): Promise<AnalysisKeyTestResult>;
 }

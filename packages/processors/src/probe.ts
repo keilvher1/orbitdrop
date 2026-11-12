@@ -366,6 +366,8 @@ async function measure(options: ProbeOptions): Promise<EngineProbe> {
   formats.docx = support(false, docx.ok, 'none', 'docx', docx.ok ? 'output only' : docx.error);
   if (docx.error) errors.push(docx.error);
   formats.txt = support(false, pdf.text, 'none', 'text', pdf.text ? 'output only (PDF text extraction)' : 'PDF text extraction unavailable');
+  // Markdown reports of Claude analysis: plain UTF-8 text, nothing to probe.
+  formats.md = support(false, true, 'none', 'text', 'output only (Claude analysis reports)');
   if (korean.error) errors.push(korean.error);
 
   for (const format of FILE_FORMATS) {

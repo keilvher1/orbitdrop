@@ -283,6 +283,8 @@ async function afterPack(context) {
       'node_modules/electron-updater/package.json', // automatic updates (loaded by main on first use)
       'node_modules/electron-updater/out/main.js',
       'node_modules/docx/dist/index.cjs', // what require('docx') loads (other dist entry points are trimmed)
+      'node_modules/@anthropic-ai/sdk/package.json', // Claude analysis (worker; main's key check on first use)
+      'node_modules/@anthropic-ai/sdk/index.js', // what require('@anthropic-ai/sdk') loads (sources and typings are trimmed)
     ];
     for (const r of required) if (!entries.has(r)) errors.push(`app.asar is missing ${r}`);
     const leaked = [...entries].filter((e) => /^(src|test|e2e)\//.test(e) || /\.map$/.test(e) || /^node_modules\/(electron|electron-builder|typescript|vite|vitest)\//.test(e));

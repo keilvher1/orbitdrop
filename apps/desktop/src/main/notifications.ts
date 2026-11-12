@@ -92,6 +92,7 @@ export const WARNING_TEXT: Partial<Readonly<Record<WarningCode, MainStringKey>>>
   ANNOTATION_FONT_FALLBACK: 'notify.warning.ANNOTATION_FONT_FALLBACK',
   FIRST_FRAME_ONLY: 'notify.warning.FIRST_FRAME_ONLY',
   FIRST_PAGE_ONLY: 'notify.warning.FIRST_PAGE_ONLY',
+  ANALYSIS_TRUNCATED: 'notify.warning.ANALYSIS_TRUNCATED',
 };
 
 export class Notifier {

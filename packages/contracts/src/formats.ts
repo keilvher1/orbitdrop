@@ -7,13 +7,14 @@
 export const IMAGE_FORMATS = ['jpeg', 'png', 'webp', 'gif', 'tiff', 'avif', 'heic', 'bmp'] as const;
 export type ImageFormat = (typeof IMAGE_FORMATS)[number];
 
-export const DOCUMENT_FORMATS = ['pdf', 'docx', 'txt'] as const;
+/** 'md' (added later): the Markdown report of Claude analysis — output only, like DOCX and TXT. */
+export const DOCUMENT_FORMATS = ['pdf', 'docx', 'txt', 'md'] as const;
 export type DocumentFormat = (typeof DOCUMENT_FORMATS)[number];
 
 export type FileFormat = ImageFormat | DocumentFormat;
 export const FILE_FORMATS: readonly FileFormat[] = [...IMAGE_FORMATS, ...DOCUMENT_FORMATS];
 
-/** Kind of input file a wheel menu is built for. DOCX/TXT are output-only. */
+/** Kind of input file a wheel menu is built for. DOCX/TXT/MD are output-only. */
 export type InputKind = 'image' | 'pdf';
 export const INPUT_KINDS: readonly InputKind[] = ['image', 'pdf'];
 
@@ -144,6 +145,17 @@ export const FORMAT_INFO: Readonly<Record<FileFormat, FormatInfo>> = {
     alpha: false,
     lossy: false,
   },
+  // Output only (no input kind, no file signature): a dropped .md file stays unsupported.
+  md: {
+    format: 'md',
+    label: 'MD',
+    extension: '.md',
+    extensions: ['.md'],
+    mime: 'text/markdown',
+    kind: 'document',
+    alpha: false,
+    lossy: false,
+  },
 };
 
 const EXTENSION_TO_FORMAT: ReadonlyMap<string, FileFormat> = new Map(
@@ -160,7 +172,7 @@ export function isImageFormat(format: FileFormat): format is ImageFormat {
   return (IMAGE_FORMATS as readonly string[]).includes(format);
 }
 
-/** Input kind for a format, or undefined for output-only formats (DOCX, TXT). */
+/** Input kind for a format, or undefined for output-only formats (DOCX, TXT, MD). */
 export function inputKindOf(format: FileFormat): InputKind | undefined {
   if (format === 'pdf') return 'pdf';
   return isImageFormat(format) ? 'image' : undefined;

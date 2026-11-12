@@ -11,7 +11,7 @@ import {
   type SettingsPatch,
   type StartupNotice,
 } from '@orbitdrop/contracts';
-import { Accessibility, Gauge, Images, Info, MousePointer2, Settings as SettingsIcon, type LucideIcon } from 'lucide-react';
+import { Accessibility, Gauge, Images, Info, MousePointer2, Settings as SettingsIcon, Sparkles, type LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useEnv } from '../../app/env';
 import { asErrorInfo } from '../../app/errors';
@@ -24,6 +24,7 @@ import { TitleBar } from '../../components/TitleBar';
 import type { Translator } from '../../i18n/catalog';
 import { wheelAlwaysOpaque } from '../../wheel/wheelOpacity';
 import { AboutContent } from './AboutView';
+import { AnalysisPanel } from './AnalysisPanel';
 import { DataActions } from './DataActions';
 import { RestartHelperButton } from './RestartHelperButton';
 import { UpdateAutoCheckField } from './UpdateAutoCheckField';
@@ -42,7 +43,7 @@ import {
 } from './settingsValidation';
 import './settings.css';
 
-type TabId = 'general' | 'output' | 'drag' | 'processing' | 'accessibility' | 'about';
+type TabId = 'general' | 'output' | 'drag' | 'processing' | 'accessibility' | 'analysis' | 'about';
 
 const TABS: readonly { readonly id: TabId; readonly icon: LucideIcon }[] = [
   { id: 'general', icon: SettingsIcon },
@@ -50,6 +51,8 @@ const TABS: readonly { readonly id: TabId; readonly icon: LucideIcon }[] = [
   { id: 'drag', icon: MousePointer2 },
   { id: 'processing', icon: Gauge },
   { id: 'accessibility', icon: Accessibility },
+  // Claude analysis (opt-in): AnalysisPanel.tsx.
+  { id: 'analysis', icon: Sparkles },
   { id: 'about', icon: Info },
 ];
 
@@ -150,6 +153,7 @@ export function SettingsView() {
           {tab === 'drag' ? <DragPanel settings={settings} apply={apply} /> : null}
           {tab === 'processing' ? <ProcessingPanel settings={settings} apply={apply} /> : null}
           {tab === 'accessibility' ? <AccessibilityPanel settings={settings} apply={apply} /> : null}
+          {tab === 'analysis' ? <AnalysisPanel settings={settings} apply={apply} /> : null}
           {tab === 'about' ? <AboutContent /> : null}
         </div>
       </div>

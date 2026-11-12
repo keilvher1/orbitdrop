@@ -1,11 +1,12 @@
 import type { IconId } from '@orbitdrop/contracts';
-import { Crop, EyeOff, Image, Minimize2, PenLine, SlidersHorizontal, Tag, type LucideIcon } from 'lucide-react';
+import { Crop, EyeOff, Image, Minimize2, PenLine, SlidersHorizontal, Sparkles, Tag, type LucideIcon } from 'lucide-react';
 
 /**
  * Abstract IconId (contracts) → Lucide icon (ISC). macOS maps the same ids to
  * SF Symbols and Windows to Segoe Fluent Icons; the shapes were picked to read
  * the same: compress = arrows in, metadata = tag, edit = sliders, annotate =
- * pen, background = picture, crop = crop marks, redact = crossed-out eye.
+ * pen, background = picture, crop = crop marks, redact = crossed-out eye,
+ * analyze (Claude analysis) = sparkles.
  */
 export const ACTION_ICONS: Readonly<Record<IconId, LucideIcon>> = {
   compress: Minimize2,
@@ -15,6 +16,7 @@ export const ACTION_ICONS: Readonly<Record<IconId, LucideIcon>> = {
   background: Image,
   crop: Crop,
   redact: EyeOff,
+  analyze: Sparkles,
 };
 
 export function ActionIcon({ icon, size = 18 }: { readonly icon: IconId; readonly size?: number }) {

@@ -5,13 +5,17 @@ import {
   DEFAULT_SETTINGS,
   FORMAT_INFO,
   TERMINAL_JOB_STATES,
+  analysisKeyHint as analysisKeyHintOf,
   applySettingsPatch,
   defaultSettingsFor,
   formatFromExtension,
   inputKindOf,
+  isPlausibleAnalysisKey,
   menuKeyFor,
   needsEditor,
+  normalizeAnalysisKey,
   type ActionId,
+  type AnalysisStatus,
   type AppInfo,
   type EditorContext,
   type EngineProbe,
@@ -117,6 +121,7 @@ export const MOCK_PROBE: EngineProbe = {
     pdf: { input: true, output: true, inputEngine: 'pdfjs', outputEngine: 'pdf-lib' },
     docx: { input: false, output: true, inputEngine: 'none', outputEngine: 'docx' },
     txt: { input: false, output: true, inputEngine: 'none', outputEngine: 'text' },
+    md: { input: false, output: true, inputEngine: 'none', outputEngine: 'text' },
   },
   pdfRender: true,
   pdfText: true,
@@ -369,6 +374,15 @@ export function createMockOrbit(scenario: MockScenario): OrbitApi {
   let jobs: JobSnapshot[] = scenario.jobs === 'demo' ? demoJobs(Date.now()) : [];
   let counter = 0;
   const nextId = (prefix: string) => `${prefix}${Date.now().toString(36)}${(counter += 1)}`;
+  /** Claude analysis: the saved key's hint only (the harness never keeps a key). */
+  let analysisKeyHint: string | null = null;
+  const analysisStatus = (): AnalysisStatus => ({
+    enabled: settings.analysis.enabled,
+    hasKey: analysisKeyHint !== null,
+    keyHint: analysisKeyHint,
+    encryptionAvailable: true,
+    available: settings.analysis.enabled && analysisKeyHint !== null,
+  });
 
   const initialSelection = selectionFor(scenario.menu);
   selections.set(initialSelection.selectionId, initialSelection);
@@ -592,7 +606,7 @@ export function createMockOrbit(scenario: MockScenario): OrbitApi {
       const selection = selections.get(selectionId);
       if (!selection?.menuKey) throw new Error('UNSUPPORTED_FORMAT: nothing usable');
       const count = selection.files.filter((f) => !f.problem).length;
-      const menu = buildWheelMenu(capabilities, selection.menuKey, mode, settings.locale);
+      const menu = buildWheelMenu(capabilities, selection.menuKey, mode, settings.locale, { analysis: analysisStatus().available });
       return adjustMenuForFileCount(menu, count, settings.locale === 'ko' ? '여러 파일을 함께 처리할 수 없음' : 'Not available for several files');
     },
     async submitAction(request) {
@@ -771,6 +785,28 @@ export function createMockOrbit(scenario: MockScenario): OrbitApi {
       notifyHarness('restartToUpdate()');
       if (updateState.state === 'downloaded') setUpdateState({ ...updateState, restartPending: true });
       return updateState;
+    },
+    // Claude analysis: the harness keeps only the hint (never the key, never sent anywhere).
+    async getAnalysisStatus() {
+      return analysisStatus();
+    },
+    async saveAnalysisKey(key) {
+      await new Promise((resolve) => setTimeout(resolve, scenario.latency));
+      const normalized = normalizeAnalysisKey(key);
+      if (!isPlausibleAnalysisKey(normalized)) throw new Error('ANALYSIS_KEY_INVALID: Not an Anthropic API key');
+      analysisKeyHint = analysisKeyHintOf(normalized);
+      notifyHarness('saveAnalysisKey() — main encrypts it');
+      return analysisStatus();
+    },
+    async deleteAnalysisKey() {
+      analysisKeyHint = null;
+      notifyHarness('deleteAnalysisKey()');
+      return analysisStatus();
+    },
+    async testAnalysisKey() {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      notifyHarness('testAnalysisKey() — main asks the API');
+      return analysisKeyHint === null ? { ok: false, error: { code: 'ANALYSIS_NOT_CONFIGURED', message: 'No API key is saved', retryable: false } } : { ok: true };
     },
   };
   return api;

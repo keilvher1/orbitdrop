@@ -40,11 +40,48 @@ export function usableFiles(selection: FileSelection) {
  */
 const NO_SECTORS: readonly WheelSector[] = [];
 
+/**
+ * Whether Claude analysis is available (enabled in Settings and a key saved): it adds a tools sector,
+ * the only one for PDFs and mixed selections. Main decides; asked only while the setting is on.
+ */
+function useAnalysisAvailable(): boolean {
+  const { orbit, settings } = useEnv();
+  const enabled = settings.analysis.enabled;
+  const [available, setAvailable] = useState(false);
+  useEffect(() => {
+    if (!enabled) {
+      setAvailable(false);
+      return undefined;
+    }
+    let cancelled = false;
+    orbit.getAnalysisStatus().then(
+      (status) => {
+        if (!cancelled) setAvailable(status.available);
+      },
+      () => {
+        if (!cancelled) setAvailable(false);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [orbit, enabled]);
+  return available;
+}
+
 export function SelectionWheel({ selection, initialMode, diameter, onSubmitted, onEscape, autoFocus = true }: SelectionWheelProps) {
   const { orbit, t, platform, settings } = useEnv();
   const key = selection.menuKey;
-  const toolsAvailable = key !== null && baseMenuOrder(key, 'tools').length > 0;
+  const analysis = useAnalysisAvailable();
+  const toolsAvailable = key !== null && baseMenuOrder(key, 'tools', { analysis }).length > 0;
   const [mode, setMode] = useState<WheelMode>(initialMode === 'tools' && !toolsAvailable ? 'convert' : initialMode);
+  // The tools wheel of a PDF exists only while analysis is available: opened on it, it shows up once
+  // that is known (unless the user picked a wheel meanwhile); when analysis goes away, back to convert.
+  const choseMode = useRef(false);
+  useEffect(() => {
+    if (mode === 'tools' && !toolsAvailable) setMode('convert');
+    else if (mode === 'convert' && initialMode === 'tools' && toolsAvailable && !choseMode.current) setMode('tools');
+  }, [mode, initialMode, toolsAvailable]);
   const [menu, setMenu] = useState<WheelMenu | null>(null);
   const [menuError, setMenuError] = useState<OrbitErrorInfo | null>(null);
   const [busy, setBusy] = useState(false);
@@ -164,6 +201,7 @@ export function SelectionWheel({ selection, initialMode, diameter, onSubmitted, 
         size="large"
         value={mode}
         onChange={(next) => {
+          choseMode.current = true;
           setError(null);
           setMode(next);
         }}

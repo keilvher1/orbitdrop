@@ -35,6 +35,19 @@ export const IMAGE_TOOLS_ORDER: readonly ActionId[] = [
 ];
 
 /**
+ * Claude analysis (opt-in, added later): appended to the image tools wheel and the only tools
+ * sector of PDF and mixed selections — but only while it is available (MenuOptions.analysis).
+ * Without it every menu is exactly the order above.
+ */
+export const ANALYSIS_TOOLS_ORDER: readonly ActionId[] = ['tool.analyze'];
+
+/** Menu variants that depend on the user's setup rather than on the engines. */
+export interface MenuOptions {
+  /** Claude analysis is available: enabled in Settings and an API key is saved. Default false. */
+  readonly analysis?: boolean;
+}
+
+/**
  * Which menu a set of dragged files gets.
  *  - 'pdf'           one or more PDFs
  *  - 'image/<fmt>'   one or more images that all share one format
@@ -73,15 +86,15 @@ export function menuKeyFor(formats: readonly (FileFormat | undefined)[]): MenuKe
 }
 
 /** Sector order for a menu before capability filtering. */
-export function baseMenuOrder(key: MenuKey, mode: WheelMode): ActionId[] {
-  if (key === 'pdf') return mode === 'convert' ? [...PDF_CONVERT_ORDER] : [];
+export function baseMenuOrder(key: MenuKey, mode: WheelMode, options: MenuOptions = {}): ActionId[] {
+  const analysis = options.analysis === true ? [...ANALYSIS_TOOLS_ORDER] : [];
+  if (key === 'pdf') return mode === 'convert' ? [...PDF_CONVERT_ORDER] : analysis.filter((id) => ACTIONS[id].inputs.includes('pdf'));
   if (key === 'mixed') {
     // Only actions that accept both PDFs and images, in PDF menu order.
-    return mode === 'convert'
-      ? PDF_CONVERT_ORDER.filter((id) => ACTIONS[id].inputs.includes('image') && ACTIONS[id].inputs.includes('pdf'))
-      : [];
+    const both = (id: ActionId): boolean => ACTIONS[id].inputs.includes('image') && ACTIONS[id].inputs.includes('pdf');
+    return mode === 'convert' ? PDF_CONVERT_ORDER.filter(both) : analysis.filter(both);
   }
-  if (mode === 'tools') return [...IMAGE_TOOLS_ORDER];
+  if (mode === 'tools') return [...IMAGE_TOOLS_ORDER, ...analysis];
   if (key === 'images') return [...IMAGE_CONVERT_ORDER];
   const own = key.slice('image/'.length) as ImageFormat;
   return IMAGE_CONVERT_ORDER.filter((id) => id !== `convert.${own}`);

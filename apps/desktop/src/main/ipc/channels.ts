@@ -39,7 +39,7 @@ import {
 import type { IpcRouter, SafeParser } from './router';
 
 /** Channels without a payload that refuse one (a page sending data where none belongs is not ours). */
-const NO_PAYLOAD: SafeParser<undefined> = {
+export const NO_PAYLOAD: SafeParser<undefined> = {
   safeParse: (value: unknown) => (value === undefined ? { success: true as const, data: undefined } : { success: false as const }),
 };
 

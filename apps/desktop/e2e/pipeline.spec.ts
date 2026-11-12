@@ -65,6 +65,11 @@ const ORBIT_API_KEYS = [
   'openLicense',
   'resetSettings',
   'restartHelper',
+  // Claude analysis (opt-in, bring your own key): statuses only — the key goes in through saveAnalysisKey and never comes back.
+  'getAnalysisStatus',
+  'saveAnalysisKey',
+  'deleteAnalysisKey',
+  'testAnalysisKey',
 ];
 
 test.describe.configure({ mode: 'serial' });

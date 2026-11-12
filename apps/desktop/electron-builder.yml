@@ -78,6 +78,10 @@ files:
   - "!**/node_modules/{pako,jszip}/dist/**"
   - "!**/node_modules/xml-js/{dist,bin,types}/**"
   - "!**/node_modules/{nanoid,semver}/bin/**"
+  # Anthropic SDK (Claude analysis, loaded by the worker and by main's key check): Node loads its
+  # CommonJS build; its TypeScript sources, the `anthropic-ai-sdk` CLI and the typings are not shipped.
+  - "!**/node_modules/@anthropic-ai/sdk/{src,bin}/**"
+  - "!**/node_modules/@anthropic-ai/sdk/**/*.d.ts"
   # Tooling and project documents inside dependencies (licence files are kept).
   - "!**/node_modules/**/{.eslintrc*,.editorconfig,.codeclimate.yml,tsconfig.json,CHANGES.md,CONTRIBUTING.md,GOVERNANCE.md,SECURITY.md,CODE_OF_CONDUCT.md,sponsors.md}"
   - "!**/node_modules/readable-stream/doc/**"

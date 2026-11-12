@@ -174,7 +174,7 @@ Windows 10/11에 포함되어 있어 허용한다. 훅이 PE import 표를 읽�
     장치 entitlement도 없다. 남아 있으면 `package.mjs`가 실패시킨다.
   * `NSAppTransportSecurity`(`NSAllowsArbitraryLoads`, localhost 예외)는 electron-builder가 항상 넣는다(electron-updater용: Squirrel.Mac이
     electron-updater의 127.0.0.1 서버에서 내려받은 업데이트를 가져간다). Apple의 URL 로딩 API에만 적용되고 Chromium 네트워크에는 영향이
-    없다. OrbitDrop의 네트워크 사용은 업데이트 확인뿐이다(§9).
+    없다. OrbitDrop의 네트워크 사용은 업데이트 확인(§9)과, 사용자가 직접 켠 경우의 Claude 분석(§10)뿐이다.
   * Electron 하위 앱(`OrbitDrop Helper*.app`)의 `CFBundleName`은 electron-builder가 "Electron Helper …"로 남긴다(실행 파일 이름과
     표시 이름은 OrbitDrop Helper …). 보이는 곳이 없어 그대로 둔다.
 
@@ -470,7 +470,7 @@ sharp·canvas·docx·pdf.js를 올리면 `licenses.mjs --check`가 "run node scr
 * electron-updater가 쓰는 Electron `net` 요청에는 자체 시간 제한이 없다: 5분 안에 끝나지 않는 확인이나 10분 동안 진행이 없는 내려받기는
   포기하고(오류 상태, 버튼은 다시 쓸 수 있음) 다음 확인은 새 업데이트 객체로 한다.
 
-**네트워크와 개인정보** — 업데이트 확인이 OrbitDrop의 유일한 네트워크 사용이다.
+**네트워크와 개인정보** — 업데이트 확인은 OrbitDrop이 스스로 하는 유일한 네트워크 사용이다(그 밖에는 사용자가 켜고 쓰는 Claude 분석뿐, §10).
 
 * 요청: `https://github.com/keilvher1/orbitdrop/releases.atom`, `…/releases/latest`, 그 릴리스의 `latest-mac.yml` 또는 `latest.yml`,
   새 버전이 있으면 해당 zip/설치 프로그램(GitHub가 자산 서버로 리디렉션; macOS는 두 번째 업데이트부터 이전 zip과의 차이만 받기 위해
@@ -505,3 +505,33 @@ App Translocation에서 실행 중인 앱(번들을 바꿀 수 없다; 응용 �
 **시험**: 개발 실행과 미서명 빌드는 업데이트하지 않으므로, 끝까지 시험하려면 Developer ID 빌드와 pre-release 두 개를 쓴다
 ([RELEASING.md](RELEASING.md) 5단계). 단위 테스트: `apps/desktop/test/main/update-*.test.ts`(상태 기계·지원 판정·개인정보),
 `tests/integration/release-scripts.test.ts`(메타데이터·공증·릴리스 스크립트, 가짜 실행기).
+
+## 10. Claude 분석 (선택 기능 · 네트워크)
+
+사용자가 설정 › Claude 분석에서 직접 켜고 자신의 Anthropic API 키를 저장했을 때만 쓰는 기능이다(기본으로 꺼짐, 백엔드·계정 없음).
+휠의 "Claude 분석"에 이미지나 PDF를 놓으면 작업자가 그 파일을 Anthropic Messages API로 보내고, 답을 원본 옆
+`<이름> Analysis.md`로 저장한다. 코드: `packages/processors/src/analyze/`, `apps/desktop/src/main/analysis/`.
+
+**의존성** — [`@anthropic-ai/sdk`](https://github.com/anthropics/anthropic-sdk-typescript) 1.8.0(Apache-2.0, 정확한 버전 고정)을
+`packages/processors`와 `apps/desktop`의 `dependencies`에 둔다. 번들에 넣지 않고 `app.asar/node_modules`로 들어가며(작업자의 처리기와
+main의 키 확인이 CommonJS 빌드를 `require`), 함께 들어가는 의존성은 `@opentelemetry/api`, `json-schema-to-ts`(+ `@babel/runtime`,
+`ts-algebra`), `standardwebhooks`(+ `@stablelib/base64`, `fast-sha256`)다. SDK의 TypeScript 소스(`src/`), CLI(`bin/`), 타입 정의(`*.d.ts`)는
+`electron-builder.yml`의 `files`에서 뺀다. after-pack 훅은 `node_modules/@anthropic-ai/sdk/package.json`과 `index.js`가 없으면 빌드를
+실패시킨다. 라이선스: `node scripts/licenses.mjs`(THIRD_PARTY_LICENSES.md에 node_modules로 8개 패키지 추가).
+
+**네트워크** — 요청은 `https://api.anthropic.com`으로만 간다. 클라이언트는 기본 URL을 고정하고(`ANTHROPIC_BASE_URL` 무시) 키를 직접
+넘기며(환경 변수·프로필의 다른 자격 증명을 찾지 않음) 로그(`ANTHROPIC_LOG`)와 추적(OpenTelemetry)을 끈다. 작업자는 상속받은 `ANTHROPIC_*`
+변수를 하나도 받지 않는다(`workerEnv`). 보내는 것: 이미지는 방향을 적용한 첫 프레임을 긴 변 1568px 이하로 줄인 사본(JPEG q85, 투명하면
+PNG, 메타데이터 없음), PDF는 파일 그대로(100쪽·30MB 초과는 보내지 않음, 암호 PDF는 `PDF_ENCRYPTED`), 파일 이름, 설정의 추가 요청,
+보고서 언어(앱 언어). 한 번의 스트리밍 요청(`claude-opus-5-5`, `max_tokens` 16000, effort `medium`, 서버 측 거절 대체
+`fallbacks: "default"`), SDK의 자동 재시도 2회. 설정의 "연결 확인"은 main에서 `models.retrieve`(무료)를 부른다. 요금은 키의 계정에 청구된다.
+`ANALYSIS_*` 오류 코드로 실패를 알린다(429·연결/5xx/529는 작업 창에서 다시 시도 가능).
+
+**키 보관** — 설정이 아니다. `<userData>/claude-api-key.json`(모드 0600, 원자적 쓰기)에 Electron `safeStorage`(macOS 키체인의 키,
+Windows DPAPI) 암호문과 마지막 네 글자만 둔다. `isEncryptionAvailable()`이 false면(Linux의 `basic_text` 포함) 저장을 거부한다. 렌더러는
+`{ hasKey, keyHint: '…abcd' }`만 받고, 키는 작업 시도마다 main이 복호화해 작업자의 `run` 메시지에 작업 **옆에**(`credentials`) 실어 보낸다 —
+작업 객체·옵션·작업 기록·history.json·settings.json·로그·진단 정보·렌더러 오류 기록·IPC 응답에는 들어가지 않는다(`test/main/analysis-leak.test.ts`;
+로그·오류 문구의 `sk-ant-…`는 마지막 방어선으로 가린다). 키는 요청하는 동안만 main·작업자 메모리에 있으므로, 그때 프로세스가 비정상 종료하면
+이 컴퓨터에만 남는 메모리 덤프(crashpad)에 들어 있을 수 있다.
+자동화(E2E, electron-verify)는 키체인과 API 대신 스크립트된 대역을 쓴다. 실제 API 확인은 CI에서 돌리지 않는
+`scripts/analysis-live-check.mjs`로 한다.

@@ -191,9 +191,23 @@ export interface CommittedOutput {
   readonly size: number;
 }
 
+/**
+ * Secrets one job attempt needs (added for Claude analysis). They travel next to the job — in the
+ * worker's `run` message and in ProcessorRunContext — never inside ProcessorJob, which main logs by
+ * id, keeps for retries and turns into history. Main reads them again for every attempt (the
+ * automatic retry after a worker crash included); the worker uses them for that attempt only and
+ * never writes them anywhere.
+ */
+export interface ProcessorCredentials {
+  /** Anthropic API key for tool.analyze. */
+  readonly anthropicApiKey?: string;
+}
+
 export interface ProcessorRunContext {
   readonly signal: AbortSignal;
   readonly onProgress: (progress: JobProgress) => void;
+  /** Secrets for this attempt (tool.analyze: the API key). Absent for every other action. */
+  readonly credentials?: ProcessorCredentials;
   /**
    * Called right after each output file is committed (optional, added later).
    * The worker host forwards it to main (`committed` message), which removes
@@ -225,7 +239,8 @@ export interface ProcessorApi {
 // ------------------------------------------------- main ⇄ worker (utilityProcess) messages
 
 export type MainToProcessorMessage =
-  | { readonly type: 'run'; readonly job: ProcessorJob }
+  /** `credentials` (added for Claude analysis): ProcessorCredentials of this attempt, outside the job. */
+  | { readonly type: 'run'; readonly job: ProcessorJob; readonly credentials?: ProcessorCredentials }
   | { readonly type: 'cancel'; readonly jobId: string }
   | { readonly type: 'preview'; readonly request: PreviewRequest }
   | { readonly type: 'cancelPreview'; readonly previewId: string }

@@ -51,6 +51,11 @@ export interface SubmissionDeps {
   readonly chooseOutputDir: (request: { readonly windowId?: number; readonly reason: 'ask' | 'retry' }) => Promise<string | null>;
   /** Show the editor window for a new editor session. */
   readonly openEditor: (session: EditorSession, context: SubmitContext) => void;
+  /**
+   * Claude analysis is available (enabled in Settings and an API key saved; AnalysisService). Without
+   * it tool.analyze is rejected with ANALYSIS_NOT_CONFIGURED. Absent = never available.
+   */
+  readonly analysisAvailable?: () => boolean;
   readonly log?: Logger;
 }
 
@@ -67,6 +72,17 @@ function rejectedFrom(error: unknown): SubmitActionResult {
 }
 
 const EDITOR_CLOSED: SubmitActionResult = { kind: 'rejected', error: { code: 'CANCELLED', message: 'The editor was closed before saving', retryable: false } };
+
+const ANALYSIS_NOT_CONFIGURED: SubmitActionResult = rejected('ANALYSIS_NOT_CONFIGURED', 'Claude analysis is off or no API key is saved');
+
+/**
+ * Options of tool.analyze come from the settings, whatever the request carries: the standing request
+ * (settings.analysis.instruction) and the report language (the UI language). Never the key: that is
+ * read for each attempt and travels next to the job (JobManagerDeps.credentials).
+ */
+function analysisOptions(settings: Settings): unknown {
+  return { instruction: settings.analysis.instruction, language: settings.locale };
+}
 
 function parseOptions(actionId: ActionId, raw: unknown): { ok: true; value: unknown } | { ok: false; message: string } {
   const schema = ACTION_OPTION_SCHEMAS[actionId] as { safeParse(value: unknown): { success: boolean; data?: unknown; error?: { issues: { path: PropertyKey[] }[] } } };
@@ -89,6 +105,10 @@ export class SubmissionService {
     this.log = deps.log ?? silentLogger;
   }
 
+  private analysisAvailable(): boolean {
+    return this.deps.analysisAvailable?.() === true;
+  }
+
   async submit(request: SubmitActionRequest, context: SubmitContext): Promise<SubmitActionResult> {
     try {
       return await this.submitInner(request, context);
@@ -103,6 +123,8 @@ export class SubmissionService {
     if (!record) return rejected('INTERNAL', 'Unknown or expired selection');
 
     const { actionId } = request;
+    // Opt-in: never offered nor run unless enabled with a saved key (a stale picker or drop gets this).
+    if (actionId === 'tool.analyze' && !this.analysisAvailable()) return ANALYSIS_NOT_CONFIGURED;
     const snapshot = await this.deps.capabilities();
     // Core decides: which files run, which are skipped (already in the target format), editor or jobs.
     const plan = resolveSubmission(record.selection, actionId, snapshot, request.fileIds);
@@ -135,7 +157,7 @@ export class SubmissionService {
       return { kind: 'editor', editorId: session.editorId };
     }
 
-    const options = parseOptions(actionId, request.options);
+    const options = parseOptions(actionId, actionId === 'tool.analyze' ? analysisOptions(this.deps.settings()) : request.options);
     if (!options.ok) return rejected('INVALID_OPTIONS', options.message);
 
     const outputDir = await this.outputDir(context);
@@ -222,6 +244,7 @@ export class SubmissionService {
     if (snapshot.state !== 'failed' || !snapshot.error || !RETRY_ELSEWHERE_CODES.has(snapshot.error.code)) {
       return rejected('INVALID_OPTIONS', 'This job cannot be retried in another folder');
     }
+    if (job.spec.actionId === 'tool.analyze' && !this.analysisAvailable()) return ANALYSIS_NOT_CONFIGURED;
     const dir = await this.deps.chooseOutputDir({ ...(context.windowId !== undefined ? { windowId: context.windowId } : {}), reason: 'retry' });
     if (dir === null) return null;
     const spec: JobSpec = { ...job.spec, outputDir: dir };
@@ -254,6 +277,8 @@ export class SubmissionService {
     if (earlier) return { kind: 'jobs', jobIds: [...earlier] };
     const { snapshot, spec } = job;
     if (!canRetryJob(snapshot)) return rejected('INVALID_OPTIONS', 'This job cannot be retried');
+    // Analysis turned off or the key deleted since: the retry would only fail (or send the file anyway).
+    if (spec.actionId === 'tool.analyze' && !this.analysisAvailable()) return ANALYSIS_NOT_CONFIGURED;
     try {
       const capabilities = await this.deps.capabilities();
       const inputs = await this.revalidateInputs(spec.inputs, capabilities, (input) => {

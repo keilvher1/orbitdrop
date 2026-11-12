@@ -3,6 +3,7 @@ import {
   type EngineProbe,
   type FileSelection,
   type Locale,
+  type MenuOptions,
   type WheelMenu,
   type WheelMode,
   OrbitError,
@@ -76,15 +77,18 @@ export class CapabilityService {
     return () => this.listeners.delete(listener);
   }
 
-  /** Picker menu for a selection: capability-filtered sectors, non-batch sectors disabled for several files. */
-  async menuFor(selection: FileSelection, usableCount: number, mode: WheelMode, locale: Locale, multiFileReason: string): Promise<WheelMenu> {
+  /**
+   * Picker menu for a selection: capability-filtered sectors, non-batch sectors disabled for several
+   * files; `options` adds what depends on the user's setup (Claude analysis).
+   */
+  async menuFor(selection: FileSelection, usableCount: number, mode: WheelMode, locale: Locale, multiFileReason: string, options: MenuOptions = {}): Promise<WheelMenu> {
     if (selection.menuKey === null) throw new OrbitError('UNSUPPORTED_FORMAT', 'Nothing in the selection is supported');
     const snapshot = await this.get();
-    return adjustMenuForFileCount(buildWheelMenu(snapshot, selection.menuKey, mode, locale), usableCount, multiFileReason);
+    return adjustMenuForFileCount(buildWheelMenu(snapshot, selection.menuKey, mode, locale, options), usableCount, multiFileReason);
   }
 
-  helperMenus(locale: Locale): ReturnType<typeof buildHelperMenus> | null {
-    return this.snapshot ? buildHelperMenus(this.snapshot, locale) : null;
+  helperMenus(locale: Locale, options: MenuOptions = {}): ReturnType<typeof buildHelperMenus> | null {
+    return this.snapshot ? buildHelperMenus(this.snapshot, locale, options) : null;
   }
 
   helperExtensions(): Record<string, string> | null {

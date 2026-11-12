@@ -4,12 +4,14 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./analysis": "./src/analyze/client.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.8.0",
     "@napi-rs/canvas": "1.0.11",
     "@orbitdrop/contracts": "workspace:*",
     "@orbitdrop/core": "workspace:*",

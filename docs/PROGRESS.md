@@ -442,3 +442,46 @@ licences, golden vectors and versions up to date.
 Not verified: the live macOS panel's window-server shadow behind a translucent disc and a real Finder/Explorer drag
 with the new default (no synthesized input on this Mac; snapshots paint their own shadow outside the disc). The
 Windows renderer was checked by reading the code only (Direct2D brushes with token alpha, per-pixel alpha hit shape).
+
+## Stage 11 — Claude analysis, opt-in with the user's own API key (2026-11-13, branch `feat/claude-analysis`)
+
+New tools action `tool.analyze` ("Claude 분석" / "Analyze with Claude", icon `analyze` = sparkles): drop an
+image or a PDF on it and Claude (claude-opus-5-5) writes a Markdown report `<base> Analysis.md` next to the
+original. Strictly opt-in: off by default, needs the user's own Anthropic API key, no backend; nothing is
+sent until a file is dropped on the sector. Everything else stays local.
+
+- Contracts: `analysis.ts` (model, limits — PDFs ≤ 100 pages and ≤ 30 MiB, images ≤ 1568 px, standing request
+  ≤ 1000 characters — key format check, `ANTHROPIC_KEYS_URL` = platform.claude.com/settings/keys, allowlisted);
+  `md` is an output-only format (no input kind, no signature: a dropped .md stays UNSUPPORTED_FORMAT); settings
+  `analysis: { enabled: false, instruction: '' }` (additive, SETTINGS_VERSION 1); options from the settings only;
+  error codes `ANALYSIS_NOT_CONFIGURED | _KEY_INVALID | _KEY_STORAGE_UNAVAILABLE | _AUTH_FAILED | _RATE_LIMITED`
+  (retryable) `| _INPUT_TOO_LARGE | _UNAVAILABLE` (retryable) `| _REFUSED | _FAILED`; warning `ANALYSIS_TRUNCATED`;
+  stage `analyzing`; `ProcessorCredentials` next to the job in the `run` message and ProcessorRunContext.
+- Menus: `baseMenuOrder/buildWheelMenu/buildHelperMenus(…, { analysis })`. Only while available (enabled and a
+  key saved): last sector of the image tools wheel, the only tools sector of PDFs and mixed selections.
+  Unavailable = byte-identical menus and helper configure (golden unchanged). Main re-configures the helper when
+  `analysis.enabled` changes and when a key is saved or deleted.
+- Key: `<userData>/claude-api-key.json` (0600, atomic) holds Electron safeStorage ciphertext + the last four
+  characters; refused when `isEncryptionAvailable()` is false (also Linux `basic_text`). The renderer only sees
+  `{ hasKey, keyHint: '…abcd' }`. Main decrypts it per job attempt (crash retry included) and hands it to the
+  worker outside the job; never in settings, history, logs (plus a last-line redaction of `sk-ant-…`),
+  diagnostics, IPC replies. Workers get no inherited `ANTHROPIC_*` variable.
+- Processor (`packages/processors/src/analyze/`): `@anthropic-ai/sdk` 1.8.0 (Apache-2.0; app dependency, shipped
+  in node_modules, licences regenerated), `client.beta.messages.stream` with fallbacks "default" and effort
+  medium, `finalMessage()`, stop reason checked first, SDK errors mapped by class. Base URL pinned to
+  api.anthropic.com, SDK logging and tracing off. Images via the sharp helpers (oriented, first frame, ≤ 1568 px,
+  JPEG q85 / PNG with transparency, no metadata); PDFs as they are after a PDF.js page count. Report: heading,
+  metadata line, Claude's Markdown, token footer (+ a truncation note). Prompt as tested live by the lead.
+- Settings › Claude 분석 tab (enable, what is sent / billing / when / key storage, password field with
+  저장·연결 확인·키 삭제…(in-window confirmation), standing request, model). About › 개인정보 gained a line;
+  the update wording is unchanged. Automation (E2E, electron-verify) uses a scripted key store and API.
+- `scripts/analysis-live-check.mjs`: real API, not in CI (`ANTHROPIC_API_KEY=… node scripts/analysis-live-check.mjs`).
+
+Verified locally (macOS 26, arm64, helper built): typecheck clean; vitest 1370 passed / 7 skipped (was 1286 / 7);
+Playwright E2E 46/46 (was 39; +7 analysis); electron-verify 38/38 (was 37; +1); licences and golden `--check`
+clean. No test calls the real API (fake `fetch` / scripted backend). One full E2E run failed offline.spec once
+(an unconnected `UDP *:*` socket on an Electron process during PDF → JPG); not reproduced in 24 isolated runs
+and two more full runs. Open: the native helpers must know `tool.analyze` / icon `analyze` before an
+analysis-enabled configure reaches them (parallel branch); the live check with the owner's key; Node's fetch
+in main/worker does not use the system proxy; a PDF near 30 MiB grows past the API's 32 MB request limit when
+base64-encoded (the API's 413 maps to ANALYSIS_INPUT_TOO_LARGE, but only after the upload).

@@ -473,8 +473,9 @@ async function main() {
           return [cards > 0 && cards === Math.min(listed, 200), `${cards} cards / ${listed} jobs`];
         },
         settings: async () => {
+          // 일반, 변환·저장, 드래그, 처리, 접근성, Claude 분석, 정보
           const tabs = await page.getByRole('tab').count();
-          return [tabs === 6, `${tabs} tabs`];
+          return [tabs === 7, `${tabs} tabs`];
         },
         dropzone: async () => [(await page.getByText('파일을 여기에 놓으세요').count()) > 0, 'prompt'],
         about: async () => {
@@ -584,6 +585,15 @@ async function main() {
         check('settings: high contrast in dark mode uses the dark high-contrast set', theme[0] === 'highContrastDark' && theme[1] === 'rgb(0, 0, 0)' && theme[2] === 'rgb(255, 255, 255)', theme.join(' '));
         await page.getByRole('radiogroup', { name: '고대비' }).getByRole('radio', { name: '시스템 설정 따름' }).click();
         await page.emulateMedia({ colorScheme: null });
+        // Claude analysis (opt-in): off, explains what is sent, no key — main's key store is the E2E stand-in here
+        // (no Keychain, no network). Nothing is saved or checked.
+        await page.getByRole('tab', { name: 'Claude 분석' }).click();
+        const analysisOff = !(await page.getByRole('checkbox', { name: 'Claude 분석 사용' }).isChecked());
+        const noKey = await page.getByText('키 없음').waitFor({ timeout: 5000 }).then(() => true, () => false);
+        const notice = (await page.getByRole('region', { name: '보내는 내용과 비용' }).getByRole('listitem').count()) === 4;
+        const keyField = (await page.getByLabel('Anthropic API 키').getAttribute('type')) === 'password';
+        await shot(page, 'settings-analysis');
+        check('settings: Claude analysis tab — off, privacy/cost notice, password key field, no key', analysisOff && noKey && notice && keyField, `off=${analysisOff} noKey=${noKey} notice=${notice} password=${keyField}`);
       }
       await page.evaluate(() => window.orbit.closeWindow());
     }

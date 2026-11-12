@@ -71,6 +71,7 @@ type Hooks = {
   failNextJobs(codes: ErrorCode[]): Promise<void>;
   holdNextJob(): Promise<void>;
   releaseHeldJobs(): Promise<number>;
+  scriptAnalysis(script: { encryption?: boolean; verify?: 'ok' | ErrorCode }): Promise<{ verifyCalls: number }>;
 };
 
 export function hooks(app: ElectronApplication) {
@@ -99,6 +100,11 @@ export function hooks(app: ElectronApplication) {
     /** The next job attempt stays 'running' until releaseHeldJobs() or a cancel. */
     holdNextJob: () => call<void>('holdNextJob'),
     releaseHeldJobs: () => call<number>('releaseHeldJobs'),
+    /**
+     * Claude analysis in automation: main uses a scripted stand-in for the OS key store and the API (never the
+     * Keychain / DPAPI, never the network). Sets whether encryption "works" and what "연결 확인" answers.
+     */
+    scriptAnalysis: (script: { encryption?: boolean; verify?: 'ok' | ErrorCode }) => call<{ verifyCalls: number }>('scriptAnalysis', script),
   };
 }
 

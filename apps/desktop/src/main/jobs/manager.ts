@@ -7,6 +7,7 @@ import {
   type JobSnapshot,
   type JobWarning,
   type OutputFileInfo,
+  type ProcessorCredentials,
   type ProcessorInput,
   type ProcessorJob,
   type ProcessorResult,
@@ -55,12 +56,25 @@ export interface JobRecordView {
 
 export type PoolRunner = (
   job: ProcessorJob,
-  ctx: { readonly signal: AbortSignal; readonly onProgress: (progress: JobProgress) => void; readonly timeoutMs?: number },
+  ctx: {
+    readonly signal: AbortSignal;
+    readonly onProgress: (progress: JobProgress) => void;
+    readonly timeoutMs?: number;
+    /** Secrets of this attempt (JobManagerDeps.credentials), next to the job — never inside it. */
+    readonly credentials?: ProcessorCredentials;
+  },
 ) => Promise<ProcessorResult>;
 
 export interface JobManagerDeps {
   readonly run: PoolRunner;
   readonly settings: () => Settings;
+  /**
+   * Secrets one attempt of a job needs (Claude analysis: the API key), read again for every attempt —
+   * the automatic retry after a worker crash included — and handed to `run` next to the job. They are
+   * never part of the job, its spec, its snapshot or history. A rejection fails that attempt (e.g.
+   * ANALYSIS_NOT_CONFIGURED when the key was deleted after the job was queued).
+   */
+  readonly credentials?: (actionId: ActionId) => Promise<ProcessorCredentials | undefined>;
   readonly outputs: OutputRegistry;
   readonly history: HistoryStore;
   readonly onChanged?: (jobs: readonly JobSnapshot[]) => void;
@@ -320,7 +334,12 @@ export class JobManager {
       }, timeoutMs * 2 + 60_000);
     });
     try {
-      return await Promise.race([this.deps.run(job, { signal: controller.signal, onProgress: ctx.onProgress, timeoutMs }), safetyNet]);
+      const attempt = async (): Promise<ProcessorResult> => {
+        const credentials = await this.deps.credentials?.(job.actionId);
+        if (controller.signal.aborted) throw controller.signal.reason instanceof Error ? controller.signal.reason : new OrbitError('CANCELLED', 'Cancelled');
+        return this.deps.run(job, { signal: controller.signal, onProgress: ctx.onProgress, timeoutMs, ...(credentials ? { credentials } : {}) });
+      };
+      return await Promise.race([attempt(), safetyNet]);
     } finally {
       clearTimeout(timer);
       ctx.signal.removeEventListener('abort', forward);

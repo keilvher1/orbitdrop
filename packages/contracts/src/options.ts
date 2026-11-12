@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import type { ActionId } from './actions';
+import { ANALYSIS_LIMITS } from './analysis';
 import { CompositionSpecSchema } from './composition';
-import { HexColor, Id, PixelRect, Quality } from './schemas';
+import { HexColor, Id, LocaleSchema, PixelRect, Quality } from './schemas';
 
 /**
  * Option schemas per action. Main validates every request from the renderer
@@ -149,6 +150,17 @@ export const RedactOptionsSchema = z.strictObject({
 });
 export type RedactOptions = z.infer<typeof RedactOptionsSchema>;
 
+/**
+ * tool.analyze (Claude analysis). Main fills both fields from the settings when it submits the job
+ * (whatever a request carries is replaced): instruction = settings.analysis.instruction, language =
+ * the UI language, which is also the language of the report.
+ */
+export const AnalyzeOptionsSchema = z.strictObject({
+  instruction: z.string().max(ANALYSIS_LIMITS.maxInstructionLength).default(''),
+  language: LocaleSchema.default('ko'),
+});
+export type AnalyzeOptions = z.infer<typeof AnalyzeOptionsSchema>;
+
 export const ACTION_OPTION_SCHEMAS = {
   'convert.jpeg': ConvertOptionsSchema,
   'convert.png': ConvertOptionsSchema,
@@ -167,6 +179,7 @@ export const ACTION_OPTION_SCHEMAS = {
   'tool.addBackground': AddBackgroundOptionsSchema,
   'tool.crop': CropOptionsSchema,
   'tool.redact': RedactOptionsSchema,
+  'tool.analyze': AnalyzeOptionsSchema,
 } as const satisfies Record<ActionId, z.ZodType>;
 
 export type ActionOptions<A extends ActionId> = z.infer<(typeof ACTION_OPTION_SCHEMAS)[A]>;

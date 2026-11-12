@@ -11,6 +11,7 @@ import {
   dialog,
   ipcMain,
   nativeTheme,
+  safeStorage,
   screen,
   session,
   shell,
@@ -41,6 +42,9 @@ import {
   type WindowKind,
   colorTokens,
 } from '@orbitdrop/contracts';
+import { AnalysisKeyStore } from './analysis/key-store';
+import { AnalysisService } from './analysis/service';
+import { ScriptedAnalysisBackend } from './analysis/test-backend';
 import { appMenuTemplate } from './app-menu';
 import { CapabilityService } from './capabilities/service';
 import { EditorSessions } from './editor/sessions';
@@ -52,6 +56,7 @@ import { HELPER_REASON_DISABLED_FOR_RUN, localizeHelperStatus } from './helper/s
 import { HelperManager, type HelperChild } from './helper/manager';
 import { HistoryStore } from './history/store';
 import { bindTranslate, type Translate } from './i18n';
+import { registerAnalysisIpc, type AnalysisIpcServices } from './ipc/analysis';
 import { registerOrbitIpc, type OrbitIpcServices } from './ipc/channels';
 import { IpcRouter, type IpcMainLike } from './ipc/router';
 import { registerSupportIpc, type SupportIpcServices } from './ipc/support';
@@ -141,6 +146,11 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
   readonly editors: EditorSessions;
   readonly submission: SubmissionService;
   readonly helper: HelperManager | null;
+  /** Claude analysis (opt-in): the encrypted API key and whether the wheels offer it. */
+  readonly analysisKeys: AnalysisKeyStore;
+  readonly analysis: AnalysisService;
+  /** E2E only: stands in for safeStorage and the API (analysis/test-backend.ts); null otherwise. */
+  readonly analysisTestBackend: ScriptedAnalysisBackend | null;
   readonly t: Translate;
   windows: WindowManager | null = null;
   tray: TrayController | null = null;
@@ -199,6 +209,22 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
     });
     this.history = new HistoryStore(paths.userData, createLogger('history'));
     this.t = bindTranslate(() => this.settings.get().locale);
+    // Claude analysis: the key is encrypted with the OS key store (safeStorage). Automation never touches
+    // the Keychain / DPAPI or the API: E2E runs get a scripted stand-in for both.
+    this.analysisTestBackend = options.e2e ? new ScriptedAnalysisBackend() : null;
+    const analysisLog = createLogger('analysis');
+    this.analysisKeys = new AnalysisKeyStore(paths.userData, this.analysisTestBackend ?? safeStorage, analysisLog);
+    const testBackend = this.analysisTestBackend;
+    this.analysis = new AnalysisService({
+      keys: this.analysisKeys,
+      settings: () => this.settings.get(),
+      verify: testBackend
+        ? (apiKey, signal) => testBackend.verify(apiKey, signal)
+        : // Loaded on first use: the SDK is not needed to start the app.
+          async (apiKey, signal) => (await import('@orbitdrop/processors/analysis')).verifyAnalysisKey(apiKey, { signal }),
+      onKeyChanged: () => this.helper?.reconfigure(),
+      log: analysisLog,
+    });
 
     const imageioHelper = process.platform === 'darwin' ? () => this.helperLocation?.path : () => undefined;
     this.pool = new ProcessorPool({
@@ -233,6 +259,8 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
     this.jobs = new JobManager({
       run: (job, ctx) => this.runJob(job, ctx),
       settings: () => this.settings.get(),
+      // Read for every attempt and sent next to the job (never in it): the API key for tool.analyze.
+      credentials: (actionId) => this.analysis.credentialsFor(actionId),
       outputs: this.outputs,
       history: this.history,
       onChanged: (jobs) => {
@@ -254,6 +282,7 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
       editors: this.editors,
       chooseOutputDir: (request) => this.chooseOutputDir(request.windowId, request.reason),
       openEditor: (editorSession, context) => this.openEditorWindow(editorSession.editorId, context),
+      analysisAvailable: () => this.analysis.available(),
       log: createLogger('submit'),
     });
     this.helper = options.disableHelper
@@ -356,6 +385,8 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
   async startCore(): Promise<void> {
     const settings = await this.settings.load();
     await this.history.load();
+    // Whether a Claude API key is saved (its file only; nothing is decrypted until a job or a check needs it).
+    await this.analysisKeys.load();
     // An unusable settings/history file was kept aside and replaced by defaults: the user is told (startUi).
     if (this.settings.loadIssue) this.startupNotices.push({ code: 'settingsReset', backup: this.settings.loadIssue.backup });
     if (this.history.loadIssue) this.startupNotices.push({ code: 'historyReset', backup: this.history.loadIssue.backup });
@@ -415,6 +446,7 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
     this.router = new IpcRouter<WindowRecord>(ipcMain as unknown as IpcMainLike, { lookup: (sender) => windows.recordFor(sender as never), isTrustedUrl: (url) => windows.isTrustedUrl(url) }, createLogger('ipc'));
     registerOrbitIpc(this.router, this.ipcServices());
     registerSupportIpc(this.router, this.supportIpcServices());
+    registerAnalysisIpc(this.router, this.analysisIpcServices());
     return windows;
   }
 
@@ -665,7 +697,7 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
         const selection = this.files.getSelection(selectionId);
         if (!selection) throw new OrbitError('INTERNAL', 'Unknown or expired selection');
         const usable = this.files.usableFiles(selectionId).length;
-        return this.capabilities.menuFor(selection, usable, mode, this.settings.get().locale, this.t('menu.multiFileUnsupported'));
+        return this.capabilities.menuFor(selection, usable, mode, this.settings.get().locale, this.t('menu.multiFileUnsupported'), { analysis: this.analysis.available() });
       },
       submit: (request, record) => {
         const source = this.files.getSelection(request.selectionId)?.source ?? 'openDialog';
@@ -709,6 +741,16 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
       updateState: () => this.updates.state(),
       checkForUpdates: () => this.updates.checkNow(),
       restartToUpdate: () => this.updates.requestRestart(),
+    };
+  }
+
+  /** Claude analysis (ipc/analysis.ts): status, key save / delete / check — the key never goes back. */
+  private analysisIpcServices(): AnalysisIpcServices {
+    return {
+      status: () => this.analysis.status(),
+      saveKey: (key) => this.analysis.saveKey(key),
+      deleteKey: () => this.analysis.deleteKey(),
+      testKey: () => this.analysis.testKey(),
     };
   }
 
@@ -943,6 +985,7 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
     return buildConfigureMessage({
       settings,
       snapshot,
+      analysis: this.analysis.available(),
       theme: resolveTheme(highContrast, nativeTheme.shouldUseDarkColors),
       reduceMotion,
       highContrast,
@@ -986,7 +1029,9 @@ export class OrbitApp implements LifecycleTarget, PowerTarget {
     if (
       next.locale !== previous.locale ||
       JSON.stringify(next.globalDrag) !== JSON.stringify(previous.globalDrag) ||
-      JSON.stringify(next.accessibility) !== JSON.stringify(previous.accessibility)
+      JSON.stringify(next.accessibility) !== JSON.stringify(previous.accessibility) ||
+      // Claude analysis turned on or off: its sector joins or leaves the wheels (a key change reconfigures too).
+      next.analysis.enabled !== previous.analysis.enabled
     ) {
       this.helper?.reconfigure();
     }

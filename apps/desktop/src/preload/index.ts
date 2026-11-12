@@ -98,6 +98,11 @@ const api: OrbitApi = {
   onUpdateStateChanged: (listener) => subscribe(IPC_CHANNELS.updateStateChanged, listener),
   checkForUpdates: () => invoke(IPC_CHANNELS.updateCheck),
   restartToUpdate: () => invoke(IPC_CHANNELS.updateRestart),
+  // Claude analysis: the key goes to main once (save) and never comes back — replies are statuses.
+  getAnalysisStatus: () => invoke(IPC_CHANNELS.analysisStatus),
+  saveAnalysisKey: (key) => invoke(IPC_CHANNELS.analysisSaveKey, { key: typeof key === 'string' ? key : '' }),
+  deleteAnalysisKey: () => invoke(IPC_CHANNELS.analysisDeleteKey),
+  testAnalysisKey: () => invoke(IPC_CHANNELS.analysisTestKey),
 };
 
 contextBridge.exposeInMainWorld('orbit', api);

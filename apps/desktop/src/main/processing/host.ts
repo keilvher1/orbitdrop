@@ -112,7 +112,8 @@ function shutdownAndExit(): void {
 async function handle(message: MainToProcessorMessage): Promise<void> {
   switch (message.type) {
     case 'run': {
-      const { job } = message;
+      // `credentials` (Claude analysis: the API key) come next to the job and go to this attempt only.
+      const { job, credentials } = message;
       if (jobs.has(job.jobId)) return;
       const controller = new AbortController();
       jobs.set(job.jobId, controller);
@@ -126,6 +127,7 @@ async function handle(message: MainToProcessorMessage): Promise<void> {
           onCommitted: (output) => send({ type: 'committed', jobId: job.jobId, output }),
           // Exact temp paths, so main's crash cleanup never has to list the folder (macOS folder-access prompt).
           onTempFile: (path) => send({ type: 'tempFile', jobId: job.jobId, path }),
+          ...(credentials ? { credentials } : {}),
         });
         progress.flush();
         // Resolved means the outputs were committed: report them even if a cancel arrived meanwhile.

@@ -37,10 +37,14 @@ https://github.com/keilvher1/orbitdrop/issues.
 | Package | Version | Licence | Shipped as | Source |
 |---|---|---|---|---|
 | electron | 44.9.0 | MIT | runtime | https://github.com/electron/electron |
+| @anthropic-ai/sdk | 1.8.0 | Apache-2.0 | node_modules | https://github.com/anthropics/anthropic-sdk-typescript |
+| @babel/runtime | 7.29.10 | MIT | node_modules | https://github.com/babel/babel (packages/babel-runtime) |
 | @img/colour | 1.1.0 | MIT | node_modules | https://github.com/lovell/colour |
 | @napi-rs/canvas | 1.0.11 | MIT | node_modules | https://github.com/Brooooooklyn/canvas |
+| @opentelemetry/api | 1.10.0 | Apache-2.0 | node_modules | https://github.com/open-telemetry/opentelemetry-js |
 | @pdf-lib/standard-fonts | 1.0.0 | MIT | node_modules | https://github.com/Hopding/standard-fonts |
 | @pdf-lib/upng | 1.0.1 | MIT | node_modules | https://github.com/Hopding/upng |
+| @stablelib/base64 | 1.0.1 | MIT | node_modules | https://github.com/StableLib/stablelib |
 | argparse | 2.0.1 | Python-2.0 | node_modules | https://github.com/nodeca/argparse |
 | builder-util-runtime | 9.7.1 | MIT | node_modules | https://github.com/electron-userland/electron-builder (packages/builder-util-runtime) |
 | core-util-is | 1.0.3 | MIT | node_modules | https://github.com/isaacs/core-util-is |
@@ -49,6 +53,7 @@ https://github.com/keilvher1/orbitdrop/issues.
 | docx | 9.12.0 | MIT | node_modules | https://github.com/dolanmiu/docx |
 | electron-updater | 6.8.12 | MIT | node_modules | https://github.com/electron-userland/electron-builder (packages/electron-updater) |
 | exif-reader | 2.0.3 | MIT | node_modules | https://github.com/devongovett/exif-reader |
+| fast-sha256 | 1.3.0 | Unlicense | node_modules | https://github.com/dchest/fast-sha256-js |
 | fs-extra | 10.1.0 | MIT | node_modules | https://github.com/jprichardson/node-fs-extra |
 | graceful-fs | 4.2.11 | ISC | node_modules | https://github.com/isaacs/node-graceful-fs |
 | hash.js | 1.1.7 | MIT | node_modules | https://github.com/indutny/hash.js |
@@ -56,6 +61,7 @@ https://github.com/keilvher1/orbitdrop/issues.
 | inherits | 2.0.4 | ISC | node_modules | https://github.com/isaacs/inherits |
 | isarray | 1.0.0 | MIT | node_modules | https://github.com/juliangruber/isarray |
 | js-yaml | 4.3.2 | MIT | node_modules | https://github.com/nodeca/js-yaml |
+| json-schema-to-ts | 3.1.1 | MIT | node_modules | https://github.com/ThomasAribart/json-schema-to-ts |
 | jsonfile | 6.2.1 | MIT | node_modules | https://github.com/jprichardson/node-jsonfile |
 | jszip | 3.10.2 | (MIT OR GPL-3.0-or-later) | node_modules | https://github.com/Stuk/jszip |
 | lazy-val | 1.0.5 | MIT | node_modules | https://github.com/develar/lazy-val |
@@ -80,8 +86,10 @@ https://github.com/keilvher1/orbitdrop/issues.
 | semver | 7.8.5 | ISC | node_modules | https://github.com/npm/node-semver |
 | setimmediate | 1.0.5 | MIT | node_modules | https://github.com/YuzuJS/setImmediate |
 | sharp | 0.35.5 | Apache-2.0 | node_modules | https://github.com/lovell/sharp |
+| standardwebhooks | 1.1.1 | MIT | node_modules | https://github.com/standard-webhooks/standard-webhooks |
 | string_decoder | 1.1.1 | MIT | node_modules | https://github.com/nodejs/string_decoder |
 | tiny-typed-emitter | 2.1.0 | MIT | node_modules | https://github.com/binier/tiny-typed-emitter |
+| ts-algebra | 2.0.0 | MIT | node_modules | https://github.com/ThomasAribart/ts-algebra |
 | tslib | 1.14.1 | 0BSD | node_modules | https://github.com/Microsoft/tslib |
 | universalify | 2.0.1 | MIT | node_modules | https://github.com/RyanZim/universalify |
 | util-deprecate | 1.0.2 | MIT | node_modules | https://github.com/TooTallNate/util-deprecate |
@@ -492,6 +500,263 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 </details>
 
+<details><summary>@anthropic-ai/sdk 1.8.0 — Apache-2.0</summary>
+
+`LICENSE`
+
+```text
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+   1. Definitions.
+
+      "License" shall mean the terms and conditions for use, reproduction,
+      and distribution as defined by Sections 1 through 9 of this document.
+
+      "Licensor" shall mean the copyright owner or entity authorized by
+      the copyright owner that is granting the License.
+
+      "Legal Entity" shall mean the union of the acting entity and all
+      other entities that control, are controlled by, or are under common
+      control with that entity. For the purposes of this definition,
+      "control" means (i) the power, direct or indirect, to cause the
+      direction or management of such entity, whether by contract or
+      otherwise, or (ii) ownership of fifty percent (50%) or more of the
+      outstanding shares, or (iii) beneficial ownership of such entity.
+
+      "You" (or "Your") shall mean an individual or Legal Entity
+      exercising permissions granted by this License.
+
+      "Source" form shall mean the preferred form for making modifications,
+      including but not limited to software source code, documentation
+      source, and configuration files.
+
+      "Object" form shall mean any form resulting from mechanical
+      transformation or translation of a Source form, including but
+      not limited to compiled object code, generated documentation,
+      and conversions to other media types.
+
+      "Work" shall mean the work of authorship, whether in Source or
+      Object form, made available under the License, as indicated by a
+      copyright notice that is included in or attached to the work
+      (an example is provided in the Appendix below).
+
+      "Derivative Works" shall mean any work, whether in Source or Object
+      form, that is based on (or derived from) the Work and for which the
+      editorial revisions, annotations, elaborations, or other modifications
+      represent, as a whole, an original work of authorship. For the purposes
+      of this License, Derivative Works shall not include works that remain
+      separable from, or merely link (or bind by name) to the interfaces of,
+      the Work and Derivative Works thereof.
+
+      "Contribution" shall mean any work of authorship, including
+      the original version of the Work and any modifications or additions
+      to that Work or Derivative Works thereof, that is intentionally
+      submitted to Licensor for inclusion in the Work by the copyright owner
+      or by an individual or Legal Entity authorized to submit on behalf of
+      the copyright owner. For the purposes of this definition, "submitted"
+      means any form of electronic, verbal, or written communication sent
+      to the Licensor or its representatives, including but not limited to
+      communication on electronic mailing lists, source code control systems,
+      and issue tracking systems that are managed by, or on behalf of, the
+      Licensor for the purpose of discussing and improving the Work, but
+      excluding communication that is conspicuously marked or otherwise
+      designated in writing by the copyright owner as "Not a Contribution."
+
+      "Contributor" shall mean Licensor and any individual or Legal Entity
+      on behalf of whom a Contribution has been received by Licensor and
+      subsequently incorporated within the Work.
+
+   2. Grant of Copyright License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      copyright license to reproduce, prepare Derivative Works of,
+      publicly display, publicly perform, sublicense, and distribute the
+      Work and such Derivative Works in Source or Object form.
+
+   3. Grant of Patent License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      (except as stated in this section) patent license to make, have made,
+      use, offer to sell, sell, import, and otherwise transfer the Work,
+      where such license applies only to those patent claims licensable
+      by such Contributor that are necessarily infringed by their
+      Contribution(s) alone or by combination of their Contribution(s)
+      with the Work to which such Contribution(s) was submitted. If You
+      institute patent litigation against any entity (including a
+      cross-claim or counterclaim in a lawsuit) alleging that the Work
+      or a Contribution incorporated within the Work constitutes direct
+      or contributory patent infringement, then any patent licenses
+      granted to You under this License for that Work shall terminate
+      as of the date such litigation is filed.
+
+   4. Redistribution. You may reproduce and distribute copies of the
+      Work or Derivative Works thereof in any medium, with or without
+      modifications, and in Source or Object form, provided that You
+      meet the following conditions:
+
+      (a) You must give any other recipients of the Work or
+          Derivative Works a copy of this License; and
+
+      (b) You must cause any modified files to carry prominent notices
+          stating that You changed the files; and
+
+      (c) You must retain, in the Source form of any Derivative Works
+          that You distribute, all copyright, patent, trademark, and
+          attribution notices from the Source form of the Work,
+          excluding those notices that do not pertain to any part of
+          the Derivative Works; and
+
+      (d) If the Work includes a "NOTICE" text file as part of its
+          distribution, then any Derivative Works that You distribute must
+          include a readable copy of the attribution notices contained
+          within such NOTICE file, excluding those notices that do not
+          pertain to any part of the Derivative Works, in at least one
+          of the following places: within a NOTICE text file distributed
+          as part of the Derivative Works; within the Source form or
+          documentation, if provided along with the Derivative Works; or,
+          within a display generated by the Derivative Works, if and
+          wherever such third-party notices normally appear. The contents
+          of the NOTICE file are for informational purposes only and
+          do not modify the License. You may add Your own attribution
+          notices within Derivative Works that You distribute, alongside
+          or as an addendum to the NOTICE text from the Work, provided
+          that such additional attribution notices cannot be construed
+          as modifying the License.
+
+      You may add Your own copyright statement to Your modifications and
+      may provide additional or different license terms and conditions
+      for use, reproduction, or distribution of Your modifications, or
+      for any such Derivative Works as a whole, provided Your use,
+      reproduction, and distribution of the Work otherwise complies with
+      the conditions stated in this License.
+
+   5. Submission of Contributions. Unless You explicitly state otherwise,
+      any Contribution intentionally submitted for inclusion in the Work
+      by You to the Licensor shall be under the terms and conditions of
+      this License, without any additional terms or conditions.
+      Notwithstanding the above, nothing herein shall supersede or modify
+      the terms of any separate license agreement you may have executed
+      with Licensor regarding such Contributions.
+
+   6. Trademarks. This License does not grant permission to use the trade
+      names, trademarks, service marks, or product names of the Licensor,
+      except as required for reasonable and customary use in describing the
+      origin of the Work and reproducing the content of the NOTICE file.
+
+   7. Disclaimer of Warranty. Unless required by applicable law or
+      agreed to in writing, Licensor provides the Work (and each
+      Contributor provides its Contributions) on an "AS IS" BASIS,
+      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+      implied, including, without limitation, any warranties or conditions
+      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+      PARTICULAR PURPOSE. You are solely responsible for determining the
+      appropriateness of using or redistributing the Work and assume any
+      risks associated with Your exercise of permissions under this License.
+
+   8. Limitation of Liability. In no event and under no legal theory,
+      whether in tort (including negligence), contract, or otherwise,
+      unless required by applicable law (such as deliberate and grossly
+      negligent acts) or agreed to in writing, shall any Contributor be
+      liable to You for damages, including any direct, indirect, special,
+      incidental, or consequential damages of any character arising as a
+      result of this License or out of the use or inability to use the
+      Work (including but not limited to damages for loss of goodwill,
+      work stoppage, computer failure or malfunction, or any and all
+      other commercial damages or losses), even if such Contributor
+      has been advised of the possibility of such damages.
+
+   9. Accepting Warranty or Additional Liability. While redistributing
+      the Work or Derivative Works thereof, You may choose to offer,
+      and charge a fee for, acceptance of support, warranty, indemnity,
+      or other liability obligations and/or rights consistent with this
+      License. However, in accepting such obligations, You may act only
+      on Your own behalf and on Your sole responsibility, not on behalf
+      of any other Contributor, and only if You agree to indemnify,
+      defend, and hold each Contributor harmless for any liability
+      incurred by, or claims asserted against, such Contributor by reason
+      of your accepting any such warranty or additional liability.
+
+   END OF TERMS AND CONDITIONS
+
+   APPENDIX: How to apply the Apache License to your work.
+
+      To apply the Apache License to your work, attach the following
+      boilerplate notice, with the fields enclosed by brackets "[]"
+      replaced with your own identifying information. (Don't include
+      the brackets!)  The text should be enclosed in the appropriate
+      comment syntax for the file format. We also recommend that a
+      file or class name and description of purpose be included on the
+      same "printed page" as the copyright notice for easier
+      identification within third-party archives.
+
+   Copyright 2023 Anthropic, PBC.
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+```
+
+`LICENSE-MIT`
+
+```text
+This repository changed its license from the MIT License to the Apache License, Version 2.0 (see LICENSE) in version 1.0.0 of the @anthropic-ai/sdk package. The MIT License below still applies to every version published under it, and to third-party contributions merged into this repository before the change.
+
+--------------------------------------------------------------------------------
+
+Copyright 2023 Anthropic, PBC.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+</details>
+
+<details><summary>@babel/runtime 7.29.10 — MIT</summary>
+
+`LICENSE`
+
+```text
+MIT License
+
+Copyright (c) 2014-present Sebastian McKenzie and other contributors
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+</details>
+
 <details><summary>@img/colour 1.1.0 — MIT</summary>
 
 `LICENSE.md`
@@ -613,6 +878,216 @@ SOFTWARE.
 
 </details>
 
+<details><summary>@opentelemetry/api 1.10.0 — Apache-2.0</summary>
+
+`LICENSE`
+
+```text
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+   1. Definitions.
+
+      "License" shall mean the terms and conditions for use, reproduction,
+      and distribution as defined by Sections 1 through 9 of this document.
+
+      "Licensor" shall mean the copyright owner or entity authorized by
+      the copyright owner that is granting the License.
+
+      "Legal Entity" shall mean the union of the acting entity and all
+      other entities that control, are controlled by, or are under common
+      control with that entity. For the purposes of this definition,
+      "control" means (i) the power, direct or indirect, to cause the
+      direction or management of such entity, whether by contract or
+      otherwise, or (ii) ownership of fifty percent (50%) or more of the
+      outstanding shares, or (iii) beneficial ownership of such entity.
+
+      "You" (or "Your") shall mean an individual or Legal Entity
+      exercising permissions granted by this License.
+
+      "Source" form shall mean the preferred form for making modifications,
+      including but not limited to software source code, documentation
+      source, and configuration files.
+
+      "Object" form shall mean any form resulting from mechanical
+      transformation or translation of a Source form, including but
+      not limited to compiled object code, generated documentation,
+      and conversions to other media types.
+
+      "Work" shall mean the work of authorship, whether in Source or
+      Object form, made available under the License, as indicated by a
+      copyright notice that is included in or attached to the work
+      (an example is provided in the Appendix below).
+
+      "Derivative Works" shall mean any work, whether in Source or Object
+      form, that is based on (or derived from) the Work and for which the
+      editorial revisions, annotations, elaborations, or other modifications
+      represent, as a whole, an original work of authorship. For the purposes
+      of this License, Derivative Works shall not include works that remain
+      separable from, or merely link (or bind by name) to the interfaces of,
+      the Work and Derivative Works thereof.
+
+      "Contribution" shall mean any work of authorship, including
+      the original version of the Work and any modifications or additions
+      to that Work or Derivative Works thereof, that is intentionally
+      submitted to Licensor for inclusion in the Work by the copyright owner
+      or by an individual or Legal Entity authorized to submit on behalf of
+      the copyright owner. For the purposes of this definition, "submitted"
+      means any form of electronic, verbal, or written communication sent
+      to the Licensor or its representatives, including but not limited to
+      communication on electronic mailing lists, source code control systems,
+      and issue tracking systems that are managed by, or on behalf of, the
+      Licensor for the purpose of discussing and improving the Work, but
+      excluding communication that is conspicuously marked or otherwise
+      designated in writing by the copyright owner as "Not a Contribution."
+
+      "Contributor" shall mean Licensor and any individual or Legal Entity
+      on behalf of whom a Contribution has been received by Licensor and
+      subsequently incorporated within the Work.
+
+   2. Grant of Copyright License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      copyright license to reproduce, prepare Derivative Works of,
+      publicly display, publicly perform, sublicense, and distribute the
+      Work and such Derivative Works in Source or Object form.
+
+   3. Grant of Patent License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      (except as stated in this section) patent license to make, have made,
+      use, offer to sell, sell, import, and otherwise transfer the Work,
+      where such license applies only to those patent claims licensable
+      by such Contributor that are necessarily infringed by their
+      Contribution(s) alone or by combination of their Contribution(s)
+      with the Work to which such Contribution(s) was submitted. If You
+      institute patent litigation against any entity (including a
+      cross-claim or counterclaim in a lawsuit) alleging that the Work
+      or a Contribution incorporated within the Work constitutes direct
+      or contributory patent infringement, then any patent licenses
+      granted to You under this License for that Work shall terminate
+      as of the date such litigation is filed.
+
+   4. Redistribution. You may reproduce and distribute copies of the
+      Work or Derivative Works thereof in any medium, with or without
+      modifications, and in Source or Object form, provided that You
+      meet the following conditions:
+
+      (a) You must give any other recipients of the Work or
+          Derivative Works a copy of this License; and
+
+      (b) You must cause any modified files to carry prominent notices
+          stating that You changed the files; and
+
+      (c) You must retain, in the Source form of any Derivative Works
+          that You distribute, all copyright, patent, trademark, and
+          attribution notices from the Source form of the Work,
+          excluding those notices that do not pertain to any part of
+          the Derivative Works; and
+
+      (d) If the Work includes a "NOTICE" text file as part of its
+          distribution, then any Derivative Works that You distribute must
+          include a readable copy of the attribution notices contained
+          within such NOTICE file, excluding those notices that do not
+          pertain to any part of the Derivative Works, in at least one
+          of the following places: within a NOTICE text file distributed
+          as part of the Derivative Works; within the Source form or
+          documentation, if provided along with the Derivative Works; or,
+          within a display generated by the Derivative Works, if and
+          wherever such third-party notices normally appear. The contents
+          of the NOTICE file are for informational purposes only and
+          do not modify the License. You may add Your own attribution
+          notices within Derivative Works that You distribute, alongside
+          or as an addendum to the NOTICE text from the Work, provided
+          that such additional attribution notices cannot be construed
+          as modifying the License.
+
+      You may add Your own copyright statement to Your modifications and
+      may provide additional or different license terms and conditions
+      for use, reproduction, or distribution of Your modifications, or
+      for any such Derivative Works as a whole, provided Your use,
+      reproduction, and distribution of the Work otherwise complies with
+      the conditions stated in this License.
+
+   5. Submission of Contributions. Unless You explicitly state otherwise,
+      any Contribution intentionally submitted for inclusion in the Work
+      by You to the Licensor shall be under the terms and conditions of
+      this License, without any additional terms or conditions.
+      Notwithstanding the above, nothing herein shall supersede or modify
+      the terms of any separate license agreement you may have executed
+      with Licensor regarding such Contributions.
+
+   6. Trademarks. This License does not grant permission to use the trade
+      names, trademarks, service marks, or product names of the Licensor,
+      except as required for reasonable and customary use in describing the
+      origin of the Work and reproducing the content of the NOTICE file.
+
+   7. Disclaimer of Warranty. Unless required by applicable law or
+      agreed to in writing, Licensor provides the Work (and each
+      Contributor provides its Contributions) on an "AS IS" BASIS,
+      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+      implied, including, without limitation, any warranties or conditions
+      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+      PARTICULAR PURPOSE. You are solely responsible for determining the
+      appropriateness of using or redistributing the Work and assume any
+      risks associated with Your exercise of permissions under this License.
+
+   8. Limitation of Liability. In no event and under no legal theory,
+      whether in tort (including negligence), contract, or otherwise,
+      unless required by applicable law (such as deliberate and grossly
+      negligent acts) or agreed to in writing, shall any Contributor be
+      liable to You for damages, including any direct, indirect, special,
+      incidental, or consequential damages of any character arising as a
+      result of this License or out of the use or inability to use the
+      Work (including but not limited to damages for loss of goodwill,
+      work stoppage, computer failure or malfunction, or any and all
+      other commercial damages or losses), even if such Contributor
+      has been advised of the possibility of such damages.
+
+   9. Accepting Warranty or Additional Liability. While redistributing
+      the Work or Derivative Works thereof, You may choose to offer,
+      and charge a fee for, acceptance of support, warranty, indemnity,
+      or other liability obligations and/or rights consistent with this
+      License. However, in accepting such obligations, You may act only
+      on Your own behalf and on Your sole responsibility, not on behalf
+      of any other Contributor, and only if You agree to indemnify,
+      defend, and hold each Contributor harmless for any liability
+      incurred by, or claims asserted against, such Contributor by reason
+      of your accepting any such warranty or additional liability.
+
+   END OF TERMS AND CONDITIONS
+
+   APPENDIX: How to apply the Apache License to your work.
+
+      To apply the Apache License to your work, attach the following
+      boilerplate notice, with the fields enclosed by brackets "[]"
+      replaced with your own identifying information. (Don't include
+      the brackets!)  The text should be enclosed in the appropriate
+      comment syntax for the file format. We also recommend that a
+      file or class name and description of purpose be included on the
+      same "printed page" as the copyright notice for easier
+      identification within third-party archives.
+
+   Copyright [yyyy] [name of copyright owner]
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+```
+
+</details>
+
 <details><summary>@pdf-lib/standard-fonts 1.0.0 — MIT</summary>
 
 `LICENSE.md`
@@ -658,6 +1133,36 @@ in the Software without restriction, including without limitation the rights
 to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+</details>
+
+<details><summary>@stablelib/base64 1.0.1 — MIT</summary>
+
+`LICENSE`
+
+```text
+This software is licensed under the MIT license:
+
+Copyright (C) 2016 Dmitry Chestnykh
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
@@ -1294,6 +1799,39 @@ SOFTWARE.
 
 </details>
 
+<details><summary>fast-sha256 1.3.0 — Unlicense</summary>
+
+`LICENSE`
+
+```text
+This is free and unencumbered software released into the public domain.
+
+Anyone is free to copy, modify, publish, use, compile, sell, or
+distribute this software, either in source code form or as a compiled
+binary, for any purpose, commercial or non-commercial, and by any
+means.
+
+In jurisdictions that recognize copyright laws, the author or authors
+of this software dedicate any and all copyright interest in the
+software to the public domain. We make this dedication for the benefit
+of the public at large and to the detriment of our heirs and
+successors. We intend this dedication to be an overt act of
+relinquishment in perpetuity of all present and future rights to this
+software under copyright law.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+For more information, please refer to <http://unlicense.org>
+```
+
+</details>
+
 <details><summary>fs-extra 10.1.0 — MIT</summary>
 
 `LICENSE`
@@ -1433,6 +1971,36 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+```
+
+</details>
+
+<details><summary>json-schema-to-ts 3.1.1 — MIT</summary>
+
+`LICENSE`
+
+```text
+MIT License
+
+Copyright (c) 2020 Thomas Aribart
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
 </details>
@@ -3112,6 +3680,12 @@ third-party archives.
 
 </details>
 
+<details><summary>standardwebhooks 1.1.1 — MIT</summary>
+
+_No licence file in the published package; licence: MIT. Source: https://github.com/standard-webhooks/standard-webhooks_
+
+</details>
+
 <details><summary>string_decoder 1.1.1 — MIT</summary>
 
 `LICENSE`: same text as readable-stream 2.3.8, `LICENSE` above.
@@ -3145,6 +3719,12 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+</details>
+
+<details><summary>ts-algebra 2.0.0 — MIT</summary>
+
+`LICENSE`: same text as json-schema-to-ts 3.1.1, `LICENSE` above.
 
 </details>
 
@@ -9093,218 +9673,13 @@ For more information, please refer to <http://unlicense.org/>
 
 <details><summary>approx 0.5.1 — Apache-2.0</summary>
 
-`LICENSE` (source: https://static.crates.io/crates/approx/approx-0.5.1.crate)
-
-```text
-
-                                 Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "[]"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright [yyyy] [name of copyright owner]
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-```
+`LICENSE` (source: https://static.crates.io/crates/approx/approx-0.5.1.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 </details>
 
 <details><summary>bitflags 2.13.2 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/bitflags/bitflags-2.13.2.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/bitflags/bitflags-2.13.2.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/bitflags/bitflags-2.13.2.crate)
 
@@ -9346,7 +9721,7 @@ _No licence text is published with block 0.1.6 (https://static.crates.io/crates/
 
 <details><summary>bytemuck 1.25.2 — Zlib OR Apache-2.0 OR MIT</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/bytemuck/bytemuck-1.25.2.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/bytemuck/bytemuck-1.25.2.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/bytemuck/bytemuck-1.25.2.crate)
 
@@ -9421,7 +9796,7 @@ library.
 
 <details><summary>cast 0.3.0 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/cast/cast-0.3.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/cast/cast-0.3.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/cast/cast-0.3.0.crate)
 
@@ -9457,7 +9832,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>cfg-if 1.0.5 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/cfg-if/cfg-if-1.0.5.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/cfg-if/cfg-if-1.0.5.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/cfg-if/cfg-if-1.0.5.crate)
 
@@ -9523,7 +9898,7 @@ SOFTWARE.
 
 <details><summary>core_detect 1.0.0 — MIT/Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/core_detect/core_detect-1.0.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/core_detect/core_detect-1.0.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/core_detect/core_detect-1.0.0.crate)
 
@@ -9591,7 +9966,7 @@ SOFTWARE.
 
 <details><summary>crossbeam-deque 0.8.8 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/crossbeam-deque/crossbeam-deque-0.8.8.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/crossbeam-deque/crossbeam-deque-0.8.8.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/crossbeam-deque/crossbeam-deque-0.8.8.crate)
 
@@ -9629,7 +10004,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>crossbeam-epoch 0.9.21 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/crossbeam-epoch/crossbeam-epoch-0.9.21.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/crossbeam-epoch/crossbeam-epoch-0.9.21.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/crossbeam-epoch/crossbeam-epoch-0.9.21.crate): same text as crossbeam-deque 0.8.8, `LICENSE-MIT` above.
 
@@ -9637,7 +10012,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>crossbeam-utils 0.8.23 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/crossbeam-utils/crossbeam-utils-0.8.23.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/crossbeam-utils/crossbeam-utils-0.8.23.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/crossbeam-utils/crossbeam-utils-0.8.23.crate): same text as crossbeam-deque 0.8.8, `LICENSE-MIT` above.
 
@@ -10039,7 +10414,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
 
 <details><summary>data-url 0.3.2 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/data-url/data-url-0.3.2.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/data-url/data-url-0.3.2.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/data-url/data-url-0.3.2.crate)
 
@@ -10111,7 +10486,7 @@ SOFTWARE.
 
 <details><summary>displaydoc 0.2.7 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/displaydoc/displaydoc-0.2.7.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/displaydoc/displaydoc-0.2.7.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/displaydoc/displaydoc-0.2.7.crate): same text as adler2 2.0.1, `LICENSE-MIT` above.
 
@@ -10133,7 +10508,7 @@ SOFTWARE.
 
 <details><summary>either 1.18.0 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/either/either-1.18.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/either/either-1.18.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/either/either-1.18.0.crate)
 
@@ -10191,7 +10566,7 @@ Test code within encoding_rs is dedicated to the Public Domain when so
 designated (see the individual files for PD/CC0-dedicated sections).
 ```
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/encoding_rs/encoding_rs-0.8.41.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/encoding_rs/encoding_rs-0.8.41.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/encoding_rs/encoding_rs-0.8.41.crate)
 
@@ -10258,7 +10633,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 <details><summary>fastrand 2.5.0 — Apache-2.0 OR MIT</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/fastrand/fastrand-2.5.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/fastrand/fastrand-2.5.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/fastrand/fastrand-2.5.0.crate): same text as adler2 2.0.1, `LICENSE-MIT` above.
 
@@ -10302,7 +10677,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>flate2 1.1.10 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/flate2/flate2-1.1.10.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/flate2/flate2-1.1.10.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/flate2/flate2-1.1.10.crate)
 
@@ -10366,7 +10741,7 @@ IN THE SOFTWARE.
 
 <details><summary>form_urlencoded 1.2.2 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/form_urlencoded/form_urlencoded-1.2.2.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/form_urlencoded/form_urlencoded-1.2.2.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/form_urlencoded/form_urlencoded-1.2.2.crate)
 
@@ -10692,7 +11067,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>gif 0.14.2 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/gif/gif-0.14.2.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/gif/gif-0.14.2.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/gif/gif-0.14.2.crate)
 
@@ -10766,7 +11141,7 @@ SOFTWARE.
 
 <details><summary>heck 0.5.0 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/heck/heck-0.5.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/heck/heck-0.5.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/heck/heck-0.5.0.crate)
 
@@ -10893,7 +11268,7 @@ ICU 1.8.1 to ICU 57.1 © 1995-2016 International Business Machines Corporation a
 
 <details><summary>idna 1.1.0 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/idna/idna-1.1.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/idna/idna-1.1.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/idna/idna-1.1.0.crate): same text as data-url 0.3.2, `LICENSE-MIT` above.
 
@@ -10901,7 +11276,7 @@ ICU 1.8.1 to ICU 57.1 © 1995-2016 International Business Machines Corporation a
 
 <details><summary>idna_adapter 1.2.2 — Apache-2.0 OR MIT</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/idna_adapter/idna_adapter-1.2.2.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/idna_adapter/idna_adapter-1.2.2.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/idna_adapter/idna_adapter-1.2.2.crate)
 
@@ -10953,7 +11328,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>itertools 0.15.0 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/itertools/itertools-0.15.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/itertools/itertools-0.15.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/itertools/itertools-0.15.0.crate): same text as either 1.18.0, `LICENSE-MIT` above.
 
@@ -10997,7 +11372,7 @@ THE SOFTWARE.
 
 <details><summary>lazy_static 1.5.0 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/lazy_static/lazy_static-1.5.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/lazy_static/lazy_static-1.5.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/lazy_static/lazy_static-1.5.0.crate)
 
@@ -11109,7 +11484,7 @@ THE SOFTWARE.
 
 <details><summary>lock_api 0.4.14 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/lock_api/lock_api-0.4.14.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/lock_api/lock_api-0.4.14.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/lock_api/lock_api-0.4.14.crate)
 
@@ -11145,7 +11520,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>log 0.4.34 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/log/log-0.4.34.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/log/log-0.4.34.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/log/log-0.4.34.crate): same text as bitflags 2.13.2, `LICENSE-MIT` above.
 
@@ -11183,7 +11558,7 @@ SOFTWARE.
 
 <details><summary>markup5ever 0.39.0 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/markup5ever/markup5ever-0.39.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/markup5ever/markup5ever-0.39.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/markup5ever/markup5ever-0.39.0.crate)
 
@@ -11219,7 +11594,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>matrixmultiply 0.3.11 — MIT/Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/matrixmultiply/matrixmultiply-0.3.11.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/matrixmultiply/matrixmultiply-0.3.11.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/matrixmultiply/matrixmultiply-0.3.11.crate)
 
@@ -11576,7 +11951,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 <details><summary>multiversion 0.9.0 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/multiversion/multiversion-0.9.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/multiversion/multiversion-0.9.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/multiversion/multiversion-0.9.0.crate)
 
@@ -11614,7 +11989,7 @@ See the Licenses for the specific language governing permissions and
 limitations under the Licenses.
 ```
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/multiversion_no_op/multiversion_no_op-1.0.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/multiversion_no_op/multiversion_no_op-1.0.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/multiversion_no_op/multiversion_no_op-1.0.0.crate): same text as encoding_rs 0.8.41, `LICENSE-MIT` above.
 
@@ -11622,7 +11997,7 @@ limitations under the Licenses.
 
 <details><summary>multiversion-macros 0.9.0 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/multiversion-macros/multiversion-macros-0.9.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/multiversion-macros/multiversion-macros-0.9.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/multiversion-macros/multiversion-macros-0.9.0.crate): same text as multiversion 0.9.0, `LICENSE-MIT` above.
 
@@ -11910,7 +12285,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>num-complex 0.4.6 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/num-complex/num-complex-0.4.6.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/num-complex/num-complex-0.4.6.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/num-complex/num-complex-0.4.6.crate): same text as bitflags 2.13.2, `LICENSE-MIT` above.
 
@@ -11918,7 +12293,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>num-integer 0.1.47 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/num-integer/num-integer-0.1.47.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/num-integer/num-integer-0.1.47.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/num-integer/num-integer-0.1.47.crate): same text as bitflags 2.13.2, `LICENSE-MIT` above.
 
@@ -11926,7 +12301,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>num-rational 0.4.2 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/num-rational/num-rational-0.4.2.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/num-rational/num-rational-0.4.2.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/num-rational/num-rational-0.4.2.crate): same text as bitflags 2.13.2, `LICENSE-MIT` above.
 
@@ -11934,7 +12309,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>num-traits 0.2.19 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/num-traits/num-traits-0.2.19.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/num-traits/num-traits-0.2.19.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/num-traits/num-traits-0.2.19.crate): same text as bitflags 2.13.2, `LICENSE-MIT` above.
 
@@ -12012,7 +12387,7 @@ _No licence text is published with objc-foundation 0.1.1 (https://static.crates.
 
 <details><summary>parking_lot 0.12.5 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/parking_lot/parking_lot-0.12.5.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/parking_lot/parking_lot-0.12.5.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/parking_lot/parking_lot-0.12.5.crate): same text as lock_api 0.4.14, `LICENSE-MIT` above.
 
@@ -12020,7 +12395,7 @@ _No licence text is published with objc-foundation 0.1.1 (https://static.crates.
 
 <details><summary>parking_lot_core 0.9.12 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/parking_lot_core/parking_lot_core-0.9.12.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/parking_lot_core/parking_lot_core-0.9.12.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/parking_lot_core/parking_lot_core-0.9.12.crate): same text as lock_api 0.4.14, `LICENSE-MIT` above.
 
@@ -12028,7 +12403,7 @@ _No licence text is published with objc-foundation 0.1.1 (https://static.crates.
 
 <details><summary>percent-encoding 2.3.2 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/percent-encoding/percent-encoding-2.3.2.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/percent-encoding/percent-encoding-2.3.2.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/percent-encoding/percent-encoding-2.3.2.crate): same text as data-url 0.3.2, `LICENSE-MIT` above.
 
@@ -12097,7 +12472,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 <details><summary>png 0.18.1 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/png/png-0.18.1.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/png/png-0.18.1.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/png/png-0.18.1.crate)
 
@@ -12223,7 +12598,7 @@ SOFTWARE.
 
 <details><summary>rawpointer 0.2.1 — MIT/Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/rawpointer/rawpointer-0.2.1.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/rawpointer/rawpointer-0.2.1.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/rawpointer/rawpointer-0.2.1.crate): same text as either 1.18.0, `LICENSE-MIT` above.
 
@@ -12231,7 +12606,7 @@ SOFTWARE.
 
 <details><summary>rayon 1.12.0 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/rayon/rayon-1.12.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/rayon/rayon-1.12.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/rayon/rayon-1.12.0.crate): same text as lazy_static 1.5.0, `LICENSE-MIT` above.
 
@@ -12239,7 +12614,7 @@ SOFTWARE.
 
 <details><summary>rayon-core 1.13.0 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/rayon-core/rayon-core-1.13.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/rayon-core/rayon-core-1.13.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/rayon-core/rayon-core-1.13.0.crate): same text as lazy_static 1.5.0, `LICENSE-MIT` above.
 
@@ -12278,7 +12653,7 @@ SOFTWARE.
 
 <details><summary>regex 1.13.1 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/regex/regex-1.13.1.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/regex/regex-1.13.1.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/regex/regex-1.13.1.crate): same text as bitflags 2.13.2, `LICENSE-MIT` above.
 
@@ -12286,7 +12661,7 @@ SOFTWARE.
 
 <details><summary>regex-automata 0.4.18 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/regex-automata/regex-automata-0.4.18.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/regex-automata/regex-automata-0.4.18.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/regex-automata/regex-automata-0.4.18.crate): same text as bitflags 2.13.2, `LICENSE-MIT` above.
 
@@ -12294,7 +12669,7 @@ SOFTWARE.
 
 <details><summary>regex-syntax 0.8.11 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/regex-syntax/regex-syntax-0.8.11.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/regex-syntax/regex-syntax-0.8.11.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/regex-syntax/regex-syntax-0.8.11.crate): same text as bitflags 2.13.2, `LICENSE-MIT` above.
 
@@ -12410,7 +12785,7 @@ SOFTWARE.
 
 <details><summary>safe_arch 1.2.0 — Zlib OR Apache-2.0 OR MIT</summary>
 
-`LICENSE-APACHE.md` (source: https://static.crates.io/crates/safe_arch/safe_arch-1.2.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE.md` (source: https://static.crates.io/crates/safe_arch/safe_arch-1.2.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT.md` (source: https://static.crates.io/crates/safe_arch/safe_arch-1.2.0.crate)
 
@@ -12446,7 +12821,7 @@ Permission is granted to anyone to use this software for any purpose, including 
 
 <details><summary>scopeguard 1.2.0 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/scopeguard/scopeguard-1.2.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/scopeguard/scopeguard-1.2.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/scopeguard/scopeguard-1.2.0.crate)
 
@@ -12504,7 +12879,7 @@ _No licence text is published with selectors 0.40.0 (https://static.crates.io/cr
 
 <details><summary>servo_arc 0.4.3 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/servo_arc/servo_arc-0.4.3.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/servo_arc/servo_arc-0.4.3.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/servo_arc/servo_arc-0.4.3.crate): same text as adler2 2.0.1, `LICENSE-MIT` above.
 
@@ -12606,7 +12981,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>smallvec 1.16.1 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/smallvec/smallvec-1.16.1.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/smallvec/smallvec-1.16.1.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/smallvec/smallvec-1.16.1.crate)
 
@@ -12642,7 +13017,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>stable_deref_trait 1.2.1 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/stable_deref_trait/stable_deref_trait-1.2.1.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/stable_deref_trait/stable_deref_trait-1.2.1.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/stable_deref_trait/stable_deref_trait-1.2.1.crate)
 
@@ -12678,7 +13053,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>string_cache 0.10.0 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/string_cache/string_cache-0.10.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/string_cache/string_cache-0.10.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/string_cache/string_cache-0.10.0.crate)
 
@@ -12714,7 +13089,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>string_cache 0.9.0 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/string_cache/string_cache-0.9.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/string_cache/string_cache-0.9.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/string_cache/string_cache-0.9.0.crate): same text as string_cache 0.10.0, `LICENSE-MIT` above.
 
@@ -12754,7 +13129,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 <details><summary>tendril 0.5.1 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/tendril/tendril-0.5.1.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/tendril/tendril-0.5.1.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/tendril/tendril-0.5.1.crate)
 
@@ -12796,7 +13171,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>tinyvec 1.13.3 — Zlib OR Apache-2.0 OR MIT</summary>
 
-`LICENSE-APACHE.md` (source: https://static.crates.io/crates/tinyvec/tinyvec-1.13.3.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE.md` (source: https://static.crates.io/crates/tinyvec/tinyvec-1.13.3.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT.md` (source: https://static.crates.io/crates/tinyvec/tinyvec-1.13.3.crate): same text as adler2 2.0.1, `LICENSE-MIT` above.
 
@@ -13100,7 +13475,7 @@ authorization of the copyright holder.
 
 <details><summary>url 2.5.8 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/url/url-2.5.8.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/url/url-2.5.8.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/url/url-2.5.8.crate): same text as data-url 0.3.2, `LICENSE-MIT` above.
 
@@ -13155,7 +13530,7 @@ licensed under the Apache License, Version 2.0 <LICENSE-APACHE> or
 <LICENSE-MIT> or <http://opensource.org/licenses/MIT>, at your option.
 ```
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/utf8_iter/utf8_iter-1.0.4.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/utf8_iter/utf8_iter-1.0.4.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/utf8_iter/utf8_iter-1.0.4.crate): same text as encoding_rs 0.8.41, `LICENSE-MIT` above.
 
@@ -13163,7 +13538,7 @@ licensed under the Apache License, Version 2.0 <LICENSE-APACHE> or
 
 <details><summary>web_atoms 0.2.6 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/web_atoms/web_atoms-0.2.6.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/web_atoms/web_atoms-0.2.6.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/web_atoms/web_atoms-0.2.6.crate): same text as markup5ever 0.39.0, `LICENSE-MIT` above.
 
@@ -13171,7 +13546,7 @@ licensed under the Apache License, Version 2.0 <LICENSE-APACHE> or
 
 <details><summary>weezl 0.1.12 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/weezl/weezl-0.1.12.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/weezl/weezl-0.1.12.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/weezl/weezl-0.1.12.crate)
 
@@ -13722,7 +14097,7 @@ SOFTWARE.
 
 <details><summary>xml5ever 0.39.0 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/xml5ever/xml5ever-0.39.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/xml5ever/xml5ever-0.39.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/xml5ever/xml5ever-0.39.0.crate): same text as markup5ever 0.39.0, `LICENSE-MIT` above.
 
@@ -13772,7 +14147,7 @@ SOFTWARE.
 
 <details><summary>zune-core 0.5.3 — MIT OR Apache-2.0 OR Zlib</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/zune-core/zune-core-0.5.3.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/zune-core/zune-core-0.5.3.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/zune-core/zune-core-0.5.3.crate)
 
@@ -13828,7 +14203,7 @@ freely, subject to the following restrictions:
 
 <details><summary>zune-jpeg 0.5.15 — MIT OR Apache-2.0 OR Zlib</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/zune-jpeg/zune-jpeg-0.5.15.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/zune-jpeg/zune-jpeg-0.5.15.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/zune-jpeg/zune-jpeg-0.5.15.crate): same text as zune-core 0.5.3, `LICENSE-MIT` above.
 
@@ -13890,7 +14265,7 @@ SOFTWARE.
 
 <details><summary>bitflags 2.13.1 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/bitflags/bitflags-2.13.1.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/bitflags/bitflags-2.13.1.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/bitflags/bitflags-2.13.1.crate): same text as bitflags 2.13.2, `LICENSE-MIT` above.
 
@@ -13926,7 +14301,7 @@ THE SOFTWARE.
 
 <details><summary>bumpalo 3.20.3 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/bumpalo/bumpalo-3.20.3.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/bumpalo/bumpalo-3.20.3.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/bumpalo/bumpalo-3.20.3.crate)
 
@@ -13962,7 +14337,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>bytemuck 1.25.2 — Zlib OR Apache-2.0 OR MIT</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/bytemuck/bytemuck-1.25.2.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/bytemuck/bytemuck-1.25.2.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/bytemuck/bytemuck-1.25.2.crate): same text as bytemuck 1.25.2, `LICENSE-MIT` above.
 
@@ -13972,7 +14347,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>cc 1.4.0 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/cc/cc-1.4.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/cc/cc-1.4.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/cc/cc-1.4.0.crate): same text as cfg-if 1.0.5, `LICENSE-MIT` above.
 
@@ -14010,7 +14385,7 @@ SOFTWARE.
 
 <details><summary>cfg-if 1.0.4 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/cfg-if/cfg-if-1.0.4.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/cfg-if/cfg-if-1.0.4.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/cfg-if/cfg-if-1.0.4.crate): same text as cfg-if 1.0.5, `LICENSE-MIT` above.
 
@@ -14018,7 +14393,7 @@ SOFTWARE.
 
 <details><summary>cmake 0.1.58 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/cmake/cmake-0.1.58.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/cmake/cmake-0.1.58.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/cmake/cmake-0.1.58.crate): same text as cfg-if 1.0.5, `LICENSE-MIT` above.
 
@@ -14108,7 +14483,7 @@ SOFTWARE.
 
 <details><summary>fastrand 2.5.0 — Apache-2.0 OR MIT</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/fastrand/fastrand-2.5.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/fastrand/fastrand-2.5.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/fastrand/fastrand-2.5.0.crate): same text as adler2 2.0.1, `LICENSE-MIT` above.
 
@@ -14116,7 +14491,7 @@ SOFTWARE.
 
 <details><summary>find-msvc-tools 0.1.9 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/find-msvc-tools/find-msvc-tools-0.1.9.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/find-msvc-tools/find-msvc-tools-0.1.9.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/find-msvc-tools/find-msvc-tools-0.1.9.crate): same text as cfg-if 1.0.5, `LICENSE-MIT` above.
 
@@ -14124,7 +14499,7 @@ SOFTWARE.
 
 <details><summary>fnv 1.0.7 — Apache-2.0 / MIT</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/fnv/fnv-1.0.7.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/fnv/fnv-1.0.7.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/fnv/fnv-1.0.7.crate)
 
@@ -14240,7 +14615,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>gif 0.14.2 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/gif/gif-0.14.2.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/gif/gif-0.14.2.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/gif/gif-0.14.2.crate): same text as gif 0.14.2, `LICENSE-MIT` above.
 
@@ -14254,7 +14629,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>hermit-abi 0.5.2 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/hermit-abi/hermit-abi-0.5.2.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/hermit-abi/hermit-abi-0.5.2.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/hermit-abi/hermit-abi-0.5.2.crate): same text as adler2 2.0.1, `LICENSE-MIT` above.
 
@@ -14262,7 +14637,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>highway @457c891775a7 — Apache-2.0</summary>
 
-`LICENSE` (source: https://raw.githubusercontent.com/google/highway/457c891775a7397bdb0376bb1031e6e027af1c48/LICENSE): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE` (source: https://raw.githubusercontent.com/google/highway/457c891775a7397bdb0376bb1031e6e027af1c48/LICENSE): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 </details>
 
@@ -14908,7 +15283,7 @@ SOFTWARE.
 
 <details><summary>js-sys 0.3.103 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/js-sys/js-sys-0.3.103.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/js-sys/js-sys-0.3.103.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/js-sys/js-sys-0.3.103.crate): same text as cfg-if 1.0.5, `LICENSE-MIT` above.
 
@@ -15849,7 +16224,7 @@ SOFTWARE.
 
 <details><summary>nohash-hasher 0.2.0 — Apache-2.0 OR MIT</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/nohash-hasher/nohash-hasher-0.2.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/nohash-hasher/nohash-hasher-0.2.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/nohash-hasher/nohash-hasher-0.2.0.crate)
 
@@ -15907,7 +16282,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 <details><summary>num_cpus 1.17.0 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/num_cpus/num_cpus-1.17.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/num_cpus/num_cpus-1.17.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/num_cpus/num_cpus-1.17.0.crate)
 
@@ -15937,7 +16312,7 @@ THE SOFTWARE.
 
 <details><summary>once_cell 1.21.4 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/once_cell/once_cell-1.21.4.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/once_cell/once_cell-1.21.4.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/once_cell/once_cell-1.21.4.crate): same text as adler2 2.0.1, `LICENSE-MIT` above.
 
@@ -16023,7 +16398,7 @@ SOFTWARE.
 
 <details><summary>regex 1.13.1 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/regex/regex-1.13.1.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/regex/regex-1.13.1.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/regex/regex-1.13.1.crate): same text as bitflags 2.13.2, `LICENSE-MIT` above.
 
@@ -16031,7 +16406,7 @@ SOFTWARE.
 
 <details><summary>regex-automata 0.4.16 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/regex-automata/regex-automata-0.4.16.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/regex-automata/regex-automata-0.4.16.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/regex-automata/regex-automata-0.4.16.crate): same text as bitflags 2.13.2, `LICENSE-MIT` above.
 
@@ -16039,7 +16414,7 @@ SOFTWARE.
 
 <details><summary>regex-syntax 0.8.11 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/regex-syntax/regex-syntax-0.8.11.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/regex-syntax/regex-syntax-0.8.11.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/regex-syntax/regex-syntax-0.8.11.crate): same text as bitflags 2.13.2, `LICENSE-MIT` above.
 
@@ -16201,7 +16576,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 <details><summary>smallvec 1.15.2 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/smallvec/smallvec-1.15.2.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/smallvec/smallvec-1.15.2.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/smallvec/smallvec-1.15.2.crate): same text as smallvec 1.16.1, `LICENSE-MIT` above.
 
@@ -16299,7 +16674,7 @@ notice may not be copied, modified, or distributed except
 according to those terms.
 ```
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/unicode-segmentation/unicode-segmentation-1.13.3.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/unicode-segmentation/unicode-segmentation-1.13.3.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/unicode-segmentation/unicode-segmentation-1.13.3.crate): same text as heck 0.5.0, `LICENSE-MIT` above.
 
@@ -16307,7 +16682,7 @@ according to those terms.
 
 <details><summary>uuid 1.24.0 — Apache-2.0 OR MIT</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/uuid/uuid-1.24.0.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/uuid/uuid-1.24.0.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/uuid/uuid-1.24.0.crate)
 
@@ -16350,7 +16725,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>wasm-bindgen 0.2.126 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/wasm-bindgen/wasm-bindgen-0.2.126.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/wasm-bindgen/wasm-bindgen-0.2.126.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/wasm-bindgen/wasm-bindgen-0.2.126.crate): same text as cfg-if 1.0.5, `LICENSE-MIT` above.
 
@@ -16358,7 +16733,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>wasm-bindgen-macro 0.2.126 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/wasm-bindgen-macro/wasm-bindgen-macro-0.2.126.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/wasm-bindgen-macro/wasm-bindgen-macro-0.2.126.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/wasm-bindgen-macro/wasm-bindgen-macro-0.2.126.crate): same text as cfg-if 1.0.5, `LICENSE-MIT` above.
 
@@ -16366,7 +16741,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>wasm-bindgen-macro-support 0.2.126 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/wasm-bindgen-macro-support/wasm-bindgen-macro-support-0.2.126.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/wasm-bindgen-macro-support/wasm-bindgen-macro-support-0.2.126.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/wasm-bindgen-macro-support/wasm-bindgen-macro-support-0.2.126.crate): same text as cfg-if 1.0.5, `LICENSE-MIT` above.
 
@@ -16374,7 +16749,7 @@ DEALINGS IN THE SOFTWARE.
 
 <details><summary>wasm-bindgen-shared 0.2.126 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/wasm-bindgen-shared/wasm-bindgen-shared-0.2.126.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/wasm-bindgen-shared/wasm-bindgen-shared-0.2.126.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/wasm-bindgen-shared/wasm-bindgen-shared-0.2.126.crate): same text as cfg-if 1.0.5, `LICENSE-MIT` above.
 
@@ -16618,7 +16993,7 @@ SOFTWARE.
 
 <details><summary>weezl 0.1.12 — MIT OR Apache-2.0</summary>
 
-`LICENSE-APACHE` (source: https://static.crates.io/crates/weezl/weezl-0.1.12.crate): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE-APACHE` (source: https://static.crates.io/crates/weezl/weezl-0.1.12.crate): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 `LICENSE-MIT` (source: https://static.crates.io/crates/weezl/weezl-0.1.12.crate): same text as weezl 0.1.12, `LICENSE-MIT` above.
 
@@ -16634,7 +17009,7 @@ SOFTWARE.
 
 <details><summary>wuffs @e3f919ccfe3e — Apache-2.0</summary>
 
-`LICENSE` (source: https://raw.githubusercontent.com/google/wuffs-mirror-release-c/e3f919ccfe3ef542cfc983a82146070258fb57f8/LICENSE): same text as approx 0.5.1, `LICENSE` above.
+`LICENSE` (source: https://raw.githubusercontent.com/google/wuffs-mirror-release-c/e3f919ccfe3ef542cfc983a82146070258fb57f8/LICENSE): same text as @opentelemetry/api 1.10.0, `LICENSE` above.
 
 </details>
 

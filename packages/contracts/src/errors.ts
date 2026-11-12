@@ -33,6 +33,25 @@ export const ERROR_CODES = [
   'TIMEOUT',
   'WORKER_CRASHED',
   'HELPER_UNAVAILABLE',
+  // Claude analysis (opt-in, added later). Messages never contain document content or the key.
+  /** Analysis is off in Settings or no API key is saved. */
+  'ANALYSIS_NOT_CONFIGURED',
+  /** The pasted text is not an Anthropic API key (format check before saving). */
+  'ANALYSIS_KEY_INVALID',
+  /** The OS cannot encrypt (or decrypt) the key on this computer: it is not saved / cannot be used. */
+  'ANALYSIS_KEY_STORAGE_UNAVAILABLE',
+  /** The API refused the key (401/403). */
+  'ANALYSIS_AUTH_FAILED',
+  /** Too many requests or a usage limit (429). */
+  'ANALYSIS_RATE_LIMITED',
+  /** The file is too large to send: PDFs over ANALYSIS_LIMITS (pages, bytes) or a 413 from the API. */
+  'ANALYSIS_INPUT_TOO_LARGE',
+  /** No connection, a timeout, or the API is overloaded / failing (5xx, 529). */
+  'ANALYSIS_UNAVAILABLE',
+  /** Claude declined to analyse the file (stop_reason "refusal"). */
+  'ANALYSIS_REFUSED',
+  /** Any other API failure, or an answer without text. */
+  'ANALYSIS_FAILED',
   'INTERNAL',
 ] as const;
 
@@ -51,6 +70,8 @@ export const RETRYABLE_ERROR_CODES: ReadonlySet<ErrorCode> = new Set<ErrorCode>(
   'CLOUD_PLACEHOLDER',
   'TIMEOUT',
   'WORKER_CRASHED',
+  'ANALYSIS_RATE_LIMITED',
+  'ANALYSIS_UNAVAILABLE',
 ]);
 
 /** Serializable error carried across process boundaries. */

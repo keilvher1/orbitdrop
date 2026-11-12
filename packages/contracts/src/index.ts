@@ -1,4 +1,5 @@
 export * from './actions';
+export * from './analysis';
 export * from './capabilities';
 export * from './composition';
 export * from './errors';

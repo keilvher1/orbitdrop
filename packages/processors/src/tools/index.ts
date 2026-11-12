@@ -10,6 +10,7 @@ import {
   type ProcessorRunContext,
 } from '@orbitdrop/contracts';
 import { assertWritableDir } from '@orbitdrop/core/node';
+import { runAnalyze } from '../analyze';
 import { outputDirFor } from '../common/io';
 import { runAddBackground } from './add-background';
 import { runAnnotate } from './annotate';
@@ -47,6 +48,8 @@ export async function runTool(job: ProcessorJob, ctx: ProcessorRunContext): Prom
       return runAnnotate(job, ctx);
     case 'tool.redact':
       return runRedact(job, ctx);
+    case 'tool.analyze':
+      return runAnalyze(job, ctx);
     default:
       throw new OrbitError('INVALID_OPTIONS', `Not a tool action: ${job.actionId}`);
   }
