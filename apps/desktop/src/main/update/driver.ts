@@ -50,6 +50,10 @@ export async function createElectronUpdaterDriver(events: UpdaterEvents, log: Lo
   updater.fullChangelog = false;
   // OrbitDrop ships the full NSIS installer; never accept a web installer (its package has no signature check).
   updater.disableWebInstaller = true;
+  // Windows packages have no installer blockmap (nsis.differentialPackage: false): download the whole
+  // installer instead of first asking for two blockmaps that do not exist. macOS keeps differential
+  // downloads of the zip (from the second update on, against the cached previous update).
+  if (platform === 'win32') updater.disableDifferentialDownload = true;
 
   // macOS: electron-updater reports the download as soon as the zip is on disk; Squirrel.Mac then
   // fetches it from electron-updater's loopback server, checks that it is signed like the running
