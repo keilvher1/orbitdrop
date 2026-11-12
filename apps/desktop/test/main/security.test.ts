@@ -80,11 +80,34 @@ describe('webContents hardening', () => {
 });
 
 describe('openExternal from a renderer', () => {
-  it('accepts what the UI opens: the macOS privacy panes, Windows privacy pages, https GitHub pages', () => {
+  it('accepts what the UI opens: the macOS privacy panes, Windows privacy pages, the website and a new issue', () => {
     for (const url of Object.values(PERMISSION_URLS)) expect(isRendererExternalUrl(url), url).toBe(true);
     expect(isRendererExternalUrl('ms-settings:privacy')).toBe(true);
     expect(isRendererExternalUrl('ms-settings:privacy-webcam')).toBe(true);
-    expect(isRendererExternalUrl('https://github.com/orbitdrop/orbitdrop/issues')).toBe(true);
+    expect(isRendererExternalUrl('https://keilvher1.github.io/orbitdrop/')).toBe(true);
+    expect(isRendererExternalUrl('https://keilvher1.github.io/orbitdrop/en/')).toBe(true);
+    expect(isRendererExternalUrl('https://github.com/keilvher1/orbitdrop/issues/new')).toBe(true);
+    expect(isRendererExternalUrl('https://github.com/keilvher1/orbitdrop/issues/new?title=%EB%AC%B8%EC%A0%9C&body=x')).toBe(true);
+  });
+
+  it('web pages: exactly the allowlisted origins and paths', () => {
+    for (const url of [
+      'https://github.com/orbitdrop/orbitdrop/issues',
+      'https://github.com/keilvher1/orbitdrop',
+      'https://github.com/keilvher1/orbitdrop/issues',
+      'https://github.com/keilvher1/orbitdrop/issues/new/../../pulls',
+      'https://github.com/keilvher1/orbitdrop/issues/new#x',
+      'https://github.com/keilvher1/orbitdrop/issues/new#',
+      'https://github.com:8443/keilvher1/orbitdrop/issues/new',
+      'https://user@github.com/keilvher1/orbitdrop/issues/new',
+      'https://keilvher1.github.io/orbitdrop/?q=1',
+      'https://keilvher1.github.io/orbitdrop',
+      'https://keilvher1.github.io/other/',
+      'https://evil.github.io/orbitdrop/',
+      'http://keilvher1.github.io/orbitdrop/',
+    ]) {
+      expect(isRendererExternalUrl(url), url).toBe(false);
+    }
   });
 
   it('refuses everything else, including URLs the bare prefix list would let through', () => {

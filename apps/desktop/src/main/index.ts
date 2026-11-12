@@ -5,13 +5,17 @@
  * comes from packaging). Single instance. `--smoke-test` runs the packaged
  * self test and exits (see smoke.ts). App-level events (quit, second launch,
  * macOS reopen / open-file, sleep and screen lock) are wired in lifecycle.ts.
+ * Crash handling (support/crash.ts): crash dumps stay local, uncaught
+ * exceptions are logged and shown in a translated dialog, a failed start says
+ * so before exiting.
  */
 // Keep first: sizes the libuv thread pool before anything uses it.
 import './uv-threadpool';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { app, dialog, powerMonitor } from 'electron';
+import { app, crashReporter, dialog, powerMonitor, shell } from 'electron';
+import type { Locale } from '@orbitdrop/contracts';
 import { OrbitApp, type AppPaths } from './app';
 import { t } from './i18n';
 import { parseLaunchOptions } from './launch-options';
@@ -27,7 +31,9 @@ import {
 } from './lifecycle';
 import { createLogger, describeError } from './log';
 import { registerPreviewSchemePrivileges } from './preview/protocol';
+import { localeFromSystemLanguages } from './settings/defaults';
 import { runSmokeTest } from './smoke';
+import { installMainErrorHandlers, startCrashReporter } from './support/crash';
 import { installTestHooks } from './test-hooks';
 
 const log = createLogger('main');
@@ -41,6 +47,57 @@ if (options.userDataDir) {
   smokeDataDir = mkdtempSync(join(tmpdir(), 'orbitdrop-smoke-data-'));
   app.setPath('userData', smokeDataDir);
 }
+
+// Crash dumps stay on this computer (<app data>/Crashpad); nothing is uploaded. Not in automation runs, whose
+// temporary app data folders are deleted right after (a crash handler still holding files there would race it).
+if (!options.e2e && !options.smokeTest) startCrashReporter(crashReporter, log);
+
+/** The UI language for dialogs: the settings' once the app runs, the OS language before. */
+let dialogLocale: () => Locale = () => {
+  try {
+    return localeFromSystemLanguages(app.getPreferredSystemLanguages());
+  } catch {
+    return 'ko';
+  }
+};
+
+const logsDir = (): string => join(app.getPath('userData'), 'logs');
+
+async function openLogsFolder(): Promise<void> {
+  try {
+    mkdirSync(logsDir(), { recursive: true });
+    await shell.openPath(logsDir());
+  } catch (error) {
+    log.warn('could not open the log folder', { error: describeError(error) });
+  }
+}
+
+/**
+ * An uncaught exception in main (support/crash.ts logs it first): keep using the app, open the log folder or
+ * quit. Automation gets a marker line instead of a modal dialog; the smoke test only logs.
+ */
+async function showMainErrorDialog(): Promise<void> {
+  if (options.e2e) {
+    process.stderr.write('ORBITDROP_MAIN_ERROR uncaughtException\n');
+    return;
+  }
+  if (!app.isReady()) return;
+  const locale = dialogLocale();
+  if (process.platform === 'darwin') app.focus({ steal: true });
+  const { response } = await dialog.showMessageBox({
+    type: 'error',
+    buttons: [t(locale, 'crash.main.continue'), t(locale, 'crash.main.openLogs'), t(locale, 'crash.main.quit')],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+    message: t(locale, 'crash.main.title'),
+    detail: t(locale, 'crash.main.body'),
+  });
+  if (response === 1) await openLogsFolder();
+  else if (response === 2) app.quit();
+}
+
+installMainErrorHandlers(process, { log, showDialog: options.smokeTest ? null : showMainErrorDialog });
 
 registerPreviewSchemePrivileges();
 app.enableSandbox();
@@ -90,6 +147,7 @@ async function runApp(openFiles: OpenFileQueue): Promise<void> {
   installPowerHandlers(powerMonitor as unknown as EmitterLike, orbit, process.platform);
 
   await orbit.startCore();
+  dialogLocale = () => orbit.settings.get().locale; // the settings are loaded now
   await orbit.startUi();
   // Files this launch was started with (Windows: dropped on OrbitDrop.exe / a shortcut), and macOS open-file.
   const launchFiles = filePathsFromArgv(process.argv, process.cwd(), argv);
@@ -110,6 +168,35 @@ function reportUnwritableDataDir(dir: string): void {
     // Automation: no modal dialog on the tester's desktop; the marker line is what the test reads.
     if (options.e2e) process.stderr.write('ORBITDROP_STARTUP_ERROR dataDirNotWritable\n');
     else dialog.showErrorBox(title, body);
+  } finally {
+    app.exit(1); // never a windowless process left running
+  }
+}
+
+/**
+ * startCore/startUi failed: say so (in the settings' language once they were read, else the OS's) and offer
+ * the log folder, instead of quitting silently. Automation gets a marker line instead of a modal dialog.
+ */
+async function reportStartupFailure(): Promise<void> {
+  try {
+    if (options.e2e) {
+      process.stderr.write('ORBITDROP_STARTUP_ERROR startupFailed\n');
+      return;
+    }
+    const locale = dialogLocale();
+    if (process.platform === 'darwin') app.focus({ steal: true });
+    const { response } = await dialog.showMessageBox({
+      type: 'error',
+      buttons: [t(locale, 'crash.startup.quit'), t(locale, 'crash.startup.openLogs')],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      message: t(locale, 'crash.startup.title'),
+      detail: t(locale, 'crash.startup.body'),
+    });
+    if (response === 1) await openLogsFolder();
+  } catch (error) {
+    log.warn('could not show the startup error', { error: describeError(error) });
   } finally {
     app.exit(1); // never a windowless process left running
   }
@@ -145,6 +232,6 @@ if (options.smokeTest) {
     .then(() => runApp(openFiles))
     .catch((error: unknown) => {
       log.error('startup failed', { error: describeError(error) });
-      app.exit(1);
+      void reportStartupFailure();
     });
 }
