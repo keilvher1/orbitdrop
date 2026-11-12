@@ -62,6 +62,8 @@ internal static class Suite
         public string Fixtures { get; init; } = "";
         public string ReadyLine { get; set; } = "";
         public Process? App { get; init; }
+        /// <summary>--expect-update-check on|off: the choice made in the installer, which the first run must take.</summary>
+        public string? ExpectUpdateCheck { get; init; }
     }
 
     /// <summary>Waits for a main.log line; gives up early when the app process has exited.</summary>
@@ -142,7 +144,7 @@ internal static class Suite
         string folder = Path.Combine(work, "OrbitDrop GUI test");
         if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
         Directory.CreateDirectory(folder);
-        var ctx = new Context { G = g, AppLog = appLog, Folder = folder, OutDir = outDir, Fixtures = fixtures, Work = work0, App = app };
+        var ctx = new Context { G = g, AppLog = appLog, Folder = folder, OutDir = outDir, Fixtures = fixtures, Work = work0, App = app, ExpectUpdateCheck = options.GetValueOrDefault("expect-update-check") };
         foreach ((string name, string fixture) in CaseFiles)
         {
             string target = Path.Combine(folder, name);
@@ -427,6 +429,18 @@ internal static class Suite
             List<IntPtr> after = AppWindows();
             c.Add("no OrbitDrop window left on screen", after.Count == 0, after.Count == 0 ? "none" : Describe(after));
         }
+        if (ctx.ExpectUpdateCheck is "on" or "off")
+        {
+            // The installer's privacy page (or /NOUPDATECHECK) recorded the choice; the first run takes it, says so in
+            // main.log, and the settings written when the welcome window closed keep it.
+            bool expected = ctx.ExpectUpdateCheck == "on";
+            string needle = $"first run: automatic update checks {ctx.ExpectUpdateCheck}, as chosen in the installer";
+            string? line = ctx.AppLog.Lines().FirstOrDefault(l => l.Contains(needle, StringComparison.Ordinal));
+            c.Add($"main.log: the first run took the installer's choice (automatic update checks {ctx.ExpectUpdateCheck})", line != null, line ?? $"no line '{needle}'");
+            string settingsFile = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(ctx.AppLog.FilePath)!)!, "settings.json");
+            bool? saved = WaitForAutoCheck(settingsFile, TimeSpan.FromSeconds(10));
+            c.Add($"settings.json keeps it: updates.autoCheck {ctx.ExpectUpdateCheck}", saved == expected, saved?.ToString() ?? "no settings.json, or no updates.autoCheck in it");
+        }
         if (helpers.Length > 0)
         {
             string helperLevel = Native.IntegrityOfProcess((uint)helpers[0].Id);
@@ -437,6 +451,29 @@ internal static class Suite
         c.Add("the wheel window exists, hidden, owned by the helper", wheel != IntPtr.Zero && !Native.IsWindowVisible(wheel) && helpers.Any(p => (uint)p.Id == Native.WindowPid(wheel)),
             wheel == IntPtr.Zero ? "no OrbitDropWheelWindow" : $"ex-style 0x{Native.GetWindowLongPtr(wheel, Native.GWL_EXSTYLE).ToInt64():X}");
         c.Shot("2-desktop", "startup: OrbitDrop running (tray only)");
+    }
+
+    /// <summary>updates.autoCheck of the app's settings.json once the file exists, or null.</summary>
+    private static bool? WaitForAutoCheck(string file, TimeSpan timeout)
+    {
+        var watch = Stopwatch.StartNew();
+        do
+        {
+            try
+            {
+                if (File.Exists(file))
+                {
+                    using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(file));
+                    if (doc.RootElement.TryGetProperty("updates", out JsonElement updates) && updates.TryGetProperty("autoCheck", out JsonElement value)) return value.GetBoolean();
+                }
+            }
+            catch (Exception error) when (error is IOException or JsonException or InvalidOperationException)
+            {
+                // written at this moment: try again
+            }
+            Thread.Sleep(250);
+        } while (watch.Elapsed < timeout);
+        return null;
     }
 
     private static void PdfToJpg(Context ctx, CaseResult c) =>
