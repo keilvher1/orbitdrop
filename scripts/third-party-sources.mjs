@@ -39,7 +39,7 @@ import { basename, dirname, join, relative, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { finished, pipeline } from 'node:stream/promises';
 import { createGunzip, createGzip, inflateRawSync } from 'node:zlib';
-import { DESKTOP, LIBRSVG_CRATES, LIBVIPS_SOURCES, NATIVE_SNAPSHOT, ROOT, UPSTREAM_DIR, readUpstreamIndex } from './licenses-sources.mjs';
+import { DESKTOP, ISSUES_URL, LIBRSVG_CRATES, LIBVIPS_SOURCES, NATIVE_SNAPSHOT, RELEASES_URL, ROOT, UPSTREAM_DIR, readUpstreamIndex, sourcesArchiveName } from './licenses-sources.mjs';
 
 const USAGE = 'usage: node scripts/third-party-sources.mjs [--out <dir>] [--list]';
 let listMode = false;
@@ -57,8 +57,8 @@ for (let i = 2; i < process.argv.length; i++) {
   }
 }
 const CACHE = join(DESKTOP, 'release', '.third-party-cache');
-const RELEASES = 'https://github.com/keilvher1/orbitdrop/releases';
-const ISSUES = 'https://github.com/keilvher1/orbitdrop/issues';
+const RELEASES = RELEASES_URL;
+const ISSUES = ISSUES_URL;
 
 // ── the few facts that cannot be derived ─────────────────────────────────────
 const OS_LABEL = { darwin: 'macOS', win32: 'Windows' };
@@ -475,7 +475,7 @@ const notMirrored = { libvips: [], chromium: null };
 
 const desktopPkg = readJson(join(DESKTOP, 'package.json'));
 const productName = desktopPkg.productName ?? 'OrbitDrop';
-const archiveBase = `${productName}-${desktopPkg.version}-third-party-sources`;
+const archiveBase = sourcesArchiveName(desktopPkg).replace(/\.tar\.gz$/, '');
 const snapshot = existsSync(NATIVE_SNAPSHOT) ? readJson(NATIVE_SNAPSHOT) : null;
 const upstreamIndex = readUpstreamIndex();
 const upstreamByKey = new Map(upstreamIndex.components.map((c) => [`${c.group}/${c.name}@${c.version}`, c]));

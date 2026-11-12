@@ -24,7 +24,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
-import { DESKTOP, LIBRSVG_CRATES, LIBVIPS_SOURCES, NATIVE_SNAPSHOT, ROOT, UPSTREAM_DIR, coreJsVersion, readUpstreamIndex, scanInlinedModules } from './licenses-sources.mjs';
+import { DESKTOP, ISSUES_URL, LIBRSVG_CRATES, LIBVIPS_SOURCES, NATIVE_SNAPSHOT, RELEASES_URL, ROOT, UPSTREAM_DIR, coreJsVersion, readUpstreamIndex, scanInlinedModules, sourcesArchiveName } from './licenses-sources.mjs';
 
 const OUTPUT = join(ROOT, 'THIRD_PARTY_LICENSES.md');
 
@@ -257,7 +257,7 @@ const canvasSbom = [
   '',
   '</details>',
   '',
-  `Licence expressions present: ${licenceKinds.join('; ')}. Components under MPL-2.0 are used unmodified; their source is available from their upstream repositories (crates.io).`,
+  `Licence expressions present: ${licenceKinds.join('; ')}. Components under MPL-2.0 are used unmodified; their source is in the release's sources archive (see "Source code of LGPL and MPL components") and on crates.io.`,
 ].join('\n');
 
 const pdfjsDir = resolvePackage('pdfjs-dist', DESKTOP);
@@ -328,6 +328,21 @@ How components are shipped:
   \`dist\`, pdf.js's legacy build); their licence texts are reproduced below.
 * **runtime** — Electron (with Chromium and Node.js) is the application runtime.
 
+## Source code of LGPL and MPL components
+
+The complete corresponding source of every component under the GNU LGPL or the Mozilla Public
+License that OrbitDrop ships — libvips and its LGPL/MPL libraries with the patches and build
+scripts used to build them, FFmpeg as built for Electron ${electronPkg.version}, and the MPL-2.0 Rust
+crates — is published with each release at ${RELEASES_URL} — asset
+\`${sourcesArchiveName(desktopPkg)}\`. Its \`MANIFEST.md\` lists every archive with its
+upstream URL and SHA-256, and explains how to replace libvips or FFmpeg with a modified build.
+
+Written offer: if that archive cannot be obtained there, we will provide the same sources — and the
+source of the LGPL/MPL code in Electron's Chromium — to anyone who received OrbitDrop
+${desktopPkg.version} in binary form, for three years after its release, at no charge as a download
+or for no more than the cost of physically performing the distribution. Request it at
+${ISSUES_URL}.
+
 ## Summary
 
 | Package | Version | Licence | Shipped as | Source |
@@ -366,7 +381,9 @@ Among them is **FFmpeg**, which Chromium builds as a separate dynamic library
 the GNU LGPL 2.1 or later. OrbitDrop ships it unmodified, exactly as published in Electron
 ${electronPkg.version}, and does not call it directly; its notice is the "ffmpeg" entry of
 \`LICENSES.chromium.html\`. Source: https://chromium.googlesource.com/chromium/third_party/ffmpeg
-(the revision pinned by Electron ${electronPkg.version}'s Chromium); the LGPL notes below apply to it too.
+(the revision pinned by Electron ${electronPkg.version}'s Chromium; that revision and Electron's FFmpeg patch
+are in the release's sources archive, see "Source code of LGPL and MPL components"); the LGPL notes
+below apply to it too.
 
 ### libvips ${libvipsVersion} and its libraries (via sharp)
 
@@ -387,11 +404,12 @@ LGPL compliance notes for OrbitDrop:
   ad hoc (\`codesign --force --deep --sign - OrbitDrop.app\`) to run it. OrbitDrop's terms do not
   restrict modification of these libraries or reverse engineering for debugging such modifications
   (LGPL-3.0 section 4).
-* Corresponding source for these exact versions: libvips https://github.com/libvips/libvips
-  (v${libvipsVersion}); build scripts and sources of every bundled library:
-  https://github.com/lovell/sharp-libvips (v${libvipsPkgVersion}).
-* cairo is used under the Mozilla Public License 1.1; its source is available from
-  https://gitlab.freedesktop.org/cairo/cairo (tag ${libvipsVersions.cairo ?? '?'}) and through the sharp-libvips build above.
+* Corresponding source for these exact versions, with the patches and build scripts used: the
+  release's sources archive (see "Source code of LGPL and MPL components"). Upstream: libvips
+  https://github.com/libvips/libvips (v${libvipsVersion}); build scripts and sources of every bundled
+  library: https://github.com/lovell/sharp-libvips (v${libvipsPkgVersion}).
+* cairo is used under the Mozilla Public License 1.1; its source is in the release's sources archive
+  and at https://gitlab.freedesktop.org/cairo/cairo (tag ${libvipsVersions.cairo ?? '?'}).
 * libvips also contains libnsgif (MIT, vendored in the libvips source tree), and librsvg is written
   in Rust: it statically links the ${librsvgCrates?.crates.length ?? '?'} crates listed under "Crates linked into librsvg"
   below and the Rust standard library.
