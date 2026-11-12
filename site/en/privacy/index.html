@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Privacy — OrbitDrop</title>
+<meta name="description" content="OrbitDrop processes your files on your own computer, with no account, no upload and no telemetry. What the app and this website store, and where.">
+<link rel="canonical" href="https://keilvher1.github.io/orbitdrop/en/privacy/">
+<link rel="alternate" hreflang="ko" href="https://keilvher1.github.io/orbitdrop/privacy/">
+<link rel="alternate" hreflang="en" href="https://keilvher1.github.io/orbitdrop/en/privacy/">
+<link rel="alternate" hreflang="x-default" href="https://keilvher1.github.io/orbitdrop/privacy/">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#FFF6EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#221A15" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" sizes="32x32" href="../../assets/icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="../../assets/icons/favicon-16.png">
+<link rel="apple-touch-icon" href="../../assets/icons/apple-touch-icon.png">
+<link rel="stylesheet" href="../../assets/site.css">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OrbitDrop">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="OrbitDrop privacy statement">
+<meta property="og:description" content="Your files are processed on your own computer. No account, no upload, no telemetry.">
+<meta property="og:url" content="https://keilvher1.github.io/orbitdrop/en/privacy/">
+<meta property="og:image" content="https://keilvher1.github.io/orbitdrop/assets/og-en.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The OrbitDrop icon and convert wheel">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="../"><img src="../../assets/icons/icon-64.png" width="32" height="32" alt="" aria-hidden="true"><span>OrbitDrop</span></a>
+    <nav class="site-nav" aria-label="Main">
+      <ul>
+        <li class="nav-section"><a href="../#how">How it works</a></li>
+        <li class="nav-section"><a href="../#faq">FAQ</a></li>
+        <li><a class="nav-lang" href="../../privacy/" hreflang="ko" lang="ko">한국어</a></li>
+        <li><a class="nav-download" href="../#download">Download</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+  <article class="doc">
+    <h1>Privacy statement</h1>
+    <p class="updated">Last updated: 12 November 2026</p>
+
+    <div class="summary">
+      <ul>
+        <li>OrbitDrop processes your files on your own computer. It never uploads them.</li>
+        <li>There is no account, and no usage statistics or crash reports are sent.</li>
+        <li>The only network use is an optional update check.</li>
+        <li>This website uses no cookies and no analytics.</li>
+      </ul>
+    </div>
+
+    <p>This statement explains what the OrbitDrop desktop app (macOS, Windows) and this website keep, and where. OrbitDrop is open source under the MIT licence, so you can verify all of this in the <a href="https://github.com/keilvher1/orbitdrop">source code</a>.</p>
+
+    <h2 id="app">The app</h2>
+
+    <h3 id="files">Your files</h3>
+    <p>Every conversion and edit happens on your computer. File contents and file names are never sent anywhere. Results are saved next to the original (or in a folder you choose); the original is never moved, overwritten or deleted.</p>
+
+    <h3 id="local-data">What is stored on your computer</h3>
+    <p>OrbitDrop keeps the following on your computer only, and never sends it anywhere:</p>
+    <ul>
+      <li><strong>Settings</strong> (<code>settings.json</code>) — your choices, such as the language, the shortcuts and the save location</li>
+      <li><strong>Job history</strong> (<code>history.json</code>) — names, sizes, states and output paths of the last 100 jobs. Never file contents.</li>
+      <li><strong>Logs</strong> (<code>logs/main.log</code>) — for troubleshooting. They contain no document contents and no full paths.</li>
+      <li><strong>Caches</strong> — temporary data the app creates while it works</li>
+      <li><strong>Crash dumps</strong> — may be written if the app crashes; they stay on your computer and are never sent.</li>
+    </ul>
+    <table class="data-table">
+      <caption class="visually-hidden">Data locations by operating system</caption>
+      <thead>
+        <tr><th scope="col">System</th><th scope="col">Location</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">macOS</th><td><code>~/Library/Application Support/OrbitDrop</code><br><code>~/Library/Preferences/io.github.keilvher1.orbitdrop.plist</code></td></tr>
+        <tr><th scope="row">Windows</th><td><code>%APPDATA%\OrbitDrop</code></td></tr>
+      </tbody>
+    </table>
+    <p>This data stays when you remove the app. You can delete it at any time; the <a href="../#faq-uninstall">FAQ</a> explains how.</p>
+
+    <h3 id="network">Network</h3>
+    <p>The only time OrbitDrop uses the internet is the <strong>optional update check</strong>. When it checks for updates, OrbitDrop asks GitHub for the latest version. With that request GitHub receives the app version and normal HTTP metadata (your IP address, the time of the request and so on). No files, file names, settings or job history are sent. GitHub handles this information under the <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">GitHub General Privacy Statement</a>.</p>
+    <p>If you do not use the update check, OrbitDrop does not connect to the internet. Links inside the app (for example to GitHub) open in your default web browser.</p>
+
+    <h3 id="permissions">Permissions</h3>
+    <p>OrbitDrop does not use accounts, the camera, the microphone, location or contacts. On macOS the global drag needs no permission, and OrbitDrop never records keystrokes, pointer positions or window information. See the <a href="../#faq-permissions">FAQ</a> for details.</p>
+
+    <h2 id="website">This website</h2>
+    <ul>
+      <li>This site is hosted on GitHub Pages. GitHub logs visitors’ IP addresses for security purposes (<a href="https://docs.github.com/pages/getting-started-with-github-pages/about-github-pages#data-collection">GitHub Pages documentation</a>). See the <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">GitHub General Privacy Statement</a>.</li>
+      <li>It uses no cookies, no analytics, no ads, and no external fonts or scripts.</li>
+      <li>To show the latest version, the download section of the home page asks the GitHub API (<code>api.github.com</code>) directly from your browser. GitHub receives normal HTTP metadata such as your IP address with that request too. With JavaScript turned off, the request is not made.</li>
+      <li>Download links fetch the files from GitHub.</li>
+    </ul>
+
+    <h2 id="contact">Questions and changes</h2>
+    <p>Questions or requests are welcome in <a href="https://github.com/keilvher1/orbitdrop/issues">GitHub issues</a>. If this statement changes, this page and its date are updated; earlier versions are in the <a href="https://github.com/keilvher1/orbitdrop/commits/main/site/en/privacy/index.html">change history on GitHub</a>.</p>
+  </article>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div>
+      <p class="footer-brand"><img src="../../assets/icons/icon-64.png" width="28" height="28" alt="" aria-hidden="true">OrbitDrop</p>
+      <p>A desktop app that converts and edits files on your own computer. Free, MIT licence.</p>
+    </div>
+    <nav aria-label="Site information">
+      <ul class="footer-links">
+        <li><a href="https://github.com/keilvher1/orbitdrop">GitHub</a></li>
+        <li><a href="https://github.com/keilvher1/orbitdrop/blob/main/LICENSE">Licence (MIT)</a></li>
+        <li><a href="https://github.com/keilvher1/orbitdrop/blob/main/THIRD_PARTY_LICENSES.md">Third-party licences</a></li>
+        <li><a href="./" aria-current="page">Privacy</a></li>
+        <li><a href="../../privacy/" hreflang="ko" lang="ko">한국어</a></li>
+      </ul>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>

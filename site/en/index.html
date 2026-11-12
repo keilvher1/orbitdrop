@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://api.github.com; base-uri 'none'; form-action 'none'">
+<title>OrbitDrop — drag, press Shift, drop to convert</title>
+<meta name="description" content="Drag a file in Finder or File Explorer, press Shift and a radial wheel appears next to the pointer. Drop the file on a format and the result is saved next to the original. Free, open source (MIT) and fully local.">
+<link rel="canonical" href="https://keilvher1.github.io/orbitdrop/en/">
+<link rel="alternate" hreflang="ko" href="https://keilvher1.github.io/orbitdrop/">
+<link rel="alternate" hreflang="en" href="https://keilvher1.github.io/orbitdrop/en/">
+<link rel="alternate" hreflang="x-default" href="https://keilvher1.github.io/orbitdrop/">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#FFF6EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#221A15" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="../assets/icons/favicon-16.png">
+<link rel="icon" type="image/png" sizes="192x192" href="../assets/icons/icon-192.png">
+<link rel="apple-touch-icon" href="../assets/icons/apple-touch-icon.png">
+<link rel="stylesheet" href="../assets/site.css">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="OrbitDrop">
+<meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="ko_KR">
+<meta property="og:title" content="OrbitDrop — drag, press Shift, drop to convert">
+<meta property="og:description" content="Press Shift while dragging a file and a radial wheel appears next to the pointer. Drop it on a format and the result appears next to the original. Free, open source, and everything stays on your computer.">
+<meta property="og:url" content="https://keilvher1.github.io/orbitdrop/en/">
+<meta property="og:image" content="https://keilvher1.github.io/orbitdrop/assets/og-en.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The OrbitDrop icon, the line 'Drag a file, press Shift, drop it on a format.' and the convert wheel with the PNG sector highlighted">
+<meta name="twitter:card" content="summary_large_image">
+<script src="../assets/download.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="../assets/icons/icon-64.png" width="32" height="32" alt="" aria-hidden="true"><span>OrbitDrop</span></a>
+    <nav class="site-nav" aria-label="Main">
+      <ul>
+        <li class="nav-section"><a href="#how">How it works</a></li>
+        <li class="nav-section"><a href="#formats">Formats</a></li>
+        <li class="nav-section"><a href="#tools">Tools</a></li>
+        <li class="nav-section"><a href="#privacy">Privacy</a></li>
+        <li class="nav-section"><a href="#faq">FAQ</a></li>
+        <li><a class="nav-lang" href="../" hreflang="ko" lang="ko">한국어</a></li>
+        <li><a class="nav-download" href="#download">Download</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero" aria-labelledby="hero-title">
+  <div class="wrap">
+    <div class="hero-copy">
+      <p class="eyebrow">Free, open-source desktop app · macOS · Windows (beta)</p>
+      <h1 id="hero-title">Drag a file, press Shift, <span class="accent">drop it on a format.</span></h1>
+      <p class="hero-lead">OrbitDrop opens a radial wheel next to the pointer when you press <kbd>Shift</kbd> while dragging a file in Finder or File Explorer. Drop the file on a format or a tool and <strong>the result appears next to the original</strong>, which stays untouched.</p>
+      <div class="btn-row">
+        <a class="btn btn-primary" href="#download">Download</a>
+        <a class="btn btn-secondary" href="https://github.com/keilvher1/orbitdrop">Source on GitHub</a>
+      </div>
+      <ul class="facts" aria-label="At a glance">
+        <li>No account, upload or telemetry</li>
+        <li>macOS 14 or later</li>
+        <li>Windows 11 x64 (beta)</li>
+        <li>MIT licence</li>
+      </ul>
+    </div>
+    <figure class="hero-figure">
+      <div class="hero-art"><!-- build:wheel-hero --><svg class="wheel-art" id="hero-wheel" viewBox="-258 -206 516 436" role="img" aria-labelledby="hero-wheel-title hero-wheel-desc" focusable="false" font-family="&#39;Apple SD Gothic Neo&#39;, &#39;Helvetica Neue&#39;, &#39;Segoe UI&#39;, &#39;Malgun Gothic&#39;, &#39;Noto Sans KR&#39;, sans-serif" font-weight="700"><title id="hero-wheel-title">The OrbitDrop convert wheel</title><desc id="hero-wheel-desc">The radial menu that appears next to the pointer when you press Shift while dragging a JPG file. Clockwise from the top it offers PNG, WEBP, HEIC, TIFF, AVIF, BMP, PDF, DOCX; the PNG sector under the pointer is highlighted in orange and the centre capsule reads PNG.</desc><defs><filter id="hero-wheel-shadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB"><feDropShadow class="w-shadow" dx="0" dy="10" stdDeviation="11" flood-color="#7A2E00" flood-opacity="0.251"/></filter></defs><circle class="w-disc" r="179.25" fill="rgba(255, 243, 230, 0.722)" stroke="rgba(255, 255, 255, 0.851)" stroke-width="1.5" filter="url(#hero-wheel-shadow)"/><g class="w-sector s0 is-active" data-action="convert.png"><path class="w-hit" d="M -24.8 -59.87 L -68.88 -166.3 A 180 180 0 0 1 68.88 -166.3 L 24.8 -59.87 A 64.8 64.8 0 0 0 -24.8 -59.87 Z" fill="transparent"/><path class="w-shape" d="M -26.674 -72.235 L -57.341 -146.274 A 14 14 0 0 1 -48.342 -165.067 A 172 172 0 0 1 48.342 -165.067 A 14 14 0 0 1 57.341 -146.274 L 26.674 -72.235 A 14 14 0 0 1 11.298 -63.807 A 64.8 64.8 0 0 0 -11.298 -63.807 A 14 14 0 0 1 -26.674 -72.235 Z" fill="#D4441C"/><g transform="translate(0 -118.4)"><text class="w-label" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#FFFFFF">PNG</text></g></g><g class="w-sector s1" data-action="convert.webp"><path class="w-hit" d="M 24.8 -59.87 L 68.88 -166.3 A 180 180 0 0 1 166.3 -68.88 L 59.87 -24.8 A 64.8 64.8 0 0 0 24.8 -59.87 Z" fill="transparent"/><path class="w-shape" d="M 32.217 -69.939 L 62.885 -143.978 A 14 14 0 0 1 82.537 -150.903 A 172 172 0 0 1 150.903 -82.537 A 14 14 0 0 1 143.978 -62.885 L 69.939 -32.217 A 14 14 0 0 1 53.108 -37.129 A 64.8 64.8 0 0 0 37.129 -53.108 A 14 14 0 0 1 32.217 -69.939 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(83.72 -83.72)"><text class="w-label" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">WEBP</text></g></g><g class="w-sector s2" data-action="convert.heic"><path class="w-hit" d="M 59.87 -24.8 L 166.3 -68.88 A 180 180 0 0 1 166.3 68.88 L 59.87 24.8 A 64.8 64.8 0 0 0 59.87 -24.8 Z" fill="transparent"/><path class="w-shape" d="M 72.235 -26.674 L 146.274 -57.341 A 14 14 0 0 1 165.067 -48.342 A 172 172 0 0 1 165.067 48.342 A 14 14 0 0 1 146.274 57.341 L 72.235 26.674 A 14 14 0 0 1 63.807 11.298 A 64.8 64.8 0 0 0 63.807 -11.298 A 14 14 0 0 1 72.235 -26.674 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(118.4 0)"><text class="w-label" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">HEIC</text></g></g><g class="w-sector s3" data-action="convert.tiff"><path class="w-hit" d="M 59.87 24.8 L 166.3 68.88 A 180 180 0 0 1 68.88 166.3 L 24.8 59.87 A 64.8 64.8 0 0 0 59.87 24.8 Z" fill="transparent"/><path class="w-shape" d="M 69.939 32.217 L 143.978 62.885 A 14 14 0 0 1 150.903 82.537 A 172 172 0 0 1 82.537 150.903 A 14 14 0 0 1 62.885 143.978 L 32.217 69.939 A 14 14 0 0 1 37.129 53.108 A 64.8 64.8 0 0 0 53.108 37.129 A 14 14 0 0 1 69.939 32.217 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(83.72 83.72)"><text class="w-label" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">TIFF</text></g></g><g class="w-sector s4" data-action="convert.avif"><path class="w-hit" d="M 24.8 59.87 L 68.88 166.3 A 180 180 0 0 1 -68.88 166.3 L -24.8 59.87 A 64.8 64.8 0 0 0 24.8 59.87 Z" fill="transparent"/><path class="w-shape" d="M 26.674 72.235 L 57.341 146.274 A 14 14 0 0 1 48.342 165.067 A 172 172 0 0 1 -48.342 165.067 A 14 14 0 0 1 -57.341 146.274 L -26.674 72.235 A 14 14 0 0 1 -11.298 63.807 A 64.8 64.8 0 0 0 11.298 63.807 A 14 14 0 0 1 26.674 72.235 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(0 118.4)"><text class="w-label" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">AVIF</text></g></g><g class="w-sector s5" data-action="convert.bmp"><path class="w-hit" d="M -24.8 59.87 L -68.88 166.3 A 180 180 0 0 1 -166.3 68.88 L -59.87 24.8 A 64.8 64.8 0 0 0 -24.8 59.87 Z" fill="transparent"/><path class="w-shape" d="M -32.217 69.939 L -62.885 143.978 A 14 14 0 0 1 -82.537 150.903 A 172 172 0 0 1 -150.903 82.537 A 14 14 0 0 1 -143.978 62.885 L -69.939 32.217 A 14 14 0 0 1 -53.108 37.129 A 64.8 64.8 0 0 0 -37.129 53.108 A 14 14 0 0 1 -32.217 69.939 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(-83.72 83.72)"><text class="w-label" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">BMP</text></g></g><g class="w-sector s6" data-action="convert.pdf"><path class="w-hit" d="M -59.87 24.8 L -166.3 68.88 A 180 180 0 0 1 -166.3 -68.88 L -59.87 -24.8 A 64.8 64.8 0 0 0 -59.87 24.8 Z" fill="transparent"/><path class="w-shape" d="M -72.235 26.674 L -146.274 57.341 A 14 14 0 0 1 -165.067 48.342 A 172 172 0 0 1 -165.067 -48.342 A 14 14 0 0 1 -146.274 -57.341 L -72.235 -26.674 A 14 14 0 0 1 -63.807 -11.298 A 64.8 64.8 0 0 0 -63.807 11.298 A 14 14 0 0 1 -72.235 26.674 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(-118.4 0)"><text class="w-label" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">PDF</text></g></g><g class="w-sector s7" data-action="convert.docx"><path class="w-hit" d="M -59.87 -24.8 L -166.3 -68.88 A 180 180 0 0 1 -68.88 -166.3 L -24.8 -59.87 A 64.8 64.8 0 0 0 -59.87 -24.8 Z" fill="transparent"/><path class="w-shape" d="M -69.939 -32.217 L -143.978 -62.885 A 14 14 0 0 1 -150.903 -82.537 A 172 172 0 0 1 -82.537 -150.903 A 14 14 0 0 1 -62.885 -143.978 L -32.217 -69.939 A 14 14 0 0 1 -37.129 -53.108 A 64.8 64.8 0 0 0 -53.108 -37.129 A 14 14 0 0 1 -69.939 -32.217 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(-83.72 -83.72)"><text class="w-label" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">DOCX</text></g></g><g class="w-cap c0 is-default"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">PNG</text><rect class="w-capsule" x="-28" y="186" width="56" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">PNG</text></g><g class="w-cap c1" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">WEBP</text><rect class="w-capsule" x="-30.68" y="186" width="61.36" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">WEBP</text></g><g class="w-cap c2" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">HEIC</text><rect class="w-capsule" x="-30.68" y="186" width="61.36" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">HEIC</text></g><g class="w-cap c3" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">TIFF</text><rect class="w-capsule" x="-30.68" y="186" width="61.36" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">TIFF</text></g><g class="w-cap c4" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">AVIF</text><rect class="w-capsule" x="-30.68" y="186" width="61.36" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">AVIF</text></g><g class="w-cap c5" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">BMP</text><rect class="w-capsule" x="-28" y="186" width="56" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">BMP</text></g><g class="w-cap c6" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">PDF</text><rect class="w-capsule" x="-28" y="186" width="56" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">PDF</text></g><g class="w-cap c7" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">DOCX</text><rect class="w-capsule" x="-30.68" y="186" width="61.36" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">DOCX</text></g><g class="w-drag" aria-hidden="true"><defs><linearGradient id="hero-wheel-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3B4C8C"/><stop offset="0.62" stop-color="#E08A62"/><stop offset="1" stop-color="#F3B47E"/></linearGradient><filter id="hero-wheel-lift" x="-30%" y="-30%" width="160%" height="170%" color-interpolation-filters="sRGB"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#2B1D14" flood-opacity="0.3"/></filter></defs><g transform="translate(62 -160)" filter="url(#hero-wheel-lift)"><rect x="-29" y="-23" width="58" height="46" rx="5" fill="#FFFFFF"/><rect x="-26" y="-20" width="52" height="40" rx="2.5" fill="url(#hero-wheel-sky)"/><circle cx="9" cy="-3" r="7.5" fill="#FDEBD2"/><path d="M-26 9 C-15 -1 -3 -1 7 7 C13 11 20 11 26 5 L26 20 L-26 20 Z" fill="#3E3452"/><rect class="w-file-name" x="-31" y="27" width="62" height="18" rx="5" fill="#1E5FD6"/><text x="0" y="36" dy="0.35em" text-anchor="middle" font-size="11.5" font-weight="600" fill="#FFFFFF">photo.jpg</text></g><path class="w-pointer" transform="translate(44 -152) scale(1.15)" d="M0 0 L0 16.6 L3.9 13 L6.5 19 L9.2 17.9 L6.7 12 L12 12 Z" fill="#111111" stroke="#FFFFFF" stroke-width="1.3" stroke-linejoin="round"/></g><g class="w-key" transform="translate(-200 172)" aria-hidden="true"><rect class="w-key-base" x="-52" y="-22" width="104" height="48" rx="11" fill="#E9D3C1"/><rect class="w-key-top" x="-52" y="-26" width="104" height="47" rx="11" fill="#FFFFFF" stroke="#EBD7C6"/><text class="w-key-text" x="0" y="-2.5" dy="0.35em" text-anchor="middle" font-size="18" font-weight="700" fill="#2B1D14">⇧ Shift</text></g></svg><!-- /build:wheel-hero --></div>
+      <figcaption>Dragging a JPG file with <kbd>Shift</kbd> held, drawn with the same wheel geometry and colours as the app.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="how" class="section section-alt" aria-labelledby="how-title">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">How it works</p>
+      <h2 id="how-title">Three steps</h2>
+      <p class="lead">No window to open first. Drag a file as usual and press one more key.</p>
+    </div>
+    <ol class="steps">
+      <li class="card">
+        <span class="step-num" aria-hidden="true">1</span>
+        <h3>Drag a file</h3>
+        <p>Drag a PDF or an image in Finder or File Explorer as you normally would. Several files at once work too (some tools take one file at a time).</p>
+      </li>
+      <li class="card">
+        <span class="step-num" aria-hidden="true">2</span>
+        <h3>Press <kbd>Shift</kbd></h3>
+        <p>The convert wheel appears next to the pointer. On macOS, <kbd>Option</kbd>+<kbd>Shift</kbd> opens the tools wheel instead. You can change the tools menu shortcut in Settings. The wheel stays until you drop or cancel, even after you let go of the key.</p>
+      </li>
+      <li class="card">
+        <span class="step-num" aria-hidden="true">3</span>
+        <h3>Drop it on a sector</h3>
+        <p>The result is saved in the same folder as the original. The original is never moved, overwritten or deleted. Dropping on the centre of the wheel does nothing.</p>
+      </li>
+    </ol>
+    <div class="note">
+      <p class="note-title">Prefer not to drag?</p>
+      <p>Choose <strong>Open File…</strong> from the OrbitDrop icon in the menu bar (the notification area on Windows), or drop files on the small <strong>Drop Zone</strong> window. You get the same wheel, and you can also pick with the arrow keys and <kbd>Enter</kbd>.</p>
+    </div>
+  </div>
+</section>
+
+<section id="formats" class="section" aria-labelledby="formats-title">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Formats</p>
+      <h2 id="formats-title">What it converts</h2>
+      <p class="lead">The wheel only offers formats that really work for the file you are dragging. There is no fake conversion that just renames the extension.</p>
+    </div>
+    <div class="table-wrap">
+      <table class="formats">
+        <caption>As on macOS. Differences in the Windows beta are listed below the table.</caption>
+        <thead>
+          <tr><th scope="col">From</th><th scope="col">To</th><th scope="col">Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">PDF</th><td class="to">JPG, PNG</td><td>One image per page (<code>report-p001.jpg</code> …), 300 or 150 DPI</td></tr>
+          <tr><th scope="row">PDF</th><td class="to">TXT</td><td>PDFs that contain text. Scanned PDFs are not run through OCR.</td></tr>
+          <tr><th scope="row">PDF</th><td class="to">DOCX</td><td>Text-focused; the original layout is not reproduced.</td></tr>
+          <tr><th scope="row">JPG, PNG, WebP</th><td class="to">Each other</td><td>Respects the photo orientation (EXIF). Transparent areas are filled with a background colour when converting to JPG.</td></tr>
+          <tr><th scope="row">Images</th><td class="to">TIFF, AVIF, BMP</td><td>BMP files can also be opened.</td></tr>
+          <tr><th scope="row">Images</th><td class="to">HEIC</td><td>macOS only. HEIC files can also be opened.</td></tr>
+          <tr><th scope="row">Several images</th><td class="to">PDF</td><td>One file, with the page order, paper size and margins you choose.</td></tr>
+          <tr><th scope="row">Images</th><td class="to">DOCX</td><td>Embedded as pictures (no OCR).</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="fine">The Windows version uses the same conversion engines but has not been checked on a real PC yet (beta). HEIC is not supported on Windows. Sectors the bundled engines cannot handle are disabled on the wheel, with the reason. There is no OCR, video or audio conversion, AI or cloud feature.</p>
+  </div>
+</section>
+
+<section id="tools" class="section section-alt" aria-labelledby="tools-title">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Tools</p>
+      <h2 id="tools-title">The image tools wheel</h2>
+      <p class="lead">On macOS, press <kbd>Option</kbd>+<kbd>Shift</kbd> while dragging an image to open the tools wheel. You can change the tools menu shortcut in Settings. Picking a tool opens a small editor window.</p>
+    </div>
+    <div class="tools-layout">
+      <figure class="tools-figure">
+        <div class="hero-art"><!-- build:wheel-tools --><svg class="wheel-art" id="tools-wheel" viewBox="-196 -196 392 428" role="img" aria-labelledby="tools-wheel-title tools-wheel-desc" focusable="false" font-family="&#39;Apple SD Gothic Neo&#39;, &#39;Helvetica Neue&#39;, &#39;Segoe UI&#39;, &#39;Malgun Gothic&#39;, &#39;Noto Sans KR&#39;, sans-serif" font-weight="700"><title id="tools-wheel-title">The OrbitDrop tools wheel</title><desc id="tools-wheel-desc">The tools menu that appears when you press Option+Shift while dragging an image. Clockwise from the top it offers COMPRESS, METADATA, EDIT, ANNOTATE, ADD BG, CROP, REDACT; the CROP sector is highlighted in orange.</desc><defs><filter id="tools-wheel-shadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB"><feDropShadow class="w-shadow" dx="0" dy="10" stdDeviation="11" flood-color="#7A2E00" flood-opacity="0.251"/></filter></defs><circle class="w-disc" r="179.25" fill="rgba(255, 243, 230, 0.722)" stroke="rgba(255, 255, 255, 0.851)" stroke-width="1.5" filter="url(#tools-wheel-shadow)"/><g class="w-sector s0" data-action="tool.compress"><path class="w-hit" d="M -28.12 -58.38 L -78.1 -162.17 A 180 180 0 0 1 78.1 -162.17 L 28.12 -58.38 A 64.8 64.8 0 0 0 -28.12 -58.38 Z" fill="transparent"/><path class="w-shape" d="M -30.682 -70.626 L -65.453 -142.828 A 14 14 0 0 1 -57.521 -162.097 A 172 172 0 0 1 57.521 -162.097 A 14 14 0 0 1 65.453 -142.828 L 30.682 -70.626 A 14 14 0 0 1 14.858 -63.074 A 64.8 64.8 0 0 0 -14.858 -63.074 A 14 14 0 0 1 -30.682 -70.626 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(0 -118.4)"><g class="w-icon" transform="translate(-10 -23) scale(0.83)" fill="none" stroke="#4A3426" color="#4A3426" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 10 7-7"/><path d="M20 10h-6V4"/><path d="m3 21 7-7"/><path d="M4 14h6v6"/></g><text class="w-label" x="0" y="10" dy="0.35em" text-anchor="middle" font-size="14.2" letter-spacing="0.4" fill="#3B2A1E">COMPRESS</text></g></g><g class="w-sector s1" data-action="tool.metadata"><path class="w-hit" d="M 28.12 -58.38 L 78.1 -162.17 A 180 180 0 0 1 175.49 -40.05 L 63.18 -14.42 A 64.8 64.8 0 0 0 28.12 -58.38 Z" fill="transparent"/><path class="w-shape" d="M 36.088 -68.023 L 70.859 -140.225 A 14 14 0 0 1 90.868 -146.037 A 172 172 0 0 1 162.596 -56.094 A 14 14 0 0 1 152.477 -37.879 L 74.348 -20.047 A 14 14 0 0 1 58.577 -27.709 A 64.8 64.8 0 0 0 40.049 -50.942 A 14 14 0 0 1 36.088 -68.023 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(92.57 -73.82)"><g class="w-icon" transform="translate(-10 -23) scale(0.83)" fill="none" stroke="#4A3426" color="#4A3426" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></g><text class="w-label" x="0" y="10" dy="0.35em" text-anchor="middle" font-size="14.2" letter-spacing="0.4" fill="#3B2A1E">METADATA</text></g></g><g class="w-sector s2" data-action="tool.edit"><path class="w-hit" d="M 63.18 -14.42 L 175.49 -40.05 A 180 180 0 0 1 140.73 112.23 L 50.66 40.4 A 64.8 64.8 0 0 0 63.18 -14.42 Z" fill="transparent"/><path class="w-shape" d="M 75.683 -14.197 L 153.812 -32.029 A 14 14 0 0 1 170.832 -20.009 A 172 172 0 0 1 145.233 92.149 A 14 14 0 0 1 124.683 95.594 L 62.028 45.629 A 14 14 0 0 1 58.186 28.521 A 64.8 64.8 0 0 0 64.798 -0.451 A 14 14 0 0 1 75.683 -14.197 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(115.43 26.35)"><g class="w-icon" transform="translate(-10 -23) scale(0.83)" fill="none" stroke="#4A3426" color="#4A3426" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></g><text class="w-label" x="0" y="10" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">EDIT</text></g></g><g class="w-sector s3" data-action="tool.annotate"><path class="w-hit" d="M 50.66 40.4 L 140.73 112.23 A 180 180 0 0 1 0 180 L 0 64.8 A 64.8 64.8 0 0 0 50.66 40.4 Z" fill="transparent"/><path class="w-shape" d="M 58.287 50.32 L 120.942 100.285 A 14 14 0 0 1 122.156 121.087 A 172 172 0 0 1 18.506 171.002 A 14 14 0 0 1 3 157.083 L 3 76.944 A 14 14 0 0 1 13.98 63.274 A 64.8 64.8 0 0 0 40.753 50.381 A 14 14 0 0 1 58.287 50.32 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(51.37 106.67)"><g class="w-icon" transform="translate(-10 -23) scale(0.83)" fill="none" stroke="#4A3426" color="#4A3426" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></g><text class="w-label" x="0" y="10" dy="0.35em" text-anchor="middle" font-size="14.2" letter-spacing="0.4" fill="#3B2A1E">ANNOTATE</text></g></g><g class="w-sector s4" data-action="tool.addBackground"><path class="w-hit" d="M 0 64.8 L 0 180 A 180 180 0 0 1 -140.73 112.23 L -50.66 40.4 A 64.8 64.8 0 0 0 0 64.8 Z" fill="transparent"/><path class="w-shape" d="M -3 76.944 L -3 157.083 A 14 14 0 0 1 -18.506 171.002 A 172 172 0 0 1 -122.156 121.087 A 14 14 0 0 1 -120.942 100.285 L -58.287 50.32 A 14 14 0 0 1 -40.753 50.381 A 64.8 64.8 0 0 0 -13.98 63.274 A 14 14 0 0 1 -3 76.944 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(-51.37 106.67)"><g class="w-icon" transform="translate(-10 -23) scale(0.83)" fill="none" stroke="#4A3426" color="#4A3426" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></g><text class="w-label" x="0" y="10" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">ADD BG</text></g></g><g class="w-sector s5 is-active" data-action="tool.crop"><path class="w-hit" d="M -50.66 40.4 L -140.73 112.23 A 180 180 0 0 1 -175.49 -40.05 L -63.18 -14.42 A 64.8 64.8 0 0 0 -50.66 40.4 Z" fill="transparent"/><path class="w-shape" d="M -62.028 45.629 L -124.683 95.594 A 14 14 0 0 1 -145.233 92.149 A 172 172 0 0 1 -170.832 -20.009 A 14 14 0 0 1 -153.812 -32.029 L -75.683 -14.197 A 14 14 0 0 1 -64.798 -0.451 A 64.8 64.8 0 0 0 -58.186 28.521 A 14 14 0 0 1 -62.028 45.629 Z" fill="#D4441C"/><g transform="translate(-115.43 26.35)"><g class="w-icon" transform="translate(-10 -23) scale(0.83)" fill="none" stroke="#FFFFFF" color="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></g><text class="w-label" x="0" y="10" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#FFFFFF">CROP</text></g></g><g class="w-sector s6" data-action="tool.redact"><path class="w-hit" d="M -63.18 -14.42 L -175.49 -40.05 A 180 180 0 0 1 -78.1 -162.17 L -28.12 -58.38 A 64.8 64.8 0 0 0 -63.18 -14.42 Z" fill="transparent"/><path class="w-shape" d="M -74.348 -20.047 L -152.477 -37.879 A 14 14 0 0 1 -162.596 -56.094 A 172 172 0 0 1 -90.868 -146.037 A 14 14 0 0 1 -70.859 -140.225 L -36.088 -68.023 A 14 14 0 0 1 -40.049 -50.942 A 64.8 64.8 0 0 0 -58.577 -27.709 A 14 14 0 0 1 -74.348 -20.047 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(-92.57 -73.82)"><g class="w-icon" transform="translate(-10 -23) scale(0.83)" fill="none" stroke="#4A3426" color="#4A3426" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></g><text class="w-label" x="0" y="10" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">REDACT</text></g></g><g class="w-cap c0" visibility="hidden"><rect class="w-capsule" x="-57.52" y="-23" width="115.04" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">COMPRESS</text><rect class="w-capsule" x="-48.36" y="186" width="96.72" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">COMPRESS</text></g><g class="w-cap c1" visibility="hidden"><rect class="w-capsule" x="-57.52" y="-23" width="115.04" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">METADATA</text><rect class="w-capsule" x="-48.36" y="186" width="96.72" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">METADATA</text></g><g class="w-cap c2" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">EDIT</text><rect class="w-capsule" x="-30.68" y="186" width="61.36" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">EDIT</text></g><g class="w-cap c3" visibility="hidden"><rect class="w-capsule" x="-57.52" y="-23" width="115.04" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">ANNOTATE</text><rect class="w-capsule" x="-48.36" y="186" width="96.72" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">ANNOTATE</text></g><g class="w-cap c4" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">ADD BG</text><rect class="w-capsule" x="-37.05" y="186" width="74.1" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">ADD BG</text></g><g class="w-cap c5 is-default"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">CROP</text><rect class="w-capsule" x="-30.68" y="186" width="61.36" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">CROP</text></g><g class="w-cap c6" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">REDACT</text><rect class="w-capsule" x="-39.52" y="186" width="79.04" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">REDACT</text></g></svg><!-- /build:wheel-tools --></div>
+        <figcaption class="figure-note">Results are saved next to the original with the tool in the name, such as <code>photo Cropped.jpg</code>.</figcaption>
+      </figure>
+      <ul class="tool-list">
+        <li><span class="tool-icon-box"><!-- build:icon:crop --><svg class="tool-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg><!-- /build:icon:crop --></span><div><h3>Crop</h3><p>Free, 1:1, 16:9, 9:16, 4:3 or 3:4, or an exact size in pixels.</p></div></li>
+        <li><span class="tool-icon-box"><!-- build:icon:background --><svg class="tool-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg><!-- /build:icon:background --></span><div><h3>Add Background</h3><p>Preset, solid or image backgrounds with padding, rounded corners and a shadow. The preview is the result.</p></div></li>
+        <li><span class="tool-icon-box"><!-- build:icon:compress --><svg class="tool-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 10 7-7"/><path d="M20 10h-6V4"/><path d="m3 21 7-7"/><path d="M4 14h6v6"/></svg><!-- /build:icon:compress --></span><div><h3>Compress</h3><p>Pick a format and the longest side, and see the expected size before you save.</p></div></li>
+        <li><span class="tool-icon-box"><!-- build:icon:metadata --><svg class="tool-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg><!-- /build:icon:metadata --></span><div><h3>Metadata</h3><p>Shows camera details and location (GPS), and saves a copy without the metadata.</p></div></li>
+        <li><span class="tool-icon-box"><!-- build:icon:edit --><svg class="tool-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></svg><!-- /build:icon:edit --></span><div><h3>Edit</h3><p>Rotate, flip, and adjust brightness, contrast and saturation.</p></div></li>
+        <li><span class="tool-icon-box"><!-- build:icon:annotate --><svg class="tool-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg><!-- /build:icon:annotate --></span><div><h3>Annotate</h3><p>Text (including Korean), arrows and rectangles, with undo and redo.</p></div></li>
+        <li><span class="tool-icon-box"><!-- build:icon:redact --><svg class="tool-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg><!-- /build:icon:redact --></span><div><h3>Redact</h3><p>Solid boxes or mosaic. The result keeps no thumbnail of the original and no metadata.</p></div></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="screens" class="section" aria-labelledby="screens-title">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Screenshots</p>
+      <h2 id="screens-title">Taken on macOS</h2>
+      <p class="lead">Unlike the drawings above, these are real screenshots of the app. The two wheels and the results were captured while dragging in Finder on a macOS 14 virtual machine. The app starts in Korean, as shown; English is one setting away.</p>
+    </div>
+    <ul class="shots">
+      <li>
+        <figure>
+          <div class="shot-frame"><picture><source type="image/webp" srcset="../assets/shots/finder-convert-wheel.webp"><img src="../assets/shots/finder-convert-wheel.png" width="500" height="450" loading="lazy" decoding="async" alt="The convert wheel open on the desktop, with the dragged Page 001.pdf icon in the middle and DOCX, JPG, PNG and TXT sectors around it."></picture></div>
+          <figcaption><strong>Dragging a PDF with Shift</strong>A PDF gets DOCX, JPG, PNG and TXT.</figcaption>
+        </figure>
+      </li>
+      <li>
+        <figure>
+          <div class="shot-frame"><picture><source type="image/webp" srcset="../assets/shots/finder-tools-wheel.webp"><img src="../assets/shots/finder-tools-wheel.png" width="500" height="450" loading="lazy" decoding="async" alt="The tools wheel in Korean. The dragged Page 001.jpg is over the crop sector, which is highlighted in orange, and the centre capsule names it."></picture></div>
+          <figcaption><strong>Option+Shift opens the tools</strong>Dropping on Crop opens the crop editor.</figcaption>
+        </figure>
+      </li>
+      <li>
+        <figure>
+          <div class="shot-frame"><picture><source type="image/webp" srcset="../assets/shots/crop-editor.webp"><img src="../assets/shots/crop-editor.png" width="760" height="1016" loading="lazy" decoding="async" alt="The crop window in Korean: a 1:1 crop area over a document image, ratio buttons, W 2550 and H 2550 fields and an apply button."></picture></div>
+          <figcaption><strong>Crop</strong>Pick a ratio or type the size in pixels.</figcaption>
+        </figure>
+      </li>
+      <li>
+        <figure>
+          <div class="shot-frame"><picture><source type="image/webp" srcset="../assets/shots/add-background-editor.webp"><img src="../assets/shots/add-background-editor.png" width="760" height="1174" loading="lazy" decoding="async" alt="The Add Background window in Korean: a document image with rounded corners on a pink-to-purple gradient, background swatches, padding, corner and shadow sliders, with 16:9 and PNG selected."></picture></div>
+          <figcaption><strong>Add Background</strong>Background, padding, corners, shadow and ratio.</figcaption>
+        </figure>
+      </li>
+      <li>
+        <figure>
+          <div class="shot-frame"><picture><source type="image/webp" srcset="../assets/shots/results-next-to-original.webp"><img src="../assets/shots/results-next-to-original.png" width="510" height="775" loading="lazy" decoding="async" alt="The desktop with Page 001.pdf and, next to it, Page 001.jpg, Page 001 Cropped.jpg and Page 001 Cropped With Background.png, under a 'done: add background' notification in Korean."></picture></div>
+          <figcaption><strong>Results next to the original</strong>PDF → JPG → Crop → Add Background. The PDF itself is unchanged.</figcaption>
+        </figure>
+      </li>
+      <li>
+        <figure>
+          <div class="shot-frame"><picture><source type="image/webp" srcset="../assets/shots/drop-zone.webp"><img src="../assets/shots/drop-zone.png" width="400" height="570" loading="lazy" decoding="async" alt="The Drop Zone window: report.pdf · 1.3 KB above a wheel with DOCX, JPG, PNG and TXT, and a switch between convert and tools."></picture></div>
+          <figcaption><strong>Drop Zone</strong>A small window to drop or pick files instead of dragging.</figcaption>
+        </figure>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<section id="privacy" class="section section-alt" aria-labelledby="privacy-title">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Privacy</p>
+      <h2 id="privacy-title">Your files never leave your computer</h2>
+      <p class="lead">OrbitDrop does every conversion and edit on your own computer.</p>
+    </div>
+    <ul class="promise-grid">
+      <li class="card"><h3>No upload</h3><p>File contents and names are never sent anywhere. Every conversion and edit works without an internet connection.</p></li>
+      <li class="card"><h3>No account</h3><p>Nothing to sign up for, nothing to sign in to.</p></li>
+      <li class="card"><h3>No telemetry</h3><p>No usage statistics, no crash reports. Settings, job history and logs stay on your computer.</p></li>
+      <li class="card"><h3>Only the update check goes online</h3><p>The single network use is an optional update check, which sends the app version to GitHub.</p></li>
+    </ul>
+    <a class="more-link" href="privacy/">Read the full privacy statement</a>
+  </div>
+</section>
+
+<section id="requirements" class="section" aria-labelledby="requirements-title">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">System requirements</p>
+      <h2 id="requirements-title">Where it runs</h2>
+    </div>
+    <div class="req-grid">
+      <div class="card">
+        <div class="title-row"><h3>macOS</h3></div>
+        <ul>
+          <li>macOS 14 Sonoma or later</li>
+          <li>Separate installers for Apple silicon (arm64) and Intel (x64).</li>
+          <li>Checked from drag to result in the real Finder on macOS 14 and macOS 26 virtual machines (Apple silicon).</li>
+          <li>The Intel build has only been checked under Rosetta 2 on Apple silicon, not yet on an Intel Mac.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="title-row"><h3>Windows</h3><span class="badge badge-beta">Beta</span></div>
+        <ul>
+          <li>Windows 11 x64</li>
+          <li>Installs for the current user; no administrator rights needed.</li>
+          <li>Not yet checked on a real Windows PC. <a href="#faq-windows">Why beta?</a></li>
+          <li>Windows on ARM and Linux are not supported.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="download" class="section section-alt" aria-labelledby="download-title">
+  <div class="wrap">
+    <div class="dl-intro">
+      <img class="app-icon" src="../assets/icons/app-icon-256.png" width="112" height="112" alt="The OrbitDrop app icon: a file dropping into a four-sector ring">
+      <div class="section-head">
+        <p class="eyebrow">Download</p>
+        <h2 id="download-title">Get OrbitDrop</h2>
+        <p class="lead">It is free. The installers are published on GitHub Releases.</p>
+      </div>
+    </div>
+    <p class="dl-status" data-role="status" data-state="soon" role="status">Coming soon. Follow <a href="https://github.com/keilvher1/orbitdrop/releases">GitHub Releases</a> for the first release and its installers.</p>
+    <p class="dl-hint" data-role="hint" hidden></p>
+    <div class="dl-grid">
+      <article class="dl-card card" data-asset="mac-arm64" data-platform="mac" aria-labelledby="dl-mac-arm64">
+        <div class="title-row"><h3 id="dl-mac-arm64">macOS <span class="dl-arch">Apple silicon</span></h3><span class="badge badge-match" data-role="match" hidden></span></div>
+        <p class="dl-desc">Macs with an Apple chip (M1 or later) · macOS 14 or later</p>
+        <p class="dl-meta" data-role="meta">Coming soon</p>
+        <a class="btn btn-secondary" data-role="link" href="https://github.com/keilvher1/orbitdrop/releases">Open GitHub Releases</a>
+        <p class="dl-digest" data-role="digest" hidden></p>
+      </article>
+      <article class="dl-card card" data-asset="mac-x64" data-platform="mac" aria-labelledby="dl-mac-x64">
+        <div class="title-row"><h3 id="dl-mac-x64">macOS <span class="dl-arch">Intel</span></h3><span class="badge badge-match" data-role="match" hidden></span></div>
+        <p class="dl-desc">Macs with an Intel processor · macOS 14 or later</p>
+        <p class="dl-meta" data-role="meta">Coming soon</p>
+        <a class="btn btn-secondary" data-role="link" href="https://github.com/keilvher1/orbitdrop/releases">Open GitHub Releases</a>
+        <p class="dl-digest" data-role="digest" hidden></p>
+      </article>
+      <article class="dl-card card" data-asset="win-x64" data-platform="windows" aria-labelledby="dl-win-x64">
+        <div class="title-row"><h3 id="dl-win-x64">Windows <span class="dl-arch">11 · x64</span></h3><span class="badge badge-beta">Beta</span><span class="badge badge-match" data-role="match" hidden></span></div>
+        <p class="dl-desc">Installs for the current user · no administrator rights</p>
+        <p class="dl-meta" data-role="meta">Coming soon</p>
+        <a class="btn btn-secondary" data-role="link" href="https://github.com/keilvher1/orbitdrop/releases">Open GitHub Releases</a>
+        <p class="dl-note" data-role="note" hidden></p>
+        <p class="dl-digest" data-role="digest" hidden></p>
+      </article>
+    </div>
+    <p class="dl-which"><strong>Not sure which Mac you have?</strong> Open Apple menu › About This Mac. If “Chip” shows a name like Apple M1, choose Apple silicon; if “Processor” shows Intel, choose Intel.</p>
+    <div class="verify card">
+      <h3>Check the download (SHA-256)</h3>
+      <p>To make sure the file was not changed on the way, compare the output of the command below with the line for the same file name in the release’s <code>SHA256SUMS.txt</code>. The two values must match.</p>
+      <div class="verify-steps">
+        <div>
+          <h4>macOS — Terminal</h4>
+          <pre><code>shasum -a 256 ~/Downloads/OrbitDrop-*-mac-*.dmg</code></pre>
+        </div>
+        <div>
+          <h4>Windows — PowerShell</h4>
+          <pre><code>Get-FileHash "$env:USERPROFILE\Downloads\OrbitDrop-*-setup.exe" -Algorithm SHA256</code></pre>
+        </div>
+      </div>
+      <p data-role="sums">Every release on <a href="https://github.com/keilvher1/orbitdrop/releases">GitHub Releases</a> carries its <code>SHA256SUMS.txt</code>.</p>
+    </div>
+  </div>
+</section>
+
+<section id="faq" class="section" aria-labelledby="faq-title">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">FAQ</p>
+      <h2 id="faq-title">Frequently asked questions</h2>
+    </div>
+    <div class="faq">
+      <details id="faq-permissions">
+        <summary>Which permissions does OrbitDrop need on macOS?</summary>
+        <div class="answer">
+          <p>None that you have to grant. The global drag is built to work without Accessibility or Input Monitoring permission, and OrbitDrop shows no permission prompt when it starts. It does not ask for Full Disk Access either.</p>
+          <ul>
+            <li><strong>Notifications</strong> — the first time a job started from a drag finishes, macOS asks whether OrbitDrop may show notifications. Conversions work either way.</li>
+            <li><strong>Input Monitoring</strong> — only if you have already granted it can <kbd>Esc</kbd> close the wheel while the pointer is outside it. Without it, <kbd>Esc</kbd> works while the pointer is over the wheel, and outside the wheel it closes when you finish the drag as usual. OrbitDrop never requests this permission.</li>
+            <li><strong>Protected locations</strong> — in places macOS protects, such as iCloud Drive or external and network volumes, macOS may ask for access. If you decline, only jobs in that location fail, and you can choose another place to save.</li>
+          </ul>
+          <p>Windows has no such permission prompts. If only one of OrbitDrop and File Explorer runs as administrator, drags between them are blocked, so run both normally.</p>
+        </div>
+      </details>
+      <details id="faq-first-launch">
+        <summary>What happens on first launch?</summary>
+        <div class="answer">
+          <p>On macOS, open the DMG, drag OrbitDrop to the Applications folder and launch it. On Windows, run the installer: it installs for the current user (by default in <code>%LOCALAPPDATA%\Programs\OrbitDrop</code>) without asking for administrator rights.</p>
+          <p>No window opens. When the OrbitDrop icon appears in the menu bar (the notification area of the taskbar on Windows), it is ready: drag a file and press <kbd>Shift</kbd>. Settings are under <strong>Settings…</strong> in the icon’s menu; “launch at login” is off at first.</p>
+          <p>The interface starts in Korean. To switch to English, open the icon’s menu and choose <strong>설정…</strong> (Settings) › <strong>일반</strong> (General) › <strong>언어</strong> (Language) › English.</p>
+          <p>Running the Intel build on an Apple silicon Mac makes the first launch slow while Rosetta 2 translates it (about 1 minute 40 seconds in a virtual machine), and OrbitDrop then suggests installing the Apple silicon build.</p>
+        </div>
+      </details>
+      <details id="faq-icon">
+        <summary>Where is the icon?</summary>
+        <div class="answer">
+          <p><strong>macOS</strong> — on the right side of the menu bar at the top of the screen. It does not appear in the Dock. If a crowded menu bar hides it, open OrbitDrop again from the Applications folder: the running OrbitDrop shows its Drop Zone window.</p>
+          <p><strong>Windows</strong> — in the notification area at the right end of the taskbar. If you cannot see it, click the up arrow (show hidden icons). Starting OrbitDrop again also opens the Drop Zone window.</p>
+        </div>
+      </details>
+      <details id="faq-uninstall">
+        <summary>How do I uninstall it, and where does its data live?</summary>
+        <div class="answer">
+          <h3>macOS</h3>
+          <ol>
+            <li>Choose <strong>Quit</strong> from the menu-bar icon.</li>
+            <li>Move OrbitDrop from the Applications folder to the Trash.</li>
+            <li>If you turned on “launch at login”, also remove it in System Settings › General › Login Items. If you added OrbitDrop to Accessibility or Input Monitoring yourself, remove it in System Settings › Privacy &amp; Security.</li>
+          </ol>
+          <p>Settings (<code>settings.json</code>), job history (<code>history.json</code>), logs (<code>logs/main.log</code>) and caches stay after the app is removed. Delete them yourself if you like: <code>~/Library/Application Support/OrbitDrop</code> and <code>~/Library/Preferences/io.github.keilvher1.orbitdrop.plist</code>.</p>
+          <h3>Windows</h3>
+          <p>Settings › Apps › Installed apps › OrbitDrop › Uninstall (or <code>Uninstall OrbitDrop.exe</code> in the install folder). This removes the install folder, the shortcuts, the uninstall entry and the launch-at-login entry.</p>
+          <p>Your data in <code>%APPDATA%\OrbitDrop</code> (settings, job history, logs, caches) is kept. To remove it as well, delete that folder or uninstall with this command (default install location):</p>
+          <pre><code>"%LOCALAPPDATA%\Programs\OrbitDrop\Uninstall OrbitDrop.exe" --delete-app-data</code></pre>
+          <p>Converted and edited files are saved next to the originals, so they stay when you remove the app.</p>
+        </div>
+      </details>
+      <details id="faq-windows">
+        <summary>Why is the Windows version a beta?</summary>
+        <div class="answer">
+          <p>Because the global drag — opening the wheel while you drag a file in File Explorer — has not been checked on a real Windows PC yet. The code and the installer are ready, but the Windows drag helper has so far only been checked with cross-compiled builds and automated tests. The macOS version was checked from drag to result in the real Finder on macOS 14 and macOS 26 virtual machines.</p>
+          <ul>
+            <li>If only one of OrbitDrop and File Explorer runs as administrator, drags between them are blocked.</li>
+            <li>HEIC conversion is not supported on Windows.</li>
+            <li>You can change the tools menu shortcut in Settings.</li>
+            <li>If dragging does not work, <strong>Open File…</strong> and the Drop Zone in the icon’s menu do the same job.</li>
+          </ul>
+          <p>Found a problem? Please report it in <a href="https://github.com/keilvher1/orbitdrop/issues">GitHub issues</a>.</p>
+        </div>
+      </details>
+      <details id="faq-output">
+        <summary>Where are results saved, and under which names?</summary>
+        <div class="answer">
+          <p>In the same folder as the original. <code>Page 001.pdf</code> becomes <code>Page 001.jpg</code>; a PDF with several pages becomes <code>report-p001.jpg</code>, <code>report-p002.jpg</code> and so on. Tool results get the tool in the name: <code>photo Cropped.jpg</code>, <code>photo Cropped With Background.png</code>.</p>
+          <p>If a file with that name already exists, OrbitDrop never overwrites it and uses a new name such as <code>photo (2).jpg</code>. If the original folder is not writable, it asks where to save. You can also set the save location to “Ask every time” in Settings.</p>
+        </div>
+      </details>
+      <details id="faq-no-wheel">
+        <summary>The wheel does not appear.</summary>
+        <div class="answer">
+          <ul>
+            <li>Check the global drag status in the menu of the menu-bar (notification-area) icon. If it is off, turn on <strong>Enable Global Drag</strong>.</li>
+            <li>Folders, text snippets and cloud files that are not downloaded yet cannot be processed; the reason appears under the wheel.</li>
+            <li>The key combinations for both wheels can be checked and changed in Settings.</li>
+            <li>Meanwhile, <strong>Open File…</strong> and <strong>Open Drop Zone</strong> in the icon’s menu give you the same wheel.</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div>
+      <p class="footer-brand"><img src="../assets/icons/icon-64.png" width="28" height="28" alt="" aria-hidden="true">OrbitDrop</p>
+      <p>A desktop app that converts and edits files on your own computer. Free, MIT licence.</p>
+      <p>The tool icons on the wheel are from <a href="../assets/licenses/lucide.txt">Lucide</a> (ISC licence).</p>
+    </div>
+    <nav aria-label="Site information">
+      <ul class="footer-links">
+        <li><a href="https://github.com/keilvher1/orbitdrop">GitHub</a></li>
+        <li><a href="https://github.com/keilvher1/orbitdrop/blob/main/LICENSE">Licence (MIT)</a></li>
+        <li><a href="https://github.com/keilvher1/orbitdrop/blob/main/THIRD_PARTY_LICENSES.md">Third-party licences</a></li>
+        <li><a href="privacy/">Privacy</a></li>
+        <li><a href="../" hreflang="ko" lang="ko">한국어</a></li>
+      </ul>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://keilvher1.github.io/orbitdrop/sitemap.xml
