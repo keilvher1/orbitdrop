@@ -18,6 +18,16 @@ import {
   utf8ByteLength,
   wheelTokens,
   DEFAULT_WHEEL_GEOMETRY,
+  ALLOWED_WEB_PAGES,
+  LicenseOpenRequestSchema,
+  ORBITDROP_NEW_ISSUE,
+  ORBITDROP_WEBSITE,
+  RendererErrorReportSchema,
+  SettingsSchema,
+  WindowOpenRequestSchema,
+  defaultSettingsFor,
+  isAllowedExternalUrl,
+  isAllowedWebPage,
 } from '../src';
 
 describe('menus follow the reference recording', () => {
@@ -107,6 +117,81 @@ describe('settings', () => {
     expect(applySettingsPatch(DEFAULT_SETTINGS, { pdf: { dpi: 150 } })?.pdf.dpi).toBe(150);
     expect(applySettingsPatch(DEFAULT_SETTINGS, { pdf: { dpi: 72 } })).toBeNull();
     expect(applySettingsPatch(DEFAULT_SETTINGS, { version: 99 })?.version).toBe(1);
+  });
+
+  it('onboarding is an additive section after notifications (no version bump), welcome not shown yet', () => {
+    const keys = Object.keys(SettingsSchema.shape);
+    expect(keys.indexOf('onboarding')).toBe(keys.indexOf('notifications') + 1);
+    expect(DEFAULT_SETTINGS.onboarding).toEqual({ welcomeDone: false, moveToApplicationsAsked: false });
+    expect(DEFAULT_SETTINGS.version).toBe(1);
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { onboarding: { welcomeDone: true } })?.onboarding).toEqual({ welcomeDone: true, moveToApplicationsAsked: false });
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { onboarding: { welcomeDone: 'yes' } })).toBeNull();
+  });
+
+  it('platform defaults: Windows opens the tools wheel with Ctrl+Shift, macOS keeps Option+Shift', () => {
+    expect(defaultSettingsFor('win32').globalDrag.toolsModifiers).toEqual(['control', 'shift']);
+    expect(defaultSettingsFor('darwin')).toBe(DEFAULT_SETTINGS);
+    expect(DEFAULT_SETTINGS.globalDrag.toolsModifiers).toEqual(['alt', 'shift']);
+    expect(SettingsSchema.safeParse(defaultSettingsFor('win32')).success).toBe(true);
+  });
+
+  it('migration fills gaps and failed sections from the given defaults', () => {
+    const win = defaultSettingsFor('win32');
+    expect(migrateSettings({ locale: 'en' }, win)).toEqual({ ...win, locale: 'en' });
+    expect(migrateSettings({ globalDrag: { wheelDiameter: 9999 } }, win).globalDrag).toEqual(win.globalDrag);
+    expect(migrateSettings({ globalDrag: { toolsModifiers: ['alt', 'shift'] } }, win).globalDrag.toolsModifiers).toEqual(['alt', 'shift']);
+    expect(migrateSettings('nope', win)).toBe(win);
+    expect(migrateSettings({})).toEqual(DEFAULT_SETTINGS);
+  });
+});
+
+describe('external URLs', () => {
+  it('web pages: exactly the website (ko, en) and a new issue (with a prefilled query)', () => {
+    expect(ALLOWED_WEB_PAGES.map((page) => `${page.origin}${page.path}`)).toEqual([ORBITDROP_WEBSITE.ko, ORBITDROP_WEBSITE.en, ORBITDROP_NEW_ISSUE]);
+    for (const url of [ORBITDROP_WEBSITE.ko, ORBITDROP_WEBSITE.en, ORBITDROP_NEW_ISSUE, `${ORBITDROP_NEW_ISSUE}?title=a&body=b`]) {
+      expect(isAllowedWebPage(url), url).toBe(true);
+      expect(isAllowedExternalUrl(url), url).toBe(true);
+    }
+    for (const url of [
+      'https://github.com/',
+      'https://github.com/keilvher1/orbitdrop/releases',
+      `${ORBITDROP_WEBSITE.ko}?x=1`,
+      `${ORBITDROP_WEBSITE.ko}#top`,
+      'https://keilvher1.github.io/orbitdrop/../evil/',
+      'http://keilvher1.github.io/orbitdrop/',
+      'javascript:alert(1)',
+      'not a url',
+    ]) {
+      expect(isAllowedExternalUrl(url), url).toBe(false);
+    }
+    // Non-web targets keep the prefix rule (security.ts narrows them further).
+    expect(isAllowedExternalUrl('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility')).toBe(true);
+    expect(isAllowedExternalUrl('ms-settings:privacy')).toBe(true);
+  });
+});
+
+describe('first run, help and diagnostics IPC', () => {
+  it('renderer error reports are strict and size-capped', () => {
+    const ok = { source: 'boundary', message: 'boom', name: 'TypeError', stack: 'at x', componentStack: 'at Y' };
+    expect(RendererErrorReportSchema.safeParse(ok).success).toBe(true);
+    expect(RendererErrorReportSchema.safeParse({ source: 'bootstrap', message: '' }).success).toBe(true);
+    for (const bad of [
+      { ...ok, message: 'x'.repeat(4001) },
+      { ...ok, stack: 'x'.repeat(16_001) },
+      { ...ok, name: 'x'.repeat(201) },
+      { ...ok, source: 'main' },
+      { ...ok, extra: true },
+      { source: 'boundary' },
+    ]) {
+      expect(RendererErrorReportSchema.safeParse(bad).success).toBe(false);
+    }
+  });
+
+  it('licence files are named, never given as paths; the welcome window can be opened', () => {
+    expect(LicenseOpenRequestSchema.safeParse({ which: 'thirdParty' }).success).toBe(true);
+    expect(LicenseOpenRequestSchema.safeParse({ which: '/etc/passwd' }).success).toBe(false);
+    expect(WindowOpenRequestSchema.safeParse({ kind: 'welcome' }).success).toBe(true);
+    expect(WindowOpenRequestSchema.safeParse({ kind: 'editor' }).success).toBe(false);
   });
 });
 
