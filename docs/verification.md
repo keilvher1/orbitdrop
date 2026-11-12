@@ -317,6 +317,16 @@ tart가 연결 하나로 받아 매우 느릴 수 있어(이 Mac에서 0.5 MB/s)
 **재현.** `ci/windows-gui` 브랜치에 push하거나 `windows-gui` 워크플로를 수동 실행한다(입력 `reuse_app_run`에 이전 실행 id를 주면
 설치본을 다시 빌드하지 않는다). 드라이버는 GitHub Actions 밖에서는 실행을 거부한다(마우스와 키보드를 가져가므로 개발 PC에서 돌리지 않는다).
 
+**설치 프로그램의 개인정보 페이지 (2026-11-12, 실행 43195949011, `prep/signpath`).** 워크플로가 무인 설치 대신 드라이버의 `install`로
+대화형 설치 프로그램을 끝까지 진행한다: 폴더 페이지 → "Privacy and updates" 페이지(러너는 영어 UI라 영어: 안내문에 GitHub, 개인정보
+처리방침 링크, "Check for updates automatically" 상자가 기본 선택 → 해제) → 설치 → 마침 페이지("Run OrbitDrop" 해제) → 종료 코드 0,
+22 s. 설치 폴더의 `installer-preferences.json`이 `{"version":1,"updates":{"autoCheck":false}}`이고, 이어진 드래그 시험의 첫 실행이
+main.log에 `first run: automatic update checks off, as chosen in the installer`를 남기며, 환영 창을 닫은 뒤의 `settings.json`도
+`updates.autoCheck: false`다(시작 사례의 검사). 9개 사례 모두 통과. 첫 시도(실행 43193140854)에서는 버튼을 UI Automation Invoke로 눌렀는데,
+NSIS가 그 클릭을 처리하면서 nsDialogs 페이지로 넘어가는 동안 Invoke가 10초 시간 제한까지 기다렸고 다음 페이지의 "Install"이 반응하지 않았다
+— 이제 버튼은 실제 마우스 클릭으로 누른다(Invoke는 한 번의 대비책). 같은 브랜치의 CI(실행 43193136046)는 `--install-test`로 `/S`(켬)와
+`/S /NOUPDATECHECK`(끔), 제거 후 파일 삭제를 확인했다.
+
 ---
 
 ## 자동 검증 증거

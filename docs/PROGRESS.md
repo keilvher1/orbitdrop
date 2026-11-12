@@ -370,3 +370,43 @@ Next: tag v1.0.0 → CI draft (Windows unsigned beta + sources) → local signed
 upload → the owner decides on publishing. Then SignPath Foundation (the owner chose it for Windows
 signing; it requires a released project, a code signing policy page, MFA, and — because of the
 update check — a privacy notice during installation with an option to turn the check off).
+
+## Stage 9 — Windows code signing prep: SignPath Foundation (2026-11-12, branch `prep/signpath`)
+
+Goal: meet SignPath Foundation's conditions (signpath.org/terms) now, so that once the application is
+accepted only credentials are added; first signed release 1.0.1.
+
+- Website: `/code-signing-policy/` and `/en/code-signing-policy/` (linked from the download section,
+  the footer, the Windows FAQ, the privacy pages and the release notes). One state line per page
+  (`data-state="pending"`) says Windows is not signed yet and the attribution below it is a plan; the
+  replacement line is in an HTML comment above it. What is signed / not signed, roles (keilvher1),
+  tag builds on GitHub-hosted runners with per-release approval, privacy, macOS Developer ID.
+- Installer (`build/installer.nsh`): privacy notice page after the folder page (nsDialogs, ko/en) with
+  the box "업데이트 자동 확인 / Check for updates automatically" (ticked); `/NOUPDATECHECK` for unattended
+  installs; the choice goes to `installer-preferences.json` in the installation folder. The app applies
+  it on the first run only (`settings/installer-preferences.ts`, logged, never over existing settings);
+  the welcome window has the same switch on every platform.
+- Every own Windows executable carries ProductName OrbitDrop and ProductVersion = package.json:
+  `scripts/win-sign.cjs` (win.signtoolOptions.sign) fixes OrbitDrop.exe's string (electron-builder wrote
+  x.y.z.0); the helper's VERSIONINFO strings come from `ORBITDROP_VERSION_STRING` (set-version.mjs).
+  package.mjs checks all four and their Authenticode state (`scripts/win-files.mjs`).
+- release.yml: SignPath only with the secret + three variables and a run on the tag itself. Two signing
+  requests (OrbitDrop.exe + helper + uninstaller, then the installer), `package.mjs --signpath
+  prepare|installer|finish`, every returned file checked to be the sent file plus a signature, latest.yml
+  recomputed, `-unsigned` dropped. Artifact configurations in `apps/desktop/build/signpath/`. Rehearsal:
+  Run workflow without a tag and with `signpath_rehearsal` (self-signed stand-in, "-rehearsal", never
+  released).
+
+Verified (GitHub runners, branch prep/signpath): CI 43193136046 green (Windows: the four executables
+1.0.0/NotSigned, `/S` → autoCheck true, `/S /NOUPDATECHECK` → false, uninstall removes the file; macOS
+unchanged); native-windows 43193105443 green; Release rehearsal 43193146123 green (all four Valid after
+the two stand-in requests, NSIS regenerated the same uninstaller so the signed one went in, latest.yml
+consistent, signed install test); windows-gui 43195949011 green (interactive installer clicked through
+the privacy page with the box unticked → first run logs and keeps autoCheck false; 9/9 drag cases).
+Local: vitest 1283 passed / 9 skipped, typecheck clean, site checker ok, actionlint clean; installer.nsh compiled
+with electron-builder's NSIS 3.12 (-WX) in a harness, uninstaller output byte-identical across builds.
+
+Not testable without SignPath: the action call itself, SignPath's origin verification, approval, metadata
+restrictions and the real certificate. Next: the owner applies (docs/packaging.md §5 "소유자가 할 일"),
+configures SignPath and the repository secret/variables, runs a rehearsal, then releases 1.0.1 and switches
+the website's state line.
