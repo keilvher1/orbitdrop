@@ -139,10 +139,16 @@ test('unsaved redactions: the OS close is held back too; a crashed renderer is l
   await expect.poll(async () => (await editorRecord(editorId)) === undefined).toBe(true);
 });
 
-test('a renderer that crashes twice gets its window closed instead of reloaded again', async () => {
+// The crash policy of windows/crash.ts (main 0c07287): the first crash brings the view back, the second
+// shows only the crash screen, the third closes the window.
+test('a renderer that keeps crashing: the view comes back, then the crash screen, then the window closes', async () => {
   const { editorId, windowId } = await openEditor('tool.annotate', 'crashy.jpg');
   await crash(windowId);
   await expect.poll(() => inPage(windowId, `Boolean(document.querySelector('.editor-view'))`)).toBe(true); // reloaded once
+  await crash(windowId);
+  await expect.poll(() => inPage(windowId, `Boolean(document.querySelector('.crash-view [data-window-failure]'))`)).toBe(true); // only the crash screen
+  expect(await inPage(windowId, `Boolean(document.querySelector('.editor-view'))`)).toBe(false);
+  expect(await editorRecord(editorId)).toBeDefined();
   await crash(windowId);
   await expect.poll(async () => (await editorRecord(editorId)) === undefined).toBe(true);
 });
