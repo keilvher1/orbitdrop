@@ -386,10 +386,11 @@ void Renderer::drawCaption(const session::RenderModel& m, const coords::WheelFra
         if (SUCCEEDED(layout->GetMetrics(&tm))) textW = tm.widthIncludingTrailingWhitespace;
         if (textW > maxW) {
             // The ellipsis at the shrunk size (one made from the 13 DIP format would be larger than the text).
-            IDWriteTextFormat* small = format(textFamily_, shrunk, weight, m.locale);
+            // (Not named `small`: the Windows SDK's rpcndr.h defines `small` as a macro for `char`.)
+            IDWriteTextFormat* shrunkFormat = format(textFamily_, shrunk, weight, m.locale);
             DWRITE_TRIMMING trimming{DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0};
             ComPtr<IDWriteInlineObject> ellipsis;
-            if (SUCCEEDED(dwrite_->CreateEllipsisTrimmingSign(small != nullptr ? small : fmt, ellipsis.put()))) {
+            if (SUCCEEDED(dwrite_->CreateEllipsisTrimmingSign(shrunkFormat != nullptr ? shrunkFormat : fmt, ellipsis.put()))) {
                 layout->SetTrimming(&trimming, ellipsis.get());
             }
             textW = maxW;
