@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { _electron as electron, expect, type ElectronApplication, type Page } from '@playwright/test';
@@ -190,13 +190,15 @@ export async function makeJpeg(dir: string, name: string, width: number, height:
   return path;
 }
 
+// Outputs are read into memory first: given a path, libvips keeps the file open in its cache, and on
+// Windows an open file cannot be deleted (the folder clean-up after a test failed with EBUSY).
 export async function imageMeta(path: string): Promise<{ format: string; width: number; height: number }> {
-  const meta = await sharp(path).metadata();
+  const meta = await sharp(await readFile(path)).metadata();
   return { format: meta.format ?? '', width: meta.width ?? 0, height: meta.height ?? 0 };
 }
 
 export async function pixel(path: string, x: number, y: number): Promise<number[]> {
-  const { data, info } = await sharp(path).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { data, info } = await sharp(await readFile(path)).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const i = (Math.floor(y) * info.width + Math.floor(x)) * 4;
   return [data[i]!, data[i + 1]!, data[i + 2]!, data[i + 3]!];
 }
