@@ -359,15 +359,15 @@ MinGW로 만든 C++ 시험 exe(`libstdc++-6.dll` import → 정책 위반으로 
 환경: GitHub Actions `windows-latest` = **Microsoft Windows Server 2025 Datacenter 10.0.26100 (빌드 26100.33674)**, x64, 러너
 이미지 `windows-2025-vs2026` 20261103.298.1, Visual Studio 2026(MSVC 19.51.36260, Windows SDK 10.0.26100), Node 24.22.2,
 pnpm 11.27.1, Electron 44.9.0. 레지스트리 `LongPathsEnabled=1`, 한글 글꼴 Malgun Gothic 설치됨. 작업은 관리자(runneradmin)
-권한으로 돈다. 녹색 실행: https://github.com/keilvher1/orbitdrop/actions/runs/43173791336 (소스 `b8a5386`).
+권한으로 돈다. 녹색 실행: https://github.com/keilvher1/orbitdrop/actions/runs/43178538763 (소스 `a41608f`, main `4b9e3a0` 병합 뒤).
 
 | 단계 | 결과 |
 |---|---|
-| 단위·통합 테스트 (`pnpm test`) | 89 파일 통과·3 건너뜀, 1,079 통과·25 건너뜀 (macOS 러너와 같은 테스트, 건너뜀은 아래 표) |
+| 단위·통합 테스트 (`pnpm test`) | 95 파일 통과·3 건너뜀, 1,167 통과·25 건너뜀 (macOS 러너와 같은 테스트, 건너뜀은 아래 표) |
 | Windows helper (MSVC `/MT`) | 코어 테스트 99개(골든 벡터 포함), OLE 글루 테스트 6개, stdio smoke 47개 확인 모두 통과, Direct2D 휠 스냅숏 생성. DLL 의존성은 시스템 DLL뿐 |
 | E2E (`playwright test`, 빌드된 앱 + 실제 MSVC helper) | 31 통과, 8 건너뜀 |
-| NSIS 패키지 | `OrbitDrop-0.1.0-win-x64-unsigned-setup.exe` 102.3 MB(`win-unpacked` 393.1 MB), sha256 `ced088babaec53e5f75621f6280fdc3565b12af4678af75d35a7aaae3681597b` (미서명). after-pack: 의존성 트리 문제 0, sharp/libvips/canvas는 x64 PE, helper 포함 |
-| 패키지 smoke test (`win-unpacked\OrbitDrop.exe --smoke-test`) | 종료 0, 1.7초, `ok:true` — 엔진 probe(HEIC 없음, 16개 작업 사용 가능), helper `ready`(packaged), PNG→JPG 399 ms·PDF→PNG 516 ms, 숨긴 About 창 렌더링 393 ms |
+| NSIS 패키지 | `OrbitDrop-0.1.0-win-x64-unsigned-setup.exe` 102.3 MB(`win-unpacked` 393.1 MB), sha256 `8bd6aee5d091111b7f085668efed40b11d48aec1751e27bb2f8c1a96a182491e` (미서명). after-pack: 의존성 트리 문제 0, sharp/libvips/canvas는 x64 PE, helper 포함 |
+| 패키지 smoke test (`win-unpacked\OrbitDrop.exe --smoke-test`) | 종료 0, 1.7초(보고서 1,287 ms), `ok:true` — 엔진 probe(HEIC 없음, 16개 작업 사용 가능), helper `ready`(packaged), PNG→JPG 412 ms·PDF→PNG 528 ms, 숨긴 About 창 렌더링 458 ms |
 | 네이티브 모듈 검사 | librsvg 2.63.2 / libvips 8.18.7, Malgun Gothic 한글 잉크 766 px, 패키지 안의 pdf-lib·docx로 PDF·DOCX 생성, 네이티브 모듈은 `app.asar.unpacked`에서 로드 |
 | 사용자별 무인 설치 → 설치본 smoke → 무인 제거 | `/S /D=<임시 폴더>` 종료 0, 설치본에 helper·라이선스 파일, **HKCU 제거 항목만**(HKLM 없음, 관리자 권한 없음), 설치본 smoke `ok:true`, `Uninstall OrbitDrop.exe /S` 뒤 파일·HKCU 항목·설치 폴더 모두 없음 |
 
@@ -394,6 +394,12 @@ PowerShell·.NET은 막지만 **Node는 막지 못한다** — libuv가 `FILE_FL
 켜져 있다(일반 사용자 세션에서는 ACL이 적용된다). 다른 프로세스가 삭제 공유 없이(`FileShare.Read`) 연 파일은 이름 변경·교체·삭제가
 EBUSY/EPERM으로 막힌다 — 설정 파일 테스트는 Windows에서 이 방법(동기화 클라이언트·백신이 파일을 잡은 상황)을 쓴다.
 
+같은 워크플로의 macOS 작업(GitHub `macos-26-arm64` 20261102.0473.1, macOS 26.7.2 25G332, 가상 머신): 단위·통합 96 파일·1,183 통과,
+Swift 167개 통과(건너뜀 0), helper 빌드·smoke 19/19(arm64, x64는 Rosetta 2), E2E 39/39, arm64 DMG에서 패키지 smoke 통과, 두 아키텍처의
+네이티브 모듈 검사 통과. 이 러너에서 처음 돈 macOS 작업은 Swift 테스트에서 60분 동안 멈췄고(아래 표의 Swift 줄), x64 패키지의 smoke는 Rosetta 2
+환경 때문에 best effort로 돈다(아래 표). main 병합 뒤 드러난 E2E 두 건(창 충돌 3단계 정책, preload의 새 API 8개)은 Windows와 무관하게
+두 러너에서 같이 실패해 테스트를 새 동작에 맞췄다.
+
 ### CI에서 건너뛰거나 플랫폼별로 나뉜 테스트
 
 | 테스트 | 대상 | 이유 |
@@ -408,4 +414,5 @@ EBUSY/EPERM으로 막힌다 — 설정 파일 테스트는 Windows에서 이 방
 | (기존) ImageIO helper 9건: `codecs-imageio` 6, `tools-output-format`·`tools-thumbnail` HEIC 각 1, `codecs-bmp` sips 1 | Windows에서 건너뜀 | macOS ImageIO 전용 기능(Windows는 HEIC 미지원으로 표시) |
 | (기존) 실제 볼륨 테스트 4건: `output-fat` 1, `hardening-diskfull` 3 | 모든 OS에서 옵트인 | FAT32·4 MB HFS+ 볼륨을 만들어야 함(`ORBITDROP_FS_TESTS=1`) |
 | (기존) E2E 8건: stub helper 4(`helper-drop`, `lifecycle` 2, `drag-failure`), `lifecycle` 쓸 수 없는 앱 데이터 폴더(chmod), `offline`(lsof), `shell` 멈춘 읽기(FIFO), `close-guard` ⌘W 메뉴 | Windows에서 건너뜀 | stub helper가 셸뱅 스크립트라 Windows에서 실행할 수 없음, chmod·lsof·FIFO는 POSIX 전용, ⌘W 메뉴는 macOS 전용 |
-| Swift `ImageIOTests` 3건(probe 모양, HEIC 왕복, 품질), `HelperProcessTests` imageio 2건, helper smoke `imageio --probe` | ImageIO 왕복이 60초 안에 끝나지 않으면 건너뜀(사유 출력) | macOS 러너(가상 머신, HEVC 하드웨어 없음)에서 probe가 수 초 걸리고, 그 stdout 파이프가 helper 종료 뒤에도 열려 있어 파이프를 끝까지 읽던 테스트가 작업 시간 제한(60분)까지 멈췄다. 이제 CLI 출력은 파일로 받고 모든 실행에 시간 제한이 있다. 제품은 같은 probe를 3초로 제한한다(초과 시 HEIC "사용할 수 없음") |
+| Swift `ImageIOTests` 3건(probe 모양, HEIC 왕복, 품질), `HelperProcessTests` imageio 2건, helper smoke `imageio --probe` | ImageIO 왕복이 60초 안에 끝나지 않을 때만 건너뜀(사유 출력) — 마지막 macOS 러너 실행에서는 모두 실행됨(167개, 건너뜀 0, smoke 19/19) | macOS 러너(가상 머신, HEVC 하드웨어 없음)에서 probe가 수 초 걸리고, 그 stdout 파이프가 helper 종료 뒤에도 열려 있어 파이프를 끝까지 읽던 테스트가 작업 시간 제한(60분)까지 멈췄다. 이제 CLI 출력은 파일로 받고 모든 실행에 시간 제한이 있으며(Swift 단계 10분), 프로세스 안 probe는 메인 런루프를 돌리며 기다린다. 제품은 같은 probe를 3초로 제한한다(초과 시 HEIC "사용할 수 없음") |
+| 패키지 smoke test, macOS x64(Rosetta 2) | CI(`--rosetta-smoke best-effort`)에서는 두 번 실행하고 결과를 보고하되 작업을 실패시키지 않음. arm64 smoke는 그대로 필수 | GitHub macOS 러너(macOS 26.7.2, 가상 머신)의 Rosetta 2에서 전체 앱이 불안정했다: 한 번은 숨긴 창이 15초 안에 로드되지 않았고(나머지 검사는 통과, 개발 Mac에서는 6.7초), 다음에는 76초쯤 모든 하위 프로세스(GPU·네트워크·작업 worker)가 SIGTERM으로 끝났다. x64 패키지의 빌드·`lipo`/codesign/fuse 검사·네이티브 모듈 검사(Rosetta 2)와 helper smoke 19/19(Rosetta 2)는 계속 필수. 로컬·release 빌드는 기본값 `strict`. x64 macOS의 창 대기 시간은 60초로 늘렸다 |

@@ -52,6 +52,15 @@ const ORBIT_API_KEYS = [
   'retryJob',
   'setCloseGuard',
   'onCloseRequested',
+  // First run, Help, diagnostics and crash handling (main 0c07287).
+  'getWindowNotice',
+  'reportRendererError',
+  'copyDiagnostics',
+  'openLogFolder',
+  'openDataFolder',
+  'openLicense',
+  'resetSettings',
+  'restartHelper',
 ];
 
 test.describe.configure({ mode: 'serial' });

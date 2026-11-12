@@ -92,6 +92,18 @@ export interface WindowReport {
 
 /** The hidden window must have rendered within this time. */
 export const WINDOW_TIMEOUT_MS = 15_000;
+/**
+ * The x64 macOS build gets longer: on Apple silicon it runs under Rosetta 2, whose first launch
+ * translates Electron's x86_64 code while the engine probe and the helper start at the same time
+ * (the probe already gets 90 s for that). Measured: 6.7 s on the development Mac; on GitHub's macOS
+ * runner (a VM) the window was still loading after 15 s, while every other check passed. A blank
+ * window still fails: this only bounds how long the check waits for the page.
+ */
+export const WINDOW_TIMEOUT_X64_MAC_MS = 60_000;
+
+function windowTimeoutMs(): number {
+  return process.platform === 'darwin' && process.arch === 'x64' ? WINDOW_TIMEOUT_X64_MAC_MS : WINDOW_TIMEOUT_MS;
+}
 const IMAGE_W = 64;
 const IMAGE_H = 48;
 /** 72 × 36 pt → 300 × 150 px at 300 DPI. */
@@ -176,7 +188,7 @@ export async function runSmokeTest(orbit: OrbitApp, version: string, packaged: b
  * packaged), preload, CSP and IPC every window uses — and waits until it
  * rendered: the page loaded, the preload ran, and the view shows the version
  * main sent. Fails on did-fail-load, preload-error, a renderer crash, an error
- * the page shows, or WINDOW_TIMEOUT_MS. The window is never shown and is
+ * the page shows, or WINDOW_TIMEOUT_MS (x64 macOS: WINDOW_TIMEOUT_X64_MAC_MS). The window is never shown and is
  * closed again.
  */
 async function checkWindow(orbit: OrbitApp, report: WindowReport, version: string): Promise<void> {
@@ -211,7 +223,8 @@ async function checkWindow(orbit: OrbitApp, report: WindowReport, version: strin
     });
 
     let probe: WindowProbe | null = null;
-    while (failure === null && Date.now() - started < WINDOW_TIMEOUT_MS) {
+    const timeoutMs = windowTimeoutMs();
+    while (failure === null && Date.now() - started < timeoutMs) {
       report.loaded = finished && !loadFailed;
       if (report.loaded && !contents.isDestroyed()) {
         // Bounded: a hung or crashed renderer never answers.
@@ -231,7 +244,7 @@ async function checkWindow(orbit: OrbitApp, report: WindowReport, version: strin
     }
     report.loaded = finished && !loadFailed;
     if (failure !== null) report.error = failure;
-    else if (!report.rendered) report.error = `not rendered within ${WINDOW_TIMEOUT_MS / 1000} s (loaded ${report.loaded}, ${describeProbe(probe)})`;
+    else if (!report.rendered) report.error = `not rendered within ${timeoutMs / 1000} s (loaded ${report.loaded}, ${describeProbe(probe)})`;
   } catch (error) {
     report.error = describeError(error);
   } finally {
