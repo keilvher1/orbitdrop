@@ -13,6 +13,33 @@
 
 ---
 
+## 공개 릴리스 1.0.0 (2026-11-12)
+
+[v1.0.0](https://github.com/keilvher1/orbitdrop/releases/tag/v1.0.0) — 소스 `ba703ad`(태그 `v1.0.0`), 2026-11-12 09:17 UTC 공개.
+
+| 항목 | 결과 |
+|---|---|
+| 태그 커밋의 CI | Windows·macOS job 통과(run 43184648125), native-windows 통과 |
+| Windows 패키지 | 릴리스 워크플로(run 43186900907)의 Windows Server 2025 러너에서 빌드·smoke·무인 설치/제거 시험 후 초안에 업로드. **코드 서명 없음**(파일 이름 `-unsigned`). 초안 job은 첫 시도에서 "초안 목록 지연"으로 실패해 다시 실행했다(스크립트는 6adc7c4에서 고침) |
+| macOS 패키지 | 이 저장소의 개발 Mac에서 `scripts/release-mac.mjs v1.0.0`: Developer ID 서명(보안 타임스탬프, hardened runtime — 앱과 helper), 앱과 DMG 공증·티켓 부착. arm64·x64 모두 DMG `spctl -t open` accepted(Notarized Developer ID), `stapler validate` 통과, DMG에서 꺼내 격리 표시를 붙인 앱이 `spctl` accepted · `stapler validate` · `syspolicy_check distribution` 통과. smoke test(x64는 Rosetta 2) 통과 |
+| LGPL·MPL 소스 | `OrbitDrop-1.0.0-third-party-sources.tar.gz`(122 MB)를 초안 job이 만들어 함께 공개 |
+| 공개 후 확인 | 릴리스의 12개 파일을 모두 내려받아 `shasum -a 256 -c SHA256SUMS.txt` 전부 OK. `latest-mac.yml`은 arm64·x64 zip, `latest.yml`은 설치 파일을 가리킴(버전 1.0.0, sha512·크기 일치). 웹사이트 다운로드 영역이 실제 API로 1.0.0과 세 설치 파일을 표시(헤드리스 Chromium, macOS·Windows UA) |
+
+SHA-256(`SHA256SUMS.txt`와 같음):
+
+| 파일 | SHA-256 |
+|---|---|
+| `OrbitDrop-1.0.0-mac-arm64.dmg` | `30e7a2c6db4b0699fb68abfc0029bbfa51777ca2612d62212ea5226e76fc9240` |
+| `OrbitDrop-1.0.0-mac-x64.dmg` | `d9768fd219dda7c02967707a790034030ab0e926348e8f6ad50ae10512a2fa51` |
+| `OrbitDrop-1.0.0-mac-arm64.zip` | `cb7bc0db015c44274a4d372d0759ef4867c043e8a0d92cd87082cf71a797d209` |
+| `OrbitDrop-1.0.0-mac-x64.zip` | `a3a1632bc17142a2e86f31503ce2bcc468323690b7c4053d2c1b4dfd8262f077` |
+| `OrbitDrop-1.0.0-win-x64-unsigned-setup.exe` | `2f1ba21366b86ef4b9ede255353005366337803a40a7fa61a8150ea1bf5d13cc` |
+| `OrbitDrop-1.0.0-third-party-sources.tar.gz` | `86323e7588fa9ec7a308543bfc6d3b86d06f71817c1580d1204421bde49043e2` |
+
+아직 확인하지 않은 것: 실물 Mac·Windows 11 PC에서 사람이 한 확인, 공개된 릴리스에서 다음 버전으로의 실제 자동 업데이트(다음 릴리스에서 확인).
+
+---
+
 ## 수동 GUI 검증 절차
 
 ### 준비
