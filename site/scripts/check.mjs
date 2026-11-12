@@ -16,8 +16,9 @@
  *  - no URL outside the allow-list appears in any text file (any extension, any letter case,
  *    protocol-relative included): github.com/keilvher1/orbitdrop…, the maintainer's profile
  *    https://github.com/keilvher1 (code signing roles), api.github.com, docs.github.com, the
- *    SignPath attribution https://about.signpath.io and https://signpath.org (home pages only) and
- *    the site's own https://keilvher1.github.io/orbitdrop/;
+ *    SignPath attribution https://about.signpath.io and https://signpath.org (home pages only),
+ *    Anthropic's API terms and privacy policy (exact pages, named by the privacy statement's
+ *    optional Claude analysis section) and the site's own https://keilvher1.github.io/orbitdrop/;
  *  - no inline scripts, inline styles or event-handler attributes (the pages' CSP forbids them);
  *  - 404.html uses root-absolute links only (GitHub Pages serves it at any depth);
  *  - screenshots stay within 300 KB, the generated <!-- build:… --> blocks are filled in;
@@ -201,6 +202,9 @@ for (const file of htmlFiles) {
 /** Hosts allowed with their home page only: the attribution the code signing policy must carry. */
 const HOME_PAGE_ONLY = new Set(['about.signpath.io', 'signpath.org']);
 
+/** Exact pages allowed: the policies that apply to the optional Claude analysis (privacy statement). */
+const EXACT_PAGES = new Set(['https://www.anthropic.com/legal/commercial-terms', 'https://www.anthropic.com/legal/privacy']);
+
 function isAllowedExternal(url) {
   if (url.protocol !== 'https:' || url.username || url.password || url.port) return false;
   if (url.hostname === 'github.com') {
@@ -208,6 +212,7 @@ function isAllowedExternal(url) {
     return /^\/keilvher1\/orbitdrop(?:[/?#.-]|$)/.test(url.pathname) || (url.pathname === '/keilvher1' && !url.search && !url.hash);
   }
   if (HOME_PAGE_ONLY.has(url.hostname)) return url.pathname === '/' && !url.search && !url.hash;
+  if (EXACT_PAGES.has(`${url.origin}${url.pathname}`)) return !url.search && !url.hash;
   return url.hostname === 'api.github.com' || url.hostname === 'docs.github.com';
 }
 
