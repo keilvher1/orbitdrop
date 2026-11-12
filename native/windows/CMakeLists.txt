@@ -10,7 +10,7 @@
 # Or use scripts/build-native-win.mjs from the repository root.
 cmake_minimum_required(VERSION 3.21)
 
-project(OrbitDropHelper VERSION 0.1.0 DESCRIPTION "OrbitDrop native drag helper (Windows)" LANGUAGES CXX)
+project(OrbitDropHelper VERSION 1.0.0 DESCRIPTION "OrbitDrop native drag helper (Windows)" LANGUAGES CXX)
 
 option(ORBITDROP_BUILD_TESTS "Build the portable core unit tests" ON)
 option(ORBITDROP_BUILD_HELPER "Build the Win32 helper executable (Windows targets only)" ${WIN32})

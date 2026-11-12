@@ -345,8 +345,28 @@ Done so far:
   folder and settings reset, move to /Applications. vitest 1179 passed /
   4 skipped, typecheck clean.
 
-In progress (background agents): auto-update (electron-updater, GitHub
-provider) and the release pipeline; the website; CI green on Windows and
-macOS (first-ever Windows run: 9 failing test files, MSVC helper build fixed,
-native-windows green on ci/windows); an automated real-Explorer drag test on
-GitHub's Windows runner.
+Also landed (2026-11-12):
+- Auto-update (47e594c): electron-updater 6.8.12 with the GitHub provider; checks 60 s after
+  launch and every 6 h (Settings › General turns it off; no installation id is sent); restarts only
+  when no job, editor, picker or drag is active; unsigned and development builds never update.
+  Release pipeline: tag `v*` → CI builds Windows and drafts the release (with the LGPL/MPL sources
+  archive and SHA256SUMS.txt); macOS packages are built, signed, notarized (app and DMG) and uploaded
+  locally with `scripts/release-mac.mjs`; nothing is ever published by a script (docs/RELEASING.md).
+- Website live at https://keilvher1.github.io/orbitdrop/ (Pages workflow, link/claim checker).
+- CI green on Windows and macOS for the first time (e4e6e73). Real Windows bugs found and fixed:
+  NTFS name limits reported as "not found", blank non-embedded Hangul in PDFs (Malgun Gothic
+  first), the MSVC helper build, two packaging path bugs; arithmetic JPEGs report ENGINE_UNAVAILABLE
+  on Windows. The macOS runner hang was the helper's ImageIO probe pipe.
+- Windows GUI drag test on GitHub's Windows Server 2025 runner (synthesized input in a real
+  Explorer window, installed app): 9/9 cases pass; it found and fixed Korean words broken
+  mid-word in the Windows wheel's capsule and in the welcome window.
+- `scripts/set-version.mjs` keeps the app and both helpers on one version; version 1.0.0.
+
+Verified on the dev Mac at the 1.0.0 commit: vitest 1261 passed / 7 skipped; typecheck clean;
+Playwright 39/39; electron-verify 37/37 (no console errors or CSP violations); swift test 167;
+licences, golden vectors, icons, site checker and version check up to date.
+
+Next: tag v1.0.0 → CI draft (Windows unsigned beta + sources) → local signed/notarized macOS
+upload → the owner decides on publishing. Then SignPath Foundation (the owner chose it for Windows
+signing; it requires a released project, a code signing policy page, MFA, and — because of the
+update check — a privacy notice during installation with an option to turn the check off).

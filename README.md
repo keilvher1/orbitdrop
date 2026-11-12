@@ -5,25 +5,28 @@
 모든 처리는 내 컴퓨터에서만 일어나며 원본은 이동·덮어쓰기·삭제되지 않습니다.
 
 > A local file converter/editor: drag a file in Finder or Explorer, hold Shift, drop it on a ring
-> sector (JPG, PNG, CROP, ADD BG, …) and the result is written next to the original.
-> "OrbitDrop" is a working name. It is an independent app inspired by a workflow seen in a
-> reference video of another product; it uses its own name, icon and code.
+> sector (JPG, PNG, CROP, ADD BG, …) and the result is written next to the original. Free and open
+> source (MIT). Download: **https://keilvher1.github.io/orbitdrop/** · Releases:
+> https://github.com/keilvher1/orbitdrop/releases
+
+**내려받기: https://keilvher1.github.io/orbitdrop/** (설치 파일은 [GitHub Releases](https://github.com/keilvher1/orbitdrop/releases)).
+무료·오픈 소스(MIT)입니다.
 
 <p align="center"><img src="apps/desktop/build/icon.png" width="128" alt="OrbitDrop icon"></p>
 
-## 상태 (2026-10-24)
+## 상태 (2026-11-12, 1.0.0)
 
-**개발 중.** 기능별·OS별 상태는 [docs/support-matrix.md](docs/support-matrix.md)가 기준입니다.
+기능별·OS별 상태는 [docs/support-matrix.md](docs/support-matrix.md)가 기준입니다.
 
 | 영역 | 상태 |
 |---|---|
-| macOS 패키지 (arm64, x64) | dmg/zip 생성, helper·sharp/libvips·@napi-rs/canvas가 대상 아키텍처로 포함, ad-hoc 서명, DMG 안의 앱으로 smoke test(helper `ready`, PNG→JPEG, PDF→PNG, 숨긴 창 렌더링) **자동 검증됨**(개발 Mac, x64는 Rosetta 2). 코드 서명·공증 자격 증명 없음 → **미서명** 산출물. 최신 패키지의 해시: [verification.md](docs/verification.md#패키징-macos-이-저장소의-개발-mac). 예전 0.1.0 패키지(소스 d4f6d1e: 빈 창, 7faf031: 보호 폴더 권한 대화상자)는 쓰지 않는다 |
-| Windows 패키지 (x64) | NSIS 사용자별 설치 프로그램 설정·CI(빌드, smoke, 무인 설치/제거) 작성, **아직 Windows에서 실행되지 않음** |
-| 실제 Finder/Explorer 전역 드래그 | 네이티브 helper 구현됨(macOS는 권한 없이 동작하는 관찰 방식). macOS는 **가상 머신에서 실제 Finder로 검증**(macOS 14.8.7 전 기능, 26.6.2 핵심 흐름, x64는 Rosetta 2) — 실물 Mac에서 사람이 하는 확인과 Windows는 아직 · [verification.md](docs/verification.md) |
-| 변환·편집 엔진 | sharp(libvips), PDF.js + @napi-rs/canvas, pdf-lib, docx — 패키지 안에서 엔진 probe와 PNG→JPG 작업 파이프라인 확인 |
+| macOS (14 이상, Apple 실리콘·Intel) | **Developer ID 서명·Apple 공증**(앱과 DMG, 공증 티켓 부착). 가상 머신의 실제 Finder로 드래그부터 변환·편집까지 검증(macOS 14.8.7 전 기능, 26.6.2 핵심 흐름, Intel 판은 Rosetta 2). 실물 Mac에서 사람이 한 확인은 아직 없음 · [verification.md](docs/verification.md) |
+| Windows 11 x64 | **베타, 아직 코드 서명 없음**(파일 이름의 `-unsigned`). GitHub의 Windows Server 2025 러너에서 빌드·무인 설치/제거·실행 시험과, 실제 탐색기 창의 파일을 끌어 Shift로 휠을 띄우고 변환하는 자동 GUI 시험(9가지 경우)을 통과. 실제 Windows 11 PC에서 사람이 한 확인, 125% 이상 배율·다중 모니터·도구 휠·편집기 확인은 아직 없음 |
+| 업데이트 | GitHub Releases에서 자동 확인·내려받기·종료 시 설치(설정에서 끌 수 있음). 서명되지 않은 빌드와 개발 빌드는 업데이트하지 않음 |
+| 변환·편집 엔진 | sharp(libvips), PDF.js + @napi-rs/canvas, pdf-lib, docx — 설치본 안에서 엔진 probe와 변환 파이프라인 확인 |
 
-미서명 빌드는 로컬 테스트용이며 파일 이름에 `-unsigned`가 붙습니다. Gatekeeper/SmartScreen을 끄는 방법은
-안내하지 않습니다([docs/packaging.md](docs/packaging.md)).
+직접 빌드했지만 서명 자격 증명이 없으면 산출물 이름에 `-unsigned`가 붙는 시험용 빌드가 됩니다. 이 문서는 Gatekeeper/SmartScreen
+검사를 끄거나 우회하는 방법을 안내하지 않습니다([docs/packaging.md](docs/packaging.md)).
 
 ## 기능
 
@@ -74,10 +77,13 @@ Windows에서 Alt+Shift는 입력 언어 전환 단축키와 겹쳐 기본값으
 
 ## 설치와 제거
 
-지금의 산출물(`OrbitDrop-<버전>-mac-<arch>-unsigned.dmg`/`.zip`, `OrbitDrop-<버전>-win-x64-unsigned-setup.exe`)은 **서명·공증하지 않은
-로컬 테스트용 빌드**입니다(파일 이름의 `-unsigned`). 만든 컴퓨터에서 시험하는 용도이며 배포하지 않습니다. 인터넷에서 받은 미서명
-사본은 macOS Gatekeeper가 막고 Windows SmartScreen이 경고하는 것이 정상이며, 이 문서는 그 검사를 끄거나 우회하는 방법을 안내하지
-않습니다. 배포용은 서명된 빌드로 만듭니다([docs/packaging.md](docs/packaging.md)).
+설치 파일은 [웹페이지](https://keilvher1.github.io/orbitdrop/)나 [GitHub Releases](https://github.com/keilvher1/orbitdrop/releases)에서
+받습니다. 릴리스의 `SHA256SUMS.txt`로 내려받은 파일을 확인할 수 있습니다(`shasum -a 256 -c SHA256SUMS.txt`).
+
+* macOS 설치본(`OrbitDrop-<버전>-mac-<arch>.dmg`)은 Developer ID로 서명되고 Apple 공증을 받았습니다.
+* Windows 설치본(`OrbitDrop-<버전>-win-x64-unsigned-setup.exe`)은 아직 코드 서명이 없는 베타라 Windows가 경고를 표시할 수 있습니다.
+  이 문서는 그 경고를 끄거나 우회하는 방법을 안내하지 않습니다. 코드 서명은 준비 중입니다([docs/packaging.md](docs/packaging.md)).
+* 직접 빌드하면서 서명 자격 증명이 없으면 이름에 `-unsigned`가 붙는 시험용 빌드가 됩니다(배포하지 않음).
 
 **macOS (14 이상)**
 

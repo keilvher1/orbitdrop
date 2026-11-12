@@ -18,7 +18,7 @@ public enum HelperProtocol {
 
 /// Static facts about this helper build.
 public enum HelperInfo {
-  public static let version = "0.1.0"
+  public static let version = "1.0.0"
   public static let platform = "darwin"
   #if arch(arm64)
     public static let arch = "arm64"

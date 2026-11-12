@@ -1,7 +1,7 @@
 {
   "name": "@orbitdrop/desktop",
   "productName": "OrbitDrop",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "OrbitDrop – drag a file, hold a modifier, drop it on a ring to convert or edit it locally.",
   "author": "OrbitDrop",
