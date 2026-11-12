@@ -45,7 +45,7 @@ if (options.userDataDir) {
 registerPreviewSchemePrivileges();
 app.enableSandbox();
 // Must equal electron-builder's appId (apps/desktop/electron-builder.yml) or Windows drops notifications.
-if (process.platform === 'win32') app.setAppUserModelId('app.orbitdrop.desktop');
+if (process.platform === 'win32') app.setAppUserModelId('io.github.keilvher1.orbitdrop');
 
 function appPaths(): AppPaths {
   const rendererUrl = !app.isPackaged && process.env.ELECTRON_RENDERER_URL ? process.env.ELECTRON_RENDERER_URL : null;

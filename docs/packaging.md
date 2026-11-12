@@ -137,7 +137,7 @@ Windows 10/11에 포함되어 있어 허용한다. 훅이 PE import 표를 읽�
 * `package.mjs`는 미서명 모드에서 `CSC_IDENTITY_AUTO_DISCOVERY=false`로 키체인 인증서 자동 선택을
   막고, `mac.notarize=false`, `build/entitlements.mac.adhoc.plist`를 적용한다. PR CI에서도 ad-hoc
   서명이 건너뛰어지지 않게 `CSC_FOR_PULL_REQUEST=true`를 설정한다(자격 증명이 전혀 관여하지 않으므로 안전).
-* **네이티브 드래그 helper**(`Contents/Resources/helper/OrbitDropHelper`, 번들 ID `com.orbitdrop.helper`):
+* **네이티브 드래그 helper**(`Contents/Resources/helper/OrbitDropHelper`, 번들 ID `io.github.keilvher1.orbitdrop.helper`):
   [`build/sign.cjs`](../apps/desktop/build/sign.cjs)(`mac.sign`)가 electron-builder 기본 서명과 같은 osx-sign 호출에서 helper만
   **entitlements 없이**(빈 사전 [`build/entitlements.helper.plist`](../apps/desktop/build/entitlements.helper.plist)) hardened runtime으로
   서명한다. Electron용 상속 entitlements는 적용하지 않는다. Developer ID 서명에서는 osx-sign이 모든 파일에 보안 타임스탬프
@@ -218,19 +218,24 @@ Windows 10/11에 포함되어 있어 허용한다. 훅이 PE import 표를 읽�
 - [ ] smoke test와 [verification.md](verification.md)의 수동 GUI 검증 결과 기록(설치본에서 창이 실제로 그려지는지 포함)
 - [ ] `THIRD_PARTY_LICENSES.md`가 최신(`node scripts/licenses.mjs --check`)
 - [ ] LGPL/MPL 구성요소의 소스 제공 방법 결정(아래 "LGPL·MPL 소스 제공 — 결정 필요")
-- [ ] OrbitDrop 자체 라이선스 결정(README), 제품 ID·제품명 확정(아래 "제품 ID")
+- [x] OrbitDrop 자체 라이선스: MIT(루트 `LICENSE`, 2026-11-12). 제품명 OrbitDrop, 제품 ID 확정(아래 "제품 ID")
 
 ## 제품 ID
 
-`app.orbitdrop.desktop`은 임시 ID다. 바꿀 곳(첫 공개 배포 **전에** 한 번 정한다):
+제품 ID는 **`io.github.keilvher1.orbitdrop`**(2026-11-12 확정, 공개 저장소 `github.com/keilvher1/orbitdrop`과 웹페이지
+`keilvher1.github.io/orbitdrop`을 거꾸로 쓴 이름)이고 다시 바꾸지 않는다. 쓰이는 곳:
 
 | 위치 | 쓰임 |
 |---|---|
 | `apps/desktop/electron-builder.yml`의 `appId` | macOS `CFBundleIdentifier`(Electron 하위 앱은 `<appId>.helper…`), Windows NSIS 제거 항목 GUID, 바로가기 AppUserModelID |
 | `apps/desktop/src/main/index.ts`의 `app.setAppUserModelId(…)` | Windows 알림·작업 표시줄 묶음·로그인 시 실행 레지스트리 값 이름. **`package.mjs`가 빌드된 main 번들의 값과 appId가 다르면 실패시킨다** |
-| `native/macos/Support/Info.plist`, `scripts/build-native-mac.mjs`의 `BUNDLE_ID` (`com.orbitdrop.helper`) | macOS 드래그 helper의 번들 ID·서명 식별자(앱 ID와 달라도 동작; 같은 접두사로 맞추기를 권장) |
+| `native/macos/Support/Info.plist`, `scripts/build-native-mac.mjs`의 `BUNDLE_ID` (`io.github.keilvher1.orbitdrop.helper`) | macOS 드래그 helper의 번들 ID·서명 식별자 |
 
-나중에 바꾸면: Windows에서는 제거 항목 GUID와 설치 정보 키가 달라져 새 버전이 이전 설치를 찾지 못한다(제거 항목이 둘이 됨, 이전
+공개 전 0.1.0 시험 빌드는 임시 ID `app.orbitdrop.desktop`(helper `com.orbitdrop.helper`)를 썼다. 그 빌드를 설치했던 Mac에서는
+새 빌드가 다른 앱으로 취급된다. 데이터 폴더 `~/Library/Application Support/OrbitDrop`은 제품명을 따르므로 그대로 쓰이고,
+"로그인 시 실행"은 설정에서 다시 켜야 할 수 있다.
+
+ID를 바꾸면: Windows에서는 제거 항목 GUID와 설치 정보 키가 달라져 새 버전이 이전 설치를 찾지 못한다(제거 항목이 둘이 됨, 이전
 설치 폴더 경로를 이어받지 못함). macOS에서는 손쉬운 사용·입력 모니터링 허용과 로그인 항목이 새 ID로 다시 필요하다. 사용자 데이터
 폴더 이름은 제품명(`OrbitDrop`)을 따르므로 ID만 바꾸면 그대로다.
 

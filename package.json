@@ -1,6 +1,7 @@
 {
   "name": "orbitdrop-monorepo",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@11.27.1",
   "engines": {

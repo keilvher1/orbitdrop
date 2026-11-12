@@ -4,13 +4,12 @@
 # the script builds the native helper and bundles first, decides between real signing and an
 # explicitly labelled unsigned/ad-hoc build, and runs the packaged app's --smoke-test.
 
-# Placeholder product id ("OrbitDrop" is a working name). It must also be changed in
+# Product id, fixed before the first public release (2026-11-12). It must equal the id in
 # apps/desktop/src/main/index.ts (Windows AppUserModelID; scripts/package.mjs fails the build when
-# the two differ). Fix it before the first public release: on Windows it seeds the NSIS uninstall
-# key GUID, on macOS it keys privacy permissions and login items, so changing it later breaks
-# in-place upgrades.
+# the two differ). Never change it again: on Windows it seeds the NSIS uninstall key GUID, on macOS
+# it keys privacy permissions, login items and updates, so a change breaks in-place upgrades.
 # See docs/packaging.md "제품 ID".
-appId: app.orbitdrop.desktop
+appId: io.github.keilvher1.orbitdrop
 productName: OrbitDrop
 copyright: Copyright © 2026 OrbitDrop contributors
 

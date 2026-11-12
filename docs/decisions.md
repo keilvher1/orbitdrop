@@ -116,4 +116,4 @@
 * **결정**: 독자적인 OrbitDrop 아이콘(4분할 궤도 링 + 내려놓는 파일, 디자인 토큰의 크림/살구/주황)을
   `apps/desktop/build/icon.svg`로 관리하고 `scripts/gen-icons.mjs`가 sharp로 렌더링해 PNG/ICNS/ICO를 만든다
   (자체 ICNS/ICO 기록기, PNG 압축 항목, 추가 의존성 없음). macOS 메뉴 막대는 템플릿 이미지(검정+알파),
-  Windows 알림 영역은 컬러 ICO. 참고 앱(Tangerine)의 아이콘·이름은 쓰지 않는다.
+  Windows 알림 영역은 컬러 ICO. 참고 앱의 아이콘·이름은 쓰지 않는다.

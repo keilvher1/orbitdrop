@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key>
-	<string>com.orbitdrop.helper</string>
+	<string>io.github.keilvher1.orbitdrop.helper</string>
 	<key>CFBundleName</key>
 	<string>OrbitDropHelper</string>
 	<key>CFBundleExecutable</key>

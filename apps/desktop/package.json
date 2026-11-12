@@ -5,6 +5,12 @@
   "private": true,
   "description": "OrbitDrop – drag a file, hold a modifier, drop it on a ring to convert or edit it locally.",
   "author": "OrbitDrop",
+  "license": "MIT",
+  "homepage": "https://keilvher1.github.io/orbitdrop/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/keilvher1/orbitdrop.git"
+  },
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",

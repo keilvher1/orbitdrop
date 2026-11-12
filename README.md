@@ -65,7 +65,7 @@
   시스템 설정 › 일반 › 로그인 항목에서 지웁니다. 손쉬운 사용·입력 모니터링을 허용했다면 시스템 설정 › 개인정보 보호 및 보안의
   해당 목록에서 OrbitDrop을 지웁니다.
 * 사용자 데이터(앱을 지워도 남음, 필요하면 직접 삭제): `~/Library/Application Support/OrbitDrop`(설정 `settings.json`, 작업 기록
-  `history.json`, `logs/main.log`, 캐시), `~/Library/Preferences/app.orbitdrop.desktop.plist`.
+  `history.json`, `logs/main.log`, 캐시), `~/Library/Preferences/io.github.keilvher1.orbitdrop.plist`.
 
 **Windows (11 x64)**
 

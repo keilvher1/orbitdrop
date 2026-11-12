@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const packagePath = join(root, 'native', 'macos');
 const stageRoot = join(root, 'apps', 'desktop', 'resources', 'helper');
-const BUNDLE_ID = 'com.orbitdrop.helper';
+const BUNDLE_ID = 'io.github.keilvher1.orbitdrop.helper';
 const DEPLOYMENT_TARGET = '14.0';
 const ARCHES = {
   arm64: { triple: `arm64-apple-macosx${DEPLOYMENT_TARGET}`, lipo: 'arm64', dir: 'darwin-arm64' },
