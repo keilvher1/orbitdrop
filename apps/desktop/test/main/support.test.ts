@@ -62,23 +62,24 @@ describe('Help menu targets', () => {
 });
 
 describe('licence files', () => {
+  // Candidates are joined with the separators of the OS the app runs on (`join` of this host).
   const mac = { packaged: true, resourcesPath: '/Applications/OrbitDrop.app/Contents/Resources', appPath: '/Applications/OrbitDrop.app/Contents/Resources/app.asar' };
   const win = { packaged: true, resourcesPath: '/Programs/OrbitDrop/resources', appPath: '/Programs/OrbitDrop/resources/app.asar' };
   const dev = { packaged: false, resourcesPath: '/repo/node_modules/electron/dist/Electron.app/Contents/Resources', appPath: '/repo/apps/desktop' };
 
   it('packaged: the resources folder (macOS), then next to OrbitDrop.exe (Windows)', () => {
-    expect(licenseCandidates('thirdParty', mac)).toEqual(['/Applications/OrbitDrop.app/Contents/Resources/THIRD_PARTY_LICENSES.md']);
-    expect(licenseCandidates('electron', mac)[0]).toBe('/Applications/OrbitDrop.app/Contents/Resources/LICENSE.electron.txt');
-    expect(licenseCandidates('chromium', mac)[0]).toBe('/Applications/OrbitDrop.app/Contents/Resources/LICENSES.chromium.html');
-    expect(licenseCandidates('electron', win)).toContain('/Programs/OrbitDrop/LICENSE.electron.txt');
-    expect(licenseCandidates('chromium', win)).toContain('/Programs/OrbitDrop/LICENSES.chromium.html');
-    expect(licenseCandidates('thirdParty', win)).toEqual(['/Programs/OrbitDrop/resources/THIRD_PARTY_LICENSES.md']);
+    expect(licenseCandidates('thirdParty', mac)).toEqual([join('/Applications/OrbitDrop.app/Contents/Resources/THIRD_PARTY_LICENSES.md')]);
+    expect(licenseCandidates('electron', mac)[0]).toBe(join('/Applications/OrbitDrop.app/Contents/Resources/LICENSE.electron.txt'));
+    expect(licenseCandidates('chromium', mac)[0]).toBe(join('/Applications/OrbitDrop.app/Contents/Resources/LICENSES.chromium.html'));
+    expect(licenseCandidates('electron', win)).toContain(join('/Programs/OrbitDrop/LICENSE.electron.txt'));
+    expect(licenseCandidates('chromium', win)).toContain(join('/Programs/OrbitDrop/LICENSES.chromium.html'));
+    expect(licenseCandidates('thirdParty', win)).toEqual([join('/Programs/OrbitDrop/resources/THIRD_PARTY_LICENSES.md')]);
   });
 
   it("development: the repository's file and Electron's own", () => {
-    expect(licenseCandidates('thirdParty', dev)).toEqual(['/repo/THIRD_PARTY_LICENSES.md']);
-    expect(licenseCandidates('electron', dev)).toEqual(['/repo/node_modules/electron/dist/LICENSE']);
-    expect(licenseCandidates('chromium', dev)).toEqual(['/repo/node_modules/electron/dist/LICENSES.chromium.html']);
+    expect(licenseCandidates('thirdParty', dev)).toEqual([join('/repo/THIRD_PARTY_LICENSES.md')]);
+    expect(licenseCandidates('electron', dev)).toEqual([join('/repo/node_modules/electron/dist/LICENSE')]);
+    expect(licenseCandidates('chromium', dev)).toEqual([join('/repo/node_modules/electron/dist/LICENSES.chromium.html')]);
   });
 });
 
