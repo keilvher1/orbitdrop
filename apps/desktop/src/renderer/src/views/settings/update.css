@@ -1,0 +1,53 @@
+/* About › 업데이트 (UpdateSection) and Settings › 일반 › 업데이트 자동 확인 (UpdateAutoCheckField). */
+
+.about-update {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  max-width: 300px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--c-border);
+}
+
+.about-update-title {
+  color: var(--c-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.about-update-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.about-update-status .spinner {
+  flex: none;
+}
+
+.about-update-checked {
+  color: var(--c-text-muted);
+  font-size: 11px;
+}
+
+.about-update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.about-update-link {
+  color: var(--c-text-muted);
+}
+
+.update-autocheck {
+  gap: 4px;
+}
