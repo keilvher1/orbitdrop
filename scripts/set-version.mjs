@@ -9,10 +9,13 @@
 //   apps/desktop/package.json                                  "version" (the release version; tags are v<version>)
 //   native/macos/Sources/OrbitDropHelperCore/Protocol/ProtocolBasics.swift  HelperInfo.version (full semver)
 //   native/macos/Support/Info.plist                            CFBundleShortVersionString (major.minor.patch)
-//   native/windows/CMakeLists.txt                              project(... VERSION major.minor.patch) →
-//                                                              the helper's VERSIONINFO (res/OrbitDropHelper.rc.in)
-// CMake and CFBundleShortVersionString only take numbers, so a prerelease suffix (-beta.1) is kept in
-// package.json and the Swift constant only.
+//   native/windows/CMakeLists.txt                              project(... VERSION major.minor.patch) → the numeric
+//                                                              VERSIONINFO fields; set(ORBITDROP_VERSION_STRING "…")
+//                                                              (full semver) → the ProductVersion/FileVersion strings
+//                                                              (res/OrbitDropHelper.rc.in) and the reported version
+// CMake's project(VERSION) and CFBundleShortVersionString only take numbers, so a prerelease suffix (-beta.1)
+// is kept in package.json, the Swift constant and ORBITDROP_VERSION_STRING. Every signed Windows file must
+// carry the package.json version as its ProductVersion (scripts/win-files.mjs, SignPath).
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,6 +33,7 @@ export const VERSION_FILES = {
 const SWIFT_RE = /(public static let version = ")([^"]*)(")/;
 const PLIST_RE = /(<key>CFBundleShortVersionString<\/key>\s*<string>)([^<]*)(<\/string>)/;
 const CMAKE_RE = /(project\(OrbitDropHelper VERSION )([0-9.]+)( )/;
+const CMAKE_STRING_RE = /(set\(ORBITDROP_VERSION_STRING ")([^"]*)("\))/;
 
 function read(rel, root) {
   return readFileSync(join(root, rel), 'utf8');
@@ -47,6 +51,7 @@ export function readVersions(root = ROOT) {
     swift: one(VERSION_FILES.swift, SWIFT_RE),
     plist: one(VERSION_FILES.plist, PLIST_RE),
     cmake: one(VERSION_FILES.cmake, CMAKE_RE),
+    cmakeString: one(VERSION_FILES.cmake, CMAKE_STRING_RE),
   };
 }
 
@@ -60,6 +65,7 @@ export function checkVersions(root = ROOT) {
   if (v.swift !== v.packageJson) problems.push(`${VERSION_FILES.swift}: HelperInfo.version "${v.swift}", expected "${v.packageJson}"`);
   if (v.plist !== numeric) problems.push(`${VERSION_FILES.plist}: CFBundleShortVersionString "${v.plist}", expected "${numeric}"`);
   if (v.cmake !== numeric) problems.push(`${VERSION_FILES.cmake}: project VERSION "${v.cmake}", expected "${numeric}"`);
+  if (v.cmakeString !== v.packageJson) problems.push(`${VERSION_FILES.cmake}: ORBITDROP_VERSION_STRING "${v.cmakeString}", expected "${v.packageJson}"`);
   return problems;
 }
 
@@ -83,6 +89,7 @@ export function setVersion(version, root = ROOT) {
   edit(VERSION_FILES.swift, SWIFT_RE, version);
   edit(VERSION_FILES.plist, PLIST_RE, numeric);
   edit(VERSION_FILES.cmake, CMAKE_RE, numeric);
+  edit(VERSION_FILES.cmake, CMAKE_STRING_RE, version);
   return readVersions(root);
 }
 

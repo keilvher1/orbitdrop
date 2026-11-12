@@ -22,11 +22,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "OrbitDrop"
             VALUE "FileDescription", "OrbitDrop drag helper"
-            VALUE "FileVersion", "@PROJECT_VERSION@"
+            VALUE "FileVersion", "@ORBITDROP_VERSION_STRING@"
             VALUE "InternalName", "OrbitDropHelper"
             VALUE "OriginalFilename", "OrbitDropHelper.exe"
             VALUE "ProductName", "OrbitDrop"
-            VALUE "ProductVersion", "@PROJECT_VERSION@"
+            VALUE "ProductVersion", "@ORBITDROP_VERSION_STRING@"
         END
     END
     BLOCK "VarFileInfo"
