@@ -334,8 +334,8 @@
       <details id="faq-first-launch">
         <summary>처음 실행하면 어떻게 되나요?</summary>
         <div class="answer">
-          <p>macOS에서는 DMG를 열어 OrbitDrop을 응용 프로그램 폴더로 끌어 놓은 뒤 실행합니다. Windows 설치 프로그램은 현재 사용자용으로 설치하도록(기본 위치 <code>%LOCALAPPDATA%\Programs\OrbitDrop</code>) 만들어져 관리자 권한을 묻지 않습니다. 다만 Windows에서는 아직 실행해 보지 않았습니다(베타).</p>
-          <p>실행해도 창은 열리지 않습니다. 메뉴 막대(Windows는 작업 표시줄의 알림 영역)에 OrbitDrop 아이콘이 나타나면 준비된 것입니다. 바로 파일을 끌며 <kbd>Shift</kbd>를 눌러 보세요. 설정은 아이콘 메뉴의 <strong>설정…</strong>에 있고, ‘로그인할 때 OrbitDrop 실행’은 처음에 꺼져 있습니다.</p>
+          <p>macOS에서는 DMG를 열어 OrbitDrop을 응용 프로그램 폴더로 끌어 놓은 뒤 실행합니다. Windows 설치 프로그램은 현재 사용자용으로 설치하도록(기본 위치 <code>%LOCALAPPDATA%\Programs\OrbitDrop</code>) 만들어져 관리자 권한을 묻지 않습니다. Windows 판은 베타입니다(아래 ‘Windows 판은 왜 베타인가요?’).</p>
+          <p>처음 실행하면 사용법을 알려 주는 작은 환영 창이 한 번 열립니다. 지금 설정된 단축키와 아이콘이 있는 곳, ‘로그인할 때 OrbitDrop 실행’ 스위치(처음에는 꺼짐)를 보여 줍니다. 그 뒤로 OrbitDrop은 창 없이 메뉴 막대(Windows는 작업 표시줄의 알림 영역 — Windows 11은 새 아이콘을 <kbd>^</kbd> 안에 숨길 수 있습니다)의 아이콘으로 실행됩니다. 바로 파일을 끌며 <kbd>Shift</kbd>를 눌러 보세요. 설정은 아이콘 메뉴의 <strong>설정…</strong>에 있고, 환영 창은 <strong>도움말 › 사용법</strong>으로 다시 열 수 있습니다. 화면 언어는 처음 실행할 때 운영체제 언어를 따르며(한국어 또는 영어) 설정에서 바꿀 수 있습니다.</p>
           <p>Apple silicon Mac에서 Intel용을 실행하면 Rosetta 2가 번역하느라 첫 실행이 오래 걸리고(가상 머신에서 약 1분 40초), Apple silicon용을 설치하라는 알림이 뜹니다.</p>
         </div>
       </details>
@@ -366,7 +366,7 @@
       <details id="faq-windows">
         <summary>Windows 판은 왜 베타인가요?</summary>
         <div class="answer">
-          <p>Windows 판은 아직 실제 Windows에서 실행해 보지 않았기 때문입니다. 설치 프로그램 설정과 Windows용 드래그 도우미 코드는 있지만, 도우미는 macOS에서 교차 컴파일해 공통 부분만 자동 테스트했고, 설치 프로그램은 Windows에서 아직 만들어 보지 않았습니다. 그래서 탐색기에서 파일을 끌며 휠을 띄우는 전역 드래그도 실제 PC에서 확인하지 못했습니다. macOS 판은 macOS 14와 macOS 26 가상 머신의 실제 Finder에서 드래그부터 변환·편집까지 확인했습니다.</p>
+          <p>Windows 판은 아직 실제 Windows 11 PC에서 사람이 확인하지 않았기 때문입니다. 설치 파일은 GitHub의 Windows Server 2025 러너(가상 머신)에서 빌드해 설치·제거와 실행 시험을 통과했고, 같은 러너의 실제 탐색기 창에서 파일을 끌며 <kbd>Shift</kbd>로 휠을 띄워 놓고 변환하는 자동 시험(취소·링 바깥 드롭·텍스트 드래그 등 9가지 경우)도 통과했습니다. 다만 그 입력은 프로그램이 만든 것이고, 100% 배율·모니터 하나에서만 확인했으며 도구 메뉴와 편집기는 아직 Windows에서 확인하지 않았습니다. 또 설치 파일에 아직 코드 서명이 없어 Windows가 경고를 표시할 수 있습니다. macOS 판은 macOS 14와 macOS 26 가상 머신의 실제 Finder에서 드래그부터 변환·편집까지 확인했습니다.</p>
           <ul>
             <li>OrbitDrop과 탐색기 중 한쪽만 관리자 권한으로 실행하면 드래그를 받을 수 없습니다.</li>
             <li>HEIC 변환은 Windows에서 지원하지 않습니다.</li>

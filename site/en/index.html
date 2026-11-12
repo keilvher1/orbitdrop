@@ -334,9 +334,9 @@
       <details id="faq-first-launch">
         <summary>What happens on first launch?</summary>
         <div class="answer">
-          <p>On macOS, open the DMG, drag OrbitDrop to the Applications folder and launch it. On Windows, the installer is built to install for the current user (by default in <code>%LOCALAPPDATA%\Programs\OrbitDrop</code>) without asking for administrator rights; it has not been run on Windows yet (beta).</p>
-          <p>No window opens. When the OrbitDrop icon appears in the menu bar (the notification area of the taskbar on Windows), it is ready: drag a file and press <kbd>Shift</kbd>. Settings are under <strong>Settings…</strong> in the icon’s menu; “Open OrbitDrop at login” is off at first.</p>
-          <p>The interface starts in Korean. To switch to English, open the icon’s menu and choose <strong>설정…</strong> (Settings) › <strong>일반</strong> (General) › <strong>언어</strong> (Language) › English.</p>
+          <p>On macOS, open the DMG, drag OrbitDrop to the Applications folder and launch it. On Windows, the installer is built to install for the current user (by default in <code>%LOCALAPPDATA%\Programs\OrbitDrop</code>) without asking for administrator rights. The Windows version is a beta (see “Why is the Windows version a beta?”).</p>
+          <p>On first launch a small welcome window explains how to use it once: your current shortcuts, where the icon lives and an “Open OrbitDrop at login” switch (off at first). After that OrbitDrop runs without a window, as an icon in the menu bar (the notification area of the taskbar on Windows — Windows 11 may hide new icons under <kbd>^</kbd>): drag a file and press <kbd>Shift</kbd>. Settings are under <strong>Settings…</strong> in the icon’s menu, and <strong>Help › How to Use</strong> opens the welcome window again.</p>
+          <p>On first launch the interface follows your system language (Korean, otherwise English). You can change it in <strong>Settings…</strong> › <strong>General</strong> › <strong>Language</strong>.</p>
           <p>Running the Intel build on an Apple silicon Mac makes the first launch slow while Rosetta 2 translates it (about 1 minute 40 seconds in a virtual machine), and OrbitDrop then suggests installing the Apple silicon build.</p>
         </div>
       </details>
@@ -367,7 +367,7 @@
       <details id="faq-windows">
         <summary>Why is the Windows version a beta?</summary>
         <div class="answer">
-          <p>Because the Windows version has not been run on Windows yet. The installer configuration and the Windows drag helper exist, but the helper has only been cross-compiled on macOS, with automated tests for its shared parts, and the installer has not yet been built on Windows. So the global drag — opening the wheel while you drag a file in File Explorer — has not been checked on a real PC either. The macOS version was checked from drag to result in the real Finder on macOS 14 and macOS 26 virtual machines.</p>
+          <p>Because no person has checked it on a real Windows 11 PC yet. The installer is built on GitHub’s Windows Server 2025 runners (virtual machines), where it passes install, uninstall and launch tests and an automated test that drags real files in a real File Explorer window, presses <kbd>Shift</kbd> to open the wheel and drops on a format (nine cases, including cancelling, dropping outside the ring and dragging text). That input is synthesized, only 100 % scaling with one monitor was covered, and the tools menu and editors have not been checked on Windows yet. The installer is not code-signed yet, so Windows may show a warning. The macOS version was checked from drag to result in the real Finder on macOS 14 and macOS 26 virtual machines.</p>
           <ul>
             <li>If only one of OrbitDrop and File Explorer runs as administrator, drags between them are blocked.</li>
             <li>HEIC conversion is not supported on Windows.</li>
