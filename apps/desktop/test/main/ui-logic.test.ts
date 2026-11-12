@@ -71,6 +71,9 @@ function actions(): TrayActions & Record<string, ReturnType<typeof vi.fn>> {
     openWebsite: vi.fn(),
     reportProblem: vi.fn(),
     openLogFolder: vi.fn(),
+    checkForUpdates: vi.fn(),
+    restartToUpdate: vi.fn(),
+    cancelRestartToUpdate: vi.fn(),
   } as unknown as TrayActions & Record<string, ReturnType<typeof vi.fn>>;
 }
 
@@ -143,6 +146,29 @@ describe('tray menu', () => {
     expect(comboText(custom.globalDrag.toolsModifiers, 'win32', ko)).toBe('Ctrl+Alt+Shift');
     // Global drag off: no keys to name.
     expect(trayTooltip({ ...DEFAULT_SETTINGS, globalDrag: { ...DEFAULT_SETTINGS.globalDrag, enabled: false } }, 'darwin', ko)).toBe('OrbitDrop');
+  });
+
+  it('offers "check for updates" and, once an update is downloaded, "restart to update"', () => {
+    const t = bindTranslate(() => 'ko');
+    const a = actions();
+    const none = labels(buildTrayTemplate(state({ state: 'disabled' }), a, t));
+    expect(none).not.toContain('업데이트 확인…'); // no update service (e.g. tests): no entries
+
+    const idle = buildTrayTemplate(state({ state: 'disabled' }, { update: { ready: false, restartPending: false, version: null } }), a, t);
+    expect(labels(idle).slice(-3)).toEqual(['정보', '업데이트 확인…', '종료']);
+    (idle.find((i) => i.label === '업데이트 확인…')!.click as () => void)();
+    expect(a.checkForUpdates).toHaveBeenCalledTimes(1);
+
+    const ready = buildTrayTemplate(state({ state: 'disabled' }, { update: { ready: true, restartPending: false, version: '0.2.0' } }), a, t);
+    expect(labels(ready).slice(-3)).toEqual(['정보', '재시작하여 업데이트', '종료']);
+    (ready.find((i) => i.label === '재시작하여 업데이트')!.click as () => void)();
+    expect(a.restartToUpdate).toHaveBeenCalledTimes(1);
+
+    const pending = buildTrayTemplate(state({ state: 'disabled' }, { update: { ready: true, restartPending: true, version: '0.2.0' } }), a, bindTranslate(() => 'en'));
+    expect(labels(pending).slice(-4)).toEqual(['About', 'Restarts when your work is done', 'Cancel Restart', 'Quit']);
+    expect(pending.find((i) => i.label === 'Restarts when your work is done')!.enabled).toBe(false);
+    (pending.find((i) => i.label === 'Cancel Restart')!.click as () => void)();
+    expect(a.cancelRestartToUpdate).toHaveBeenCalledTimes(1);
   });
 
   it('escapes & in file names on Windows', () => {

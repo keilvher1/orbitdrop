@@ -26,6 +26,8 @@ import {
   type Platform,
   type SelectedFile,
   type Settings,
+  type UpdatePhase,
+  type UpdateState,
   type WheelMode,
   type WindowContext,
 } from '@orbitdrop/contracts';
@@ -57,6 +59,8 @@ export interface MockScenario {
   readonly highContrast: Settings['accessibility']['highContrast'];
   /** Artificial preview latency in ms (exercises pending states). */
   readonly latency: number;
+  /** Update service state shown in About (`update=`). */
+  readonly update: UpdatePhase['state'];
 }
 
 const TOOLS: readonly MockTool[] = ['crop', 'addBackground', 'compress', 'metadata', 'edit', 'annotate', 'redact', 'pdf'];
@@ -84,6 +88,7 @@ export function scenarioFromQuery(search: string): MockScenario | null {
     reduceMotion: pick('rm', ['system', 'on', 'off'] as const, 'system'),
     highContrast: pick('hc', ['system', 'on', 'off'] as const, 'system'),
     latency: Number(q.get('latency') ?? 120) || 0,
+    update: pick<UpdatePhase['state']>('update', ['unsupported', 'idle', 'checking', 'available', 'downloading', 'downloaded', 'upToDate', 'error'], 'upToDate'),
   };
 }
 
@@ -371,6 +376,13 @@ export function createMockOrbit(scenario: MockScenario): OrbitApi {
   const emitJobs = () => {
     const snapshot = [...jobs];
     for (const listener of jobListeners) listener(snapshot);
+  };
+
+  let updateState = mockUpdateState(scenario.update, settings.updates.autoCheck);
+  const updateListeners = new Set<(state: UpdateState) => void>();
+  const setUpdateState = (next: UpdateState) => {
+    updateState = next;
+    for (const listener of updateListeners) listener(updateState);
   };
 
   const updateJob = (jobId: string, patch: Partial<JobSnapshot>) => {
@@ -740,6 +752,49 @@ export function createMockOrbit(scenario: MockScenario): OrbitApi {
     async restartHelper() {
       notifyHarness('restartHelper()');
     },
+    async getUpdateState() {
+      return updateState;
+    },
+    onUpdateStateChanged(listener) {
+      updateListeners.add(listener);
+      return () => updateListeners.delete(listener);
+    },
+    async checkForUpdates() {
+      notifyHarness('checkForUpdates()');
+      if (updateState.state === 'unsupported' || updateState.state === 'downloaded') return updateState;
+      setUpdateState({ ...updateState, state: 'checking' } as UpdateState);
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      setUpdateState({ state: 'upToDate', currentVersion: '0.1.0', autoCheck: settings.updates.autoCheck, lastCheckedAt: Date.now() });
+      return updateState;
+    },
+    async restartToUpdate() {
+      notifyHarness('restartToUpdate()');
+      if (updateState.state === 'downloaded') setUpdateState({ ...updateState, restartPending: true });
+      return updateState;
+    },
   };
   return api;
+}
+
+/** The update state a scenario starts with (About › 업데이트). */
+function mockUpdateState(state: UpdatePhase['state'], autoCheck: boolean): UpdateState {
+  const base = { currentVersion: '0.1.0', autoCheck, lastCheckedAt: Date.now() - 42 * 60_000 };
+  switch (state) {
+    case 'unsupported':
+      return { ...base, state, reason: 'development', lastCheckedAt: null };
+    case 'idle':
+      return { ...base, state, lastCheckedAt: null };
+    case 'checking':
+      return { ...base, state };
+    case 'available':
+      return { ...base, state, version: '0.2.0' };
+    case 'downloading':
+      return { ...base, state, version: '0.2.0', percent: 42 };
+    case 'downloaded':
+      return { ...base, state, version: '0.2.0', restartPending: false };
+    case 'error':
+      return { ...base, state, error: 'offline' };
+    default:
+      return { ...base, state: 'upToDate' };
+  }
 }

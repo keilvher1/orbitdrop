@@ -24,6 +24,7 @@ import type { Translator } from '../../i18n/catalog';
 import { AboutContent } from './AboutView';
 import { DataActions } from './DataActions';
 import { RestartHelperButton } from './RestartHelperButton';
+import { UpdateAutoCheckField } from './UpdateAutoCheckField';
 import { WheelSizePreview } from './WheelSizePreview';
 import {
   MODIFIER_ORDER,
@@ -321,6 +322,7 @@ function GeneralPanel({ settings, apply }: PanelProps) {
       </SettingsField>
       <CheckboxField label={t('settings.launchAtLogin')} checked={settings.launchAtLogin} onChange={(launchAtLogin) => apply({ launchAtLogin })} />
       <CheckboxField label={t('settings.notifications')} checked={settings.notifications} onChange={(notifications) => apply({ notifications })} />
+      <UpdateAutoCheckField settings={settings} apply={apply} />
       <DataActions />
     </div>
   );

@@ -12,6 +12,13 @@
 // `--smoke-test` (x64 via `arch -x86_64` on Apple Silicon) → native-module check of the packaged
 // sharp/libvips(+librsvg)/@napi-rs/canvas files and the pdf-lib/docx writers → report.
 //
+// Every package gets Resources/build-info.json {version, commit, dirty, signing, builtAt} (handed
+// to the after-pack hook in ORBITDROP_BUILD_INFO; the app shows the commit in About and decides
+// whether it can update itself) and Resources/app-update.yml (electron-builder.yml `publish`).
+// The update metadata (latest-mac.yml: both architectures' zips merged into one file; latest.yml)
+// is checked against the files it names. Developer ID builds with notarization credentials also
+// get signed, notarized and stapled DMGs (scripts/mac-dmg.mjs).
+//
 // Signing: real signing happens only when credentials are provided through the environment
 // (macOS: CSC_LINK/CSC_NAME [+ APPLE_* for notarization]; Windows: WIN_CSC_LINK/CSC_LINK +
 // CSC_KEY_PASSWORD). Otherwise the build is explicitly UNSIGNED: macOS apps get an ad-hoc
@@ -23,6 +30,8 @@
 //   --dir               only produce the unpacked app (no dmg/zip/nsis)
 //   --unsigned          ignore signing credentials even if present
 //   --require-signing   fail unless signing credentials are present
+//   --require-notarization  (macOS) also fail unless the apps and the DMGs end up notarized and
+//                       stapled (needs CSC_NAME — the identity in a keychain — and APPLE_* credentials)
 //   --skip-native       use the helper already staged in apps/desktop/resources/helper/
 //   --skip-build        reuse apps/desktop/out (skip electron-vite build)
 //   --skip-smoke        do not launch the packaged app (also skips the native-module check)
@@ -39,6 +48,8 @@ import { createRequire } from 'node:module';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { findSigningIdentity, notaryCredentials, signAndNotarizeDmg } from './mac-dmg.mjs';
+import { checkUpdateInfo, createRunner, mergeUpdateInfo, yaml } from './release-lib.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DESKTOP = join(ROOT, 'apps', 'desktop');
@@ -61,7 +72,8 @@ const option = (name, fallback) => {
 const opts = {
   dir: flag('dir'),
   unsigned: flag('unsigned'),
-  requireSigning: flag('require-signing'),
+  requireSigning: flag('require-signing') || flag('require-notarization'),
+  requireNotarization: flag('require-notarization'),
   skipNative: flag('skip-native'),
   skipBuild: flag('skip-build'),
   skipSmoke: flag('skip-smoke'),
@@ -170,6 +182,31 @@ const signing = signed
   : { mode: target === 'mac' ? 'unsigned (ad-hoc signature)' : 'unsigned', notarize: target === 'mac' ? false : null };
 console.log(`  signing: ${signing.mode}${target === 'mac' ? `, notarization: ${signing.notarize ? 'yes' : 'no'}` : ''}`);
 if (signed && target === 'mac' && !canNotarize) console.warn('  ⚠ signed but NOT notarized (no APPLE_* credentials): Gatekeeper will still block downloaded copies');
+if (opts.requireNotarization && target === 'mac' && !canNotarize) fatal('--require-notarization: no notarization credentials (APPLE_API_KEY + APPLE_API_KEY_ID + APPLE_API_ISSUER, or APPLE_KEYCHAIN_PROFILE; see docs/RELEASING.md)');
+
+// DMGs: signed, notarized and stapled by this script (scripts/mac-dmg.mjs) for Developer ID builds
+// with notarization credentials. Their identity must be on the keychain search list (CSC_NAME):
+// a CSC_LINK certificate only exists in electron-builder's temporary keychain during its run.
+const runner = createRunner();
+let dmgPlan = { mode: 'none', reason: target === 'mac' ? 'no DMG (--dir)' : 'not macOS' };
+if (target === 'mac' && !opts.dir) {
+  if (!signed) dmgPlan = { mode: 'unsigned', reason: 'unsigned build: the DMG is not signed' };
+  else if (!canNotarize) dmgPlan = { mode: 'skipped', reason: 'no notarization credentials' };
+  else if (!env.CSC_NAME) dmgPlan = { mode: 'skipped', reason: 'CSC_NAME is not set: a CSC_LINK certificate is gone once electron-builder exits, so the DMG cannot be signed' };
+  else {
+    const credentials = notaryCredentials(env);
+    let identity;
+    try {
+      identity = findSigningIdentity({ name: env.CSC_NAME, run: runner });
+    } catch (err) {
+      fatal(`DMG signing: ${err.message}`);
+    }
+    dmgPlan = { mode: 'notarize', identity, credentials };
+    console.log(`  DMGs: signed with the same Developer ID, notarized (${credentials.kind}) and stapled`);
+  }
+  if (dmgPlan.mode !== 'notarize') console.log(`  DMGs: not notarized (${dmgPlan.reason})`);
+  if (opts.requireNotarization && dmgPlan.mode !== 'notarize') fatal(`--require-notarization: ${dmgPlan.reason}`);
+}
 
 // electron-builder detects the package manager from apps/desktop (no lockfile there) and
 // otherwise from npm_config_user_agent. Advertise pnpm when not launched through pnpm so the
@@ -277,8 +314,28 @@ function outManifest() {
   return list.sort().join('\n');
 }
 
+/** Source the packages were built from, so a recorded artifact can be traced to a commit. */
+function sourceRevision() {
+  const git = (args) => spawnSync('git', args, { cwd: ROOT, encoding: 'utf8' });
+  const head = git(['rev-parse', 'HEAD']);
+  if (head.status !== 0) return null;
+  const dirty = git(['status', '--porcelain', '--untracked-files=no']).stdout.trim() !== '';
+  return { commit: head.stdout.trim(), dirty };
+}
+const source = sourceRevision();
+// Resources/build-info.json, written by the after-pack hook before signing (scripts/after-pack.cjs).
+env.ORBITDROP_BUILD_INFO = JSON.stringify({
+  version: desktopPkg.version,
+  commit: source?.commit ?? null,
+  dirty: source?.dirty ?? false,
+  signing: target === 'mac' ? (signed ? 'developer-id' : 'adhoc') : signed ? 'authenticode' : 'none',
+  builtAt: new Date().toISOString(),
+});
+
 const builderCli = join(ROOT, 'node_modules', 'electron-builder', 'cli.js');
 const results = [];
+/** latest-mac.yml of every macOS arch run (each run writes only its own zip; merged below). */
+const macUpdateInfos = [];
 for (const a of archs) {
   step(`electron-builder ${target} ${a}`);
   const started = Date.now() - 2000;
@@ -303,16 +360,20 @@ for (const a of archs) {
   // unpacked app produced by electron-builder
   const appDir = target === 'mac' ? join(RELEASE, a === 'arm64' ? 'mac-arm64' : 'mac', `${desktopPkg.productName}.app`) : join(RELEASE, 'win-unpacked');
   result.app = { path: rel(appDir), bytes: existsSync(appDir) ? duBytes(appDir) : 0 };
-  // artifacts written during this run
+  // artifacts written during this run (blockmaps: differential downloads of the macOS zips)
   for (const name of existsSync(RELEASE) ? readdirSync(RELEASE) : []) {
     const p = join(RELEASE, name);
     const st = statSync(p);
     if (!st.isFile() || st.mtimeMs < started) continue;
-    if (!/\.(dmg|zip|exe)$/.test(name) || !name.includes(a)) continue;
+    if (!/\.(dmg|zip|exe|blockmap)$/.test(name) || !name.includes(a)) continue;
     result.artifacts.push({ path: rel(p), bytes: st.size, sha256: await sha256(p) });
   }
+  // The next arch run overwrites latest-mac.yml: keep this run's copy.
+  const macInfoFile = join(RELEASE, 'latest-mac.yml');
+  if (target === 'mac' && existsSync(macInfoFile) && statSync(macInfoFile).mtimeMs >= started) macUpdateInfos.push(yaml().load(readFileSync(macInfoFile, 'utf8')));
   if (target === 'mac') inspectMac(result, appDir, a);
   else inspectWin(result, appDir);
+  inspectUpdateFiles(result, target === 'mac' ? join(appDir, 'Contents', 'Resources') : join(appDir, 'resources'), a);
   result.inspection.fuses = await inspectFuses(target === 'mac' ? appDir : join(appDir, `${desktopPkg.productName}.exe`), a);
 }
 
@@ -465,6 +526,59 @@ function inspectWin(result, appDir) {
   if (!ins.exe) errors.push('win: OrbitDrop.exe missing from win-unpacked');
   if (!ins.licenses) errors.push('win: THIRD_PARTY_LICENSES.md missing from resources');
   for (const [k, v] of Object.entries(ins)) console.log(`  ${k}: ${JSON.stringify(v)}`);
+}
+
+/**
+ * Resources/app-update.yml (electron-updater's configuration, from electron-builder.yml `publish`)
+ * and Resources/build-info.json (scripts/after-pack.cjs) must be in every package (a --dir app folder
+ * gets no app-update.yml: electron-builder writes it for installable targets only).
+ */
+function inspectUpdateFiles(result, resources, a) {
+  const ins = result.inspection;
+  const updateConfig = join(resources, 'app-update.yml');
+  if (opts.dir) {
+    // electron-builder writes app-update.yml only for runs with dmg/zip (macOS) or NSIS (Windows) targets.
+    ins.updateConfig = existsSync(updateConfig) ? 'present (--dir build)' : 'not written for --dir builds (only with dmg/zip or NSIS targets)';
+  } else if (existsSync(updateConfig)) {
+    const config = yaml().load(readFileSync(updateConfig, 'utf8')) ?? {};
+    ins.updateConfig = { provider: config.provider, owner: config.owner, repo: config.repo, updaterCacheDirName: config.updaterCacheDirName, publisherName: config.publisherName ?? null };
+    const wanted = builderYml.publish ?? {};
+    if (config.provider !== wanted.provider || config.owner !== wanted.owner || config.repo !== wanted.repo) errors.push(`${a}: app-update.yml says ${config.provider} ${config.owner}/${config.repo}, electron-builder.yml publishes to ${wanted.provider} ${wanted.owner}/${wanted.repo}`);
+  } else {
+    ins.updateConfig = null;
+    errors.push(`${a}: Resources/app-update.yml is missing (electron-builder.yml publish) — the app could never update`);
+  }
+  const buildInfo = join(resources, 'build-info.json');
+  ins.buildInfo = existsSync(buildInfo) ? JSON.parse(readFileSync(buildInfo, 'utf8')) : null;
+  if (!ins.buildInfo) errors.push(`${a}: Resources/build-info.json is missing (scripts/after-pack.cjs)`);
+  else if (ins.buildInfo.version !== desktopPkg.version) errors.push(`${a}: build-info.json says version ${ins.buildInfo.version}, the package is ${desktopPkg.version}`);
+  console.log(`  update config: ${JSON.stringify(ins.updateConfig)}; build info: ${JSON.stringify(ins.buildInfo)}`);
+}
+
+// ── 7b. DMG: sign, notarize, staple, verify (Developer ID + notarization credentials) ──
+if (target === 'mac' && dmgPlan.mode === 'notarize') {
+  for (const result of results) {
+    if (!result.ok) continue;
+    const artifact = result.artifacts.find((x) => x.path.endsWith('.dmg'));
+    if (!artifact) {
+      errors.push(`${result.arch}: no DMG to notarize`);
+      continue;
+    }
+    step(`sign, notarize and staple ${rel(join(ROOT, artifact.path))}`);
+    try {
+      result.dmgNotarization = signAndNotarizeDmg({ dmg: join(ROOT, artifact.path), identity: dmgPlan.identity, credentials: dmgPlan.credentials, run: runner, log: console.log });
+      console.log(`  DMG: notarization ${result.dmgNotarization.notarization?.status} (${result.dmgNotarization.notarization?.id}), stapled, spctl ${result.dmgNotarization.spctl}, stapler validate ${result.dmgNotarization.staplerValidate}`);
+    } catch (err) {
+      result.dmgNotarization = err.report ?? { ok: false, error: err.message };
+      errors.push(`${result.arch}: ${err.message}`);
+    }
+    // Stapling changed the DMG: its size and SHA-256 are those of the final file.
+    const path = join(ROOT, artifact.path);
+    artifact.bytes = statSync(path).size;
+    artifact.sha256 = await sha256(path);
+  }
+} else if (target === 'mac') {
+  for (const result of results) if (result.ok) result.dmgNotarization = { ok: false, skipped: dmgPlan.reason };
 }
 
 // ── 8. smoke test ────────────────────────────────────────────────────────────
@@ -691,20 +805,38 @@ if (target === 'win' && opts.installTest && !opts.dir) {
   for (const result of results) if (result.ok) result.installTest = await installTestWin(result);
 }
 
+// ── 10b. update metadata (latest-mac.yml merged from both arch runs / latest.yml) ──
+let updateInfo = null;
+const builtTargets = results.filter((r) => r.ok && !opts.dir);
+if (builtTargets.length > 0) {
+  const file = join(RELEASE, target === 'mac' ? 'latest-mac.yml' : 'latest.yml');
+  let info = null;
+  if (target === 'mac') {
+    info = mergeUpdateInfo(macUpdateInfos);
+    if (info) writeFileSync(file, yaml().dump(info, { lineWidth: 8000, noRefs: true }));
+  } else if (existsSync(file)) {
+    info = yaml().load(readFileSync(file, 'utf8'));
+  }
+  if (!info) errors.push(`electron-builder wrote no ${rel(file)} (electron-builder.yml publish) — installed copies could not update to this build`);
+  else {
+    const problems = await checkUpdateInfo(info, RELEASE, { platform: os, version: desktopPkg.version, archs: builtTargets.map((r) => r.arch) });
+    updateInfo = { file: rel(file), files: info.files.map((f) => f.url), problems };
+    for (const p of problems) errors.push(`${rel(file)}: ${p}`);
+    console.log(`\n  update metadata ${rel(file)}: ${updateInfo.files.join(', ')}${problems.length ? ` — ${problems.length} problem(s)` : ' — consistent with the files'}`);
+  }
+}
+if (opts.requireNotarization && target === 'mac') {
+  for (const r of results) {
+    if (r.ok && !r.signing.notarize) errors.push(`${r.os}-${r.arch}: the app was not notarized (--require-notarization)`);
+    if (r.ok && !opts.dir && r.dmgNotarization?.ok !== true) errors.push(`${r.os}-${r.arch}: the DMG is not notarized and stapled (--require-notarization)`);
+  }
+}
+
 // ── 11. report ───────────────────────────────────────────────────────────────
 mkdirSync(RELEASE, { recursive: true });
-/** Source the packages were built from, so a recorded artifact can be traced to a commit. */
-function sourceRevision() {
-  const git = (args) => spawnSync('git', args, { cwd: ROOT, encoding: 'utf8' });
-  const head = git(['rev-parse', 'HEAD']);
-  if (head.status !== 0) return null;
-  const dirty = git(['status', '--porcelain', '--untracked-files=no']).stdout.trim() !== '';
-  return { commit: head.stdout.trim(), dirty };
-}
-const source = sourceRevision();
 for (const r of results) {
   const file = join(RELEASE, `build-report-${r.os}-${r.arch}.json`);
-  writeFileSync(file, `${JSON.stringify({ generatedAt: new Date().toISOString(), version: desktopPkg.version, host: `${process.platform}-${process.arch}`, source, ...r }, null, 2)}\n`);
+  writeFileSync(file, `${JSON.stringify({ generatedAt: new Date().toISOString(), version: desktopPkg.version, host: `${process.platform}-${process.arch}`, source, ...r, updateInfo }, null, 2)}\n`);
 }
 step('summary');
 console.log(`  source: ${source ? `${source.commit.slice(0, 12)}${source.dirty ? ' + uncommitted changes' : ''}` : 'unknown (no git)'}`);
@@ -714,18 +846,21 @@ for (const r of results) {
   for (const x of r.artifacts) console.log(`    ${x.path} (${mb(x.bytes)}) sha256 ${x.sha256}`);
   if (r.smoke) console.log(`    smoke: ${r.smoke.ok ? 'OK' : r.smoke.ran ? (r.smoke.implemented ? 'FAILED' : 'not implemented') : `not run (${r.smoke.error})`}`);
   if (r.nativeCheck) console.log(`    native-module check: ${r.nativeCheck.ran ? (r.nativeCheck.ok ? `OK (librsvg ${r.nativeCheck.sharp?.rsvg}, ${r.nativeCheck.koreanFont}, pdf-lib + docx)` : 'FAILED') : `not run (${r.nativeCheck.reason})`}`);
+  if (r.dmgNotarization) console.log(`    DMG: ${r.dmgNotarization.ok ? `signed, notarized, stapled (${r.dmgNotarization.spctl})` : r.dmgNotarization.skipped ? `not notarized (${r.dmgNotarization.skipped})` : `FAILED at ${r.dmgNotarization.failedAt ?? '?'}`}`);
   console.log(`    report: ${rel(join(RELEASE, `build-report-${r.os}-${r.arch}.json`))}`);
 }
 // GitHub Actions job summary (signing status is part of what reviewers must see).
 if (process.env.GITHUB_STEP_SUMMARY) {
-  const lines = ['### OrbitDrop packages', '', '| Target | Signing | Notarized | Smoke test | Native modules | Artifacts |', '|---|---|---|---|---|---|'];
+  const lines = ['### OrbitDrop packages', '', '| Target | Signing | Notarized (app / DMG) | Smoke test | Native modules | Artifacts |', '|---|---|---|---|---|---|'];
   for (const r of results) {
     const smoke = !r.smoke ? 'not run' : r.smoke.ok ? 'OK' : r.smoke.ran ? (r.smoke.implemented ? 'FAILED' : 'not implemented') : `not run (${r.smoke.error})`;
     const files = r.artifacts.map((x) => `\`${x.path.split('/').pop()}\` (${mb(x.bytes)})`).join('<br>') || (r.ok ? '(dir only)' : 'BUILD FAILED');
     const nat = !r.nativeCheck ? 'not run' : !r.nativeCheck.ran ? 'skipped' : r.nativeCheck.ok ? `OK (librsvg ${r.nativeCheck.sharp?.rsvg}, ${r.nativeCheck.koreanFont}, pdf-lib + docx)` : 'FAILED';
-    lines.push(`| ${r.os}-${r.arch} | ${r.signing.mode} | ${r.signing.notarize === null ? 'n/a' : r.signing.notarize ? 'yes' : 'no'} | ${smoke} | ${nat} | ${files} |`);
+    const notarized = r.signing.notarize === null ? 'n/a' : `${r.signing.notarize ? 'yes' : 'no'} / ${r.dmgNotarization?.ok ? 'yes' : 'no'}`;
+    lines.push(`| ${r.os}-${r.arch} | ${r.signing.mode} | ${notarized} | ${smoke} | ${nat} | ${files} |`);
     if (r.installTest) lines.push(`| ${r.os}-${r.arch} install test | | | ${r.installTest.smoke?.ok ? 'OK' : 'see log'} | | installed=${r.installTest.installed}, HKCU entry=${r.installTest.perUserUninstallEntry}, uninstalled=${r.installTest.uninstalled} |`);
   }
+  if (updateInfo) lines.push('', `Update metadata \`${updateInfo.file.split('/').pop()}\`: ${updateInfo.files.map((f) => `\`${f}\``).join(', ')}${updateInfo.problems.length ? ` — **${updateInfo.problems.length} problem(s)**` : ' (checked against the files)'}`);
   try {
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
   } catch (err) {

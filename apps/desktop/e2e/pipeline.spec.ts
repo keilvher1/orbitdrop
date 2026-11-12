@@ -52,6 +52,10 @@ const ORBIT_API_KEYS = [
   'retryJob',
   'setCloseGuard',
   'onCloseRequested',
+  'getUpdateState',
+  'onUpdateStateChanged',
+  'checkForUpdates',
+  'restartToUpdate',
 ];
 
 test.describe.configure({ mode: 'serial' });

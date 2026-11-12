@@ -64,6 +64,15 @@ const OnboardingSettings = z.strictObject({
   moveToApplicationsAsked: z.boolean().default(false),
 });
 
+/**
+ * Added for automatic updates (additive: files without it get the defaults, SETTINGS_VERSION is
+ * unchanged). autoCheck: look for a new release on GitHub 60 s after launch and every 6 h; a check
+ * the user starts (About, tray) works either way.
+ */
+const UpdateSettings = z.strictObject({
+  autoCheck: z.boolean().default(true),
+});
+
 export const SettingsSchema = z.strictObject({
   version: z.literal(SETTINGS_VERSION),
   locale: LocaleSchema.default('ko'),
@@ -79,6 +88,7 @@ export const SettingsSchema = z.strictObject({
   notifications: z.boolean().default(true),
   /** First-run state: welcome window, macOS move-to-Applications offer. */
   onboarding: OnboardingSettings.prefault({}),
+  updates: UpdateSettings.prefault({}),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 

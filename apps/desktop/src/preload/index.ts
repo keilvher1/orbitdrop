@@ -94,6 +94,10 @@ const api: OrbitApi = {
   resetSettings: () => invoke(IPC_CHANNELS.settingsReset),
   openLicense: (which) => invoke(IPC_CHANNELS.licenseOpen, { which }),
   restartHelper: () => invoke(IPC_CHANNELS.helperRestart),
+  getUpdateState: () => invoke(IPC_CHANNELS.updateState),
+  onUpdateStateChanged: (listener) => subscribe(IPC_CHANNELS.updateStateChanged, listener),
+  checkForUpdates: () => invoke(IPC_CHANNELS.updateCheck),
+  restartToUpdate: () => invoke(IPC_CHANNELS.updateRestart),
 };
 
 contextBridge.exposeInMainWorld('orbit', api);

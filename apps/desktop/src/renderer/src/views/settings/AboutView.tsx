@@ -8,6 +8,7 @@ import { Notice, Spinner } from '../../components/Notice';
 import { TitleBar } from '../../components/TitleBar';
 import { capsulePath, sectorShape } from '../../wheel/sectorPath';
 import { AboutSupport } from './AboutSupport';
+import { UpdateSection, aboutVersionText } from './UpdateSection';
 import './settings.css';
 
 const PLATFORM_NAMES: Readonly<Record<Platform, string>> = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
@@ -58,7 +59,7 @@ export function AboutContent() {
       <h2 className="about-name">{info?.name ?? t('app.name')}</h2>
       {info ? (
         <>
-          <p className="about-version tabular">{t('about.version', { version: info.version })}</p>
+          <p className="about-version tabular">{aboutVersionText(info, t)}</p>
           <p className="about-tagline">{t('about.tagline')}</p>
           <div className="about-details tabular">
             <p>{t('about.runtime', { electron: info.electron, chrome: info.chrome, node: info.node })}</p>
@@ -71,6 +72,7 @@ export function AboutContent() {
               {info.packaged ? t('about.packaged') : t('about.devBuild')}
             </p>
           </div>
+          <UpdateSection />
         </>
       ) : error ? (
         <Notice tone="danger">{t.error(error)}</Notice>

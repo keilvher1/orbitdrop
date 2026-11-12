@@ -1,12 +1,15 @@
 import type { MenuItemConstructorOptions } from 'electron';
 import type { HelperStatus } from '@orbitdrop/contracts';
 import type { MainStringKey, Translate } from '../i18n';
+import type { TrayUpdate } from '../update/service';
+import { updateMenuItems, type TrayUpdateActions } from './update-items';
 
 /**
  * Tray / menu-bar menu (pure template; the controller turns it into a Menu):
  *   파일 열기… · Drop Zone 열기/닫기 · 최근 작업 ▸ · 작업 창 ·
  *   전역 드래그 상태 (+ 권한/다시 시작 항목) · 전역 드래그 사용 ☑ · 설정… ·
- *   도움말 ▸ (사용법 · OrbitDrop 웹사이트 · 문제 신고 · 로그 폴더 열기) · 정보 · 종료
+ *   도움말 ▸ (사용법 · OrbitDrop 웹사이트 · 문제 신고 · 로그 폴더 열기) · 정보 ·
+ *   업데이트 확인… / 재시작하여 업데이트 (update-items.ts) · 종료
  */
 
 export interface RecentItem {
@@ -22,9 +25,11 @@ export interface TrayState {
   readonly dropZoneOpen: boolean;
   readonly recent: readonly RecentItem[];
   readonly platform: NodeJS.Platform;
+  /** Automatic updates (update-items.ts); no update entries without it. */
+  readonly update?: TrayUpdate;
 }
 
-export interface TrayActions {
+export interface TrayActions extends TrayUpdateActions {
   openFile(): void;
   toggleDropZone(): void;
   revealOutput(outputId: string): void;
@@ -103,6 +108,7 @@ export function buildTrayTemplate(state: TrayState, actions: TrayActions, t: Tra
     { label: t('tray.settings'), click: () => actions.openSettings() },
     { label: t('help.menu'), submenu: helpSubmenu(actions, t) },
     { label: t('tray.about'), click: () => actions.openAbout() },
+    ...updateMenuItems(state.update, actions, t),
     { type: 'separator' },
     { label: t('tray.quit'), click: () => actions.quit() },
   ];

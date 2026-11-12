@@ -1,27 +1,48 @@
-# OrbitDrop release build — manual only. Builds signed packages when signing credentials are
-# configured as repository secrets, otherwise UNSIGNED packages that say so in their file names.
-# It never publishes anything (no GitHub release, no upload outside this run's artifacts):
-# distributing a build is a separate, human decision (docs/packaging.md). scripts/package.mjs
-# writes the signing/notarization/smoke results to the job summary.
+# OrbitDrop release — DRAFTS ONLY (docs/RELEASING.md).
 #
-# Secrets (all optional):
-#   macOS signing:       MAC_CSC_LINK (base64 .p12 "Developer ID Application" or https URL),
+# A pushed tag vX.Y.Z (or a manual run naming an existing tag) builds the packages and adds them to
+# the tag's draft GitHub release, which a human checks and publishes. Nothing here ever publishes a
+# release, and a release that is already published is never changed.
+#
+#   plan     — the tag matches apps/desktop/package.json; decides whether CI builds macOS packages.
+#   macos    — only when Developer ID signing AND notarization secrets exist: arm64 + x64, signed,
+#              notarized and stapled (apps and DMGs; --require-signing --require-notarization).
+#              Without those secrets it is skipped: macOS release packages are then built on the
+#              owner's Mac with `node scripts/release-mac.mjs <tag>`, which keeps the Developer ID
+#              key off GitHub. Unsigned macOS packages never go to a release.
+#   windows  — x64 NSIS installer; Authenticode-signed when WIN_CSC_LINK exists, otherwise unsigned
+#              and labelled "-unsigned" (both are valid update targets: latest.yml names the real file).
+#   release  — the only job that can write: creates or updates the tag's draft release
+#              (scripts/release-assets.mjs: gh release create --draft / gh release upload --clobber),
+#              uploads the packages, latest-mac.yml / latest.yml, blockmaps and build reports, and
+#              rewrites SHA256SUMS.txt over every asset of the release.
+#
+# A manual run without a tag only builds (workflow artifacts, no release).
+#
+# Secrets (all optional; signing secrets reach only the steps that sign):
+#   macOS signing:       MAC_CSC_LINK (base64 .p12 "Developer ID Application" or an https URL),
 #                        MAC_CSC_KEY_PASSWORD
-#   macOS notarization:  APPLE_API_KEY_P8 (contents of AuthKey_XXXX.p8), APPLE_API_KEY_ID,
+#   macOS notarization:  APPLE_API_KEY_P8 (contents of AuthKey_<key id>.p8), APPLE_API_KEY_ID,
 #                        APPLE_API_ISSUER   — or — APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
 #   Windows signing:     WIN_CSC_LINK (base64 .pfx or https URL), WIN_CSC_KEY_PASSWORD
-name: Release build (manual)
+name: Release
 
 on:
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
-      require_signing:
-        description: Fail instead of producing unsigned packages when credentials are missing
-        type: boolean
-        default: false
+      tag:
+        description: Existing tag (vX.Y.Z) to build and add to its draft release. Empty = build only (workflow artifacts, no release).
+        type: string
+        default: ''
 
 permissions:
   contents: read
+
+concurrency:
+  group: release-${{ github.event_name == 'push' && github.ref_name || inputs.tag || github.run_id }}
+  cancel-in-progress: false
 
 env:
   electron_config_cache: ${{ github.workspace }}/.cache/electron
@@ -29,15 +50,86 @@ env:
   ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
 
 jobs:
-  # Signing/notarization secrets are given only to the steps that need them (never to dependency
-  # installation, tests or build scripts). Unset secrets arrive as empty strings, which
-  # scripts/package.mjs treats as absent: the packages are then unsigned and labelled so.
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      ref: ${{ steps.tag.outputs.ref }}
+      mac: ${{ steps.mac.outputs.build }}
+    steps:
+      - name: Release tag
+        id: tag
+        env:
+          EVENT: ${{ github.event_name }}
+          PUSHED_TAG: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = push ]; then tag="$PUSHED_TAG"; else tag="$INPUT_TAG"; fi
+          if [ -n "$tag" ] && ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::\"$tag\" is not a release tag (vX.Y.Z)"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [ -n "$tag" ]; then echo "ref=refs/tags/$tag" >> "$GITHUB_OUTPUT"; else echo "ref=$GITHUB_SHA" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.tag.outputs.ref }}
+      - name: Tag matches the app version
+        if: steps.tag.outputs.tag != ''
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./apps/desktop/package.json').version")"
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::$TAG does not match apps/desktop/package.json version $version"
+            exit 1
+          fi
+      # Secrets are not available to `if:` expressions: decide here, in the shell.
+      - name: Can CI sign and notarize macOS packages?
+        id: mac
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          notary=no
+          if [ -n "$APPLE_API_KEY_P8" ] && [ -n "$APPLE_API_KEY_ID" ] && [ -n "$APPLE_API_ISSUER" ]; then notary=yes; fi
+          if [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then notary=yes; fi
+          if [ -n "$MAC_CSC_LINK" ] && [ "$notary" = yes ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            command="node scripts/release-mac.mjs ${TAG:-<tag>}"
+            echo "::notice title=macOS packages are built locally::$command"
+            {
+              echo "### macOS packages are built locally"
+              echo
+              echo "No Developer ID signing and notarization secrets are configured, so this run builds no macOS packages (unsigned macOS packages never go to a release)."
+              echo
+              echo "On the release Mac: \`$command\` (docs/RELEASING.md)."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   macos:
-    name: macOS release (arm64 + x64)
+    name: macOS (arm64 + x64, Developer ID)
+    needs: plan
+    if: needs.plan.outputs.mac == 'true'
     runs-on: macos-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -57,31 +149,65 @@ jobs:
         run: node scripts/build-native.mjs mac --arch all
       - name: Build bundles
         run: pnpm build
-      # notarytool needs the App Store Connect API key as a file. The presence check runs in the
-      # shell: a step's own `env:` is not visible to its `if:` (the previous `if:` never ran).
-      - name: Prepare notarization key
+      # The identity goes into a temporary keychain on the search list, so that electron-builder
+      # (CSC_NAME) and the DMG signing after it (scripts/mac-dmg.mjs) both find it.
+      - name: Import the Developer ID certificate
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/orbitdrop-signing.keychain-db"
+          cert="$RUNNER_TEMP/developer-id.p12"
+          password="$(openssl rand -base64 32)"
+          case "$MAC_CSC_LINK" in
+            https://*) curl -fsSL "$MAC_CSC_LINK" -o "$cert" ;;
+            *) printf '%s' "$MAC_CSC_LINK" | base64 --decode > "$cert" ;;
+          esac
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$cert" -k "$keychain" -P "$MAC_CSC_KEY_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$cert"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" > /dev/null
+          existing="$(security list-keychains -d user | tr -d '"' | xargs)"
+          # shellcheck disable=SC2086 # one argument per keychain path
+          security list-keychains -d user -s "$keychain" $existing
+          identity="$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"Developer ID Application: \(.*\)"$/\1/p' | head -n 1)"
+          if [ -z "$identity" ]; then
+            echo "::error::MAC_CSC_LINK holds no Developer ID Application identity"
+            exit 1
+          fi
+          echo "::add-mask::$identity"
+          echo "CSC_NAME=$identity" >> "$GITHUB_ENV"
+          echo "ORBITDROP_SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+      # notarytool needs the App Store Connect API key as a file.
+      - name: Prepare the notarization key
         env:
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
         run: |
           if [ -z "$APPLE_API_KEY_P8" ]; then
-            echo "APPLE_API_KEY_P8 is not set: no App Store Connect API key for notarization"
+            echo "APPLE_API_KEY_P8 is not set: notarization uses the Apple ID secrets"
             exit 0
           fi
           key="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
           (umask 077 && printf '%s' "$APPLE_API_KEY_P8" > "$key")
           echo "APPLE_API_KEY=$key" >> "$GITHUB_ENV"
-      - name: Package (signed if credentials exist) and smoke-test
+      - name: Package (signed, notarized, stapled) and smoke-test
         env:
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: node scripts/package.mjs mac --arch all --skip-build --skip-native ${{ inputs.require_signing && '--require-signing' || '' }}
-      - name: Upload packages (workflow artifacts only)
+        run: node scripts/package.mjs mac --arch all --skip-build --skip-native --require-signing --require-notarization
+      - name: Remove the signing keychain and the key file
+        if: always()
+        run: |
+          if [ -n "${ORBITDROP_SIGNING_KEYCHAIN:-}" ]; then security delete-keychain "$ORBITDROP_SIGNING_KEYCHAIN" || true; fi
+          if [ -n "${APPLE_API_KEY:-}" ]; then rm -f "$APPLE_API_KEY"; fi
+      - name: Keep the packages (workflow artifact)
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -91,10 +217,13 @@ jobs:
           path: |
             apps/desktop/release/*.dmg
             apps/desktop/release/*.zip
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest-mac.yml
             apps/desktop/release/build-report-*.json
 
   windows:
-    name: Windows release (x64)
+    name: Windows (x64)
+    needs: plan
     runs-on: windows-latest
     timeout-minutes: 90
     # pwsh only fails a multi-line step on its last command; bash -e fails on any of them.
@@ -103,6 +232,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -121,12 +252,13 @@ jobs:
         run: node scripts/build-native.mjs win --arch x64
       - name: Build bundles
         run: pnpm build
-      - name: Package (signed if credentials exist), smoke-test, install/uninstall test
+      # Unsigned until a code-signing certificate exists: the file name then says "-unsigned".
+      - name: Package (signed if a certificate exists), smoke-test, install/uninstall test
         env:
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-        run: node scripts/package.mjs win --arch x64 --skip-build --skip-native --install-test ${{ inputs.require_signing && '--require-signing' || '' }}
-      - name: Upload packages (workflow artifacts only)
+        run: node scripts/package.mjs win --arch x64 --skip-build --skip-native --install-test
+      - name: Keep the packages (workflow artifact)
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -135,4 +267,43 @@ jobs:
           retention-days: 30
           path: |
             apps/desktop/release/*-setup.exe
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest.yml
             apps/desktop/release/build-report-*.json
+
+  release:
+    name: Draft release
+    needs: [plan, macos, windows]
+    # Forks build but never draft: installed copies only read keilvher1/orbitdrop (app-update.yml).
+    if: >-
+      always() && github.repository == 'keilvher1/orbitdrop' && needs.plan.result == 'success' && needs.plan.outputs.tag != '' &&
+      needs.windows.result == 'success' && (needs.macos.result == 'success' || needs.macos.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      # Only the scripts' YAML reader is needed: no Electron runtime.
+      - name: Install dependencies
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+        run: pnpm install --frozen-lockfile
+      - name: Download this run's packages
+        uses: actions/download-artifact@v7
+        with:
+          pattern: OrbitDrop-*
+          path: ${{ runner.temp }}/packages
+      - name: Create or update the draft release (never published here)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          PACKAGES: ${{ runner.temp }}/packages
+        run: node scripts/release-assets.mjs "$TAG" "$PACKAGES"

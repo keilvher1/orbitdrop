@@ -19,8 +19,17 @@ directories:
 
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 
-# Nothing is ever published from a build. Releases are uploaded by a human, if at all.
-publish: null
+# Automatic updates (electron-updater, apps/desktop/src/main/update/): this GitHub provider is
+# written into every package as Resources/app-update.yml and makes electron-builder generate the
+# update metadata next to the artifacts (latest-mac.yml for the macOS zips, latest.yml for the NSIS
+# installer; the DMGs are not update files, see dmg.writeUpdateInfo). A build never uploads
+# anything itself: scripts/package.mjs always passes `--publish never`, and releases are drafted by
+# .github/workflows/release.yml and scripts/release-mac.mjs, then published by a human
+# (docs/RELEASING.md).
+publish:
+  provider: github
+  owner: keilvher1
+  repo: orbitdrop
 
 # All native dependencies (sharp/@img, @napi-rs/canvas) ship N-API prebuilt binaries that are
 # ABI-stable across Node and Electron, so nothing is recompiled.
@@ -172,6 +181,10 @@ mac:
 
 dmg:
   title: ${productName} ${version}
+  # Updates use the zip (Squirrel.Mac); the DMG is for first installs only. Keeping it out of
+  # latest-mac.yml also keeps that file valid after scripts/package.mjs signs, notarizes and
+  # staples the DMG (stapling changes its bytes). DMG signing is done there too (dmg.sign stays
+  # off: electron-builder would sign without a secure timestamp).
   writeUpdateInfo: false
   contents:
     - x: 140
@@ -206,7 +219,8 @@ nsis:
   oneClick: false
   perMachine: false
   allowElevation: false
-  # elevate.exe is only needed for per-machine installs or electron-updater; OrbitDrop uses neither.
+  # elevate.exe is only needed for per-machine installs: electron-updater runs the per-user
+  # installer without elevation (latest.yml has no isAdminRightsRequired).
   packElevateHelper: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
@@ -214,6 +228,8 @@ nsis:
   shortcutName: OrbitDrop
   runAfterFinish: true
   deleteAppDataOnUninstall: false
+  # No blockmap for the installer: Windows updates download the whole installer (simpler, and no
+  # request for the old version's blockmap — which would name the installed version — is made).
   differentialPackage: false
   installerLanguages:
     - ko_KR

@@ -7,11 +7,13 @@ OrbitDrop은 **electron-builder 26.15.3** 하나로 패키징한다(선택 이�
 [`scripts/after-pack.cjs`](../scripts/after-pack.cjs)(검사) ·
 라이선스: [`scripts/licenses.mjs`](../scripts/licenses.mjs), [`scripts/licenses-fetch.mjs`](../scripts/licenses-fetch.mjs),
 [`scripts/third-party-sources.mjs`](../scripts/third-party-sources.mjs)(LGPL·MPL 대응 소스 묶음) ·
-CI: [`.github/workflows/ci.yml`](../.github/workflows/ci.yml), [`release.yml`](../.github/workflows/release.yml).
+CI: [`.github/workflows/ci.yml`](../.github/workflows/ci.yml), [`release.yml`](../.github/workflows/release.yml) ·
+릴리스 절차: [RELEASING.md](RELEASING.md) · 자동 업데이트: [§9](#9-자동-업데이트).
 
 > 원칙: macOS 패키지는 macOS에서, Windows 패키지는 Windows에서만 만든다. 서명 자격 증명이 없으면
 > **미서명(unsigned)** 산출물을 만들고 파일 이름에 그 사실을 적는다. 서명·공증을 꾸며내지 않고,
-> Gatekeeper/SmartScreen을 끄라고 안내하지 않으며, 아무것도 자동으로 공개 배포하지 않는다.
+> Gatekeeper/SmartScreen을 끄라고 안내하지 않으며, 아무것도 자동으로 공개 배포하지 않는다(빌드는 언제나 `--publish never`,
+> 릴리스는 초안까지만 자동 — [RELEASING.md](RELEASING.md)).
 
 ## 1. 명령
 
@@ -27,6 +29,7 @@ node scripts/package.mjs win --arch x64   # Windows에서 실행
 | `--dir` | 설치 파일 없이 앱 폴더만 생성(빠른 확인용) |
 | `--unsigned` | 자격 증명이 있어도 미서명으로 빌드 |
 | `--require-signing` | 자격 증명이 없으면 실패 |
+| `--require-notarization` | (macOS) 앱과 DMG가 공증·staple되지 않으면 실패. `CSC_NAME`(키체인의 신원)과 `APPLE_*` 공증 자격 증명이 필요하다. `--require-signing` 포함 |
 | `--skip-native` / `--skip-build` | 이미 스테이징된 helper / 이미 빌드된 `apps/desktop/out` 재사용 |
 | `--skip-smoke` | 패키지 실행 검사 생략 |
 | `--install-test` | (Windows) NSIS 설치 → HKCU 제거 항목 확인 → 설치본 smoke test → 제거 |
@@ -38,7 +41,12 @@ Rosetta) → `scripts/licenses.mjs`로 `THIRD_PARTY_LICENSES.md` 재생성(오�
 아키텍처별 electron-builder(before-pack·after-pack 훅 포함) → 검사(macOS: Info.plist, `lipo`, `codesign --verify`,
 `spctl`, DMG 읽기 전용 마운트; 공통: **Electron fuse 되읽기**) → **패키지된 앱의 `--smoke-test`**(macOS는 읽기 전용으로
 마운트한 DMG 안의 앱을 그대로 실행, Apple Silicon에서 x64는 `arch -x86_64`) → **네이티브 모듈 검사**(아래) →
+**DMG 서명·공증·staple**(Developer ID + 공증 자격 증명일 때, §4) → **업데이트 메타데이터 검사**(§9: 아키텍처별 `latest-mac.yml`을 하나로
+합치고 `latest*.yml`이 가리키는 파일·크기·sha512를 대조) →
 `apps/desktop/release/build-report-<os>-<arch>.json`(GitHub Actions에서는 작업 요약 표도 작성).
+모든 패키지에는 `Resources/build-info.json`(`{version, commit, dirty, signing, builtAt}`; `package.mjs`가 `ORBITDROP_BUILD_INFO`로
+넘기고 after-pack 훅이 서명 전에 쓴다)과 `Resources/app-update.yml`(electron-builder가 `publish` 설정으로 쓴다)이 들어가며, 검사 단계가
+둘 다 확인한다. 앱은 정보 창에 커밋을 보여 주고, 서명 방식으로 자동 업데이트 가능 여부를 정한다(§9).
 다른 작업이 패키징 도중 `apps/desktop/out`을 다시 빌드하면 감지해 실패시킨다.
 
 네이티브 모듈 검사: 패키지된 실행 파일은 임의 스크립트를 실행할 수 없으므로(fuses), 같은 버전의 기본 Electron 런타임이
@@ -60,6 +68,8 @@ UI를 `loadFile()`로 `app.asar` 안에서 여는 동안 `GrantFileProtocolExtra
 | macOS arm64 | `OrbitDrop-<ver>-mac-arm64[-unsigned].dmg`, `.zip` | 최소 macOS 14.0 |
 | macOS x64 | `OrbitDrop-<ver>-mac-x64[-unsigned].dmg`, `.zip` | 최소 macOS 14.0, Intel 실기 검증은 별도 기록. Apple 실리콘에서 실행하면 Rosetta 2로 동작하지만 첫 실행이 느리고(가상 머신에서 약 1분 40초), 앱이 시작 알림·설정·정보 창으로 arm64 설치본을 안내한다 |
 | Windows x64 | `OrbitDrop-<ver>-win-x64[-unsigned]-setup.exe` | NSIS, 사용자별 설치 |
+| 업데이트 메타데이터 | `latest-mac.yml`(두 아키텍처의 zip), `OrbitDrop-<ver>-mac-<arch>[-unsigned].zip.blockmap`, `latest.yml`(setup.exe) | §9. DMG는 업데이트 파일이 아니다(`dmg.writeUpdateInfo: false`). Windows 설치 프로그램에는 blockmap이 없다(`nsis.differentialPackage: false`) |
+| 릴리스에만 | `SHA256SUMS.txt` | 릴리스의 모든 파일의 SHA-256. CI(`release-assets.mjs`)와 `release-mac.mjs`가 다시 쓴다 |
 
 universal 바이너리는 만들지 않는다(네이티브 모듈과 helper를 아키텍처별로 검증하기 위해).
 
@@ -74,6 +84,8 @@ universal 바이너리는 만들지 않는다(네이티브 모듈과 helper를 �
 | 네이티브 드래그 helper | `helper/OrbitDropHelper` | `resources\helper\OrbitDropHelper.exe` |
 | 트레이/메뉴 막대 아이콘 (OS별로 쓰는 파일만) | `tray/trayTemplate.png`, `tray/trayTemplate@2x.png` | `resources\tray\tray.ico`, `tray.png`, `tray@2x.png` |
 | 라이선스 | `THIRD_PARTY_LICENSES.md`, `LICENSE.electron.txt`, `LICENSES.chromium.html` | `resources\THIRD_PARTY_LICENSES.md`, `LICENSE.electron.txt`, `LICENSES.chromium.html` |
+| 업데이트 설정 (electron-builder) | `app-update.yml` (github, keilvher1/orbitdrop) | `resources\app-update.yml` |
+| 빌드 정보 (after-pack) | `build-info.json` | `resources\build-info.json` |
 
 * **ASAR**: 켜져 있다. 네이티브 코드는 asar 내부를 읽을 수 없으므로 네이티브 패키지만
   `asarUnpack`. Electron 44의 `utilityProcess`에서도 `fs`/`fs/promises`/`import()`/`require`가
@@ -129,7 +141,7 @@ Windows 10/11에 포함되어 있어 허용한다. 훅이 PE import 표를 읽�
 | 모드 | 조건 | 서명 | 공증 | 산출물 이름 |
 |---|---|---|---|---|
 | 미서명(로컬/CI 기본) | `CSC_LINK`/`CSC_NAME` 없음 또는 `--unsigned` | ad-hoc(`-`) + hardened runtime | 안 함 | `…-unsigned.dmg` |
-| Developer ID 서명 | `CSC_LINK`(+`CSC_KEY_PASSWORD`) 또는 키체인의 `CSC_NAME` | Developer ID Application | `APPLE_*`가 있으면 notarytool | `….dmg` |
+| Developer ID 서명 | `CSC_LINK`(+`CSC_KEY_PASSWORD`) 또는 키체인의 `CSC_NAME` | Developer ID Application(앱; `CSC_NAME`이면 DMG도) | `APPLE_*`가 있으면 notarytool(앱; `CSC_NAME`이면 DMG도 공증·staple) | `….dmg` |
 
 * ad-hoc 서명은 신원 증명이 아니다. Apple Silicon에서 실행에 필요한 최소 서명일 뿐이며,
   인터넷에서 내려받은(격리 속성이 붙은) 미서명 앱은 Gatekeeper가 차단한다(`spctl`: rejected).
@@ -159,25 +171,34 @@ Windows 10/11에 포함되어 있어 허용한다. 훅이 PE import 표를 읽�
   * Electron 템플릿의 권한 설명(`NSCamera…`, `NSMicrophone…`, `NSBluetoothAlways…`, `NSBluetoothPeripheral…`,
     `NSAudioCapture…UsageDescription`)은 지운다: OrbitDrop은 모든 권한 요청을 거부하고(`src/main/security.ts`) hardened runtime에
     장치 entitlement도 없다. 남아 있으면 `package.mjs`가 실패시킨다.
-  * `NSAppTransportSecurity`(`NSAllowsArbitraryLoads`, localhost 예외)는 electron-builder가 항상 넣는다(electron-updater용).
-    Apple의 URL 로딩 API에만 적용되고 Chromium 네트워크에는 영향이 없으며, OrbitDrop은 네트워크 요청을 하지 않으므로 그대로 둔다.
+  * `NSAppTransportSecurity`(`NSAllowsArbitraryLoads`, localhost 예외)는 electron-builder가 항상 넣는다(electron-updater용: Squirrel.Mac이
+    electron-updater의 127.0.0.1 서버에서 내려받은 업데이트를 가져간다). Apple의 URL 로딩 API에만 적용되고 Chromium 네트워크에는 영향이
+    없다. OrbitDrop의 네트워크 사용은 업데이트 확인뿐이다(§9).
   * Electron 하위 앱(`OrbitDrop Helper*.app`)의 `CFBundleName`은 electron-builder가 "Electron Helper …"로 남긴다(실행 파일 이름과
     표시 이름은 OrbitDrop Helper …). 보이는 곳이 없어 그대로 둔다.
 
-### 나중에 서명·공증하기
+### 서명·공증하기
 
-1. Apple Developer Program에서 "Developer ID Application" 인증서를 만들어 `.p12`로 내보낸다.
-2. 로컬: `CSC_LINK=/path/cert.p12 CSC_KEY_PASSWORD=… node scripts/package.mjs mac --arch all --require-signing`
-   (또는 키체인에 설치하고 `CSC_NAME="Developer ID Application: 이름 (TEAMID)"`).
-3. 공증(앱 전체, 권장: App Store Connect API 키): `APPLE_API_KEY=/path/AuthKey_XXXX.p8 APPLE_API_KEY_ID=XXXX APPLE_API_ISSUER=<issuer-uuid>`
-   — 또는 `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`. electron-builder가 서명된 앱(helper 포함)을
-   notarytool로 제출하고 앱에 staple한다. DMG 자체는 서명·공증하지 않는다(내려받은 DMG 안의 앱은 stapled 티켓으로 검사됨;
-   필요하면 DMG도 `xcrun notarytool submit`/`stapler staple`로 추가 공증).
-4. CI: 같은 값을 저장소 시크릿(`MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD`, `APPLE_API_KEY_P8`, `APPLE_API_KEY_ID`,
-   `APPLE_API_ISSUER` …)으로 넣고 **Release build (manual)** 워크플로를 수동 실행한다.
-5. 확인: `codesign --verify --deep --strict --verbose=2 OrbitDrop.app`,
-   `spctl --assess --type execute -vv OrbitDrop.app`(accepted, source=Notarized Developer ID),
-   `xcrun stapler validate OrbitDrop.dmg`.
+릴리스용 패키지는 소유자의 Mac에서 `node scripts/release-mac.mjs <tag>`로 만든다([RELEASING.md](RELEASING.md) — Developer ID 개인 키가
+로그인 키체인을 떠나지 않는다). 직접 실행하려면:
+
+1. 로그인 키체인에 "Developer ID Application" 인증서가 있어야 한다.
+2. `CSC_NAME="Your Name (TEAMID)"`(접두어 없이), 공증(권장: App Store Connect API 키)
+   `APPLE_API_KEY=~/.appstoreconnect/private_keys/AuthKey_<key id>.p8 APPLE_API_KEY_ID=<key id> APPLE_API_ISSUER=<issuer uuid>`
+   — 또는 `APPLE_KEYCHAIN_PROFILE`(notarytool 키체인 프로필), 또는 `APPLE_ID` + `APPLE_APP_SPECIFIC_PASSWORD` + `APPLE_TEAM_ID`.
+   실제 값은 환경 변수로만 주고 저장소에 쓰지 않는다.
+3. `node scripts/package.mjs mac --arch all --require-signing --require-notarization`. electron-builder가 앱(helper 포함)을 서명·공증하고
+   staple한다. 이어서 [`scripts/mac-dmg.mjs`](../scripts/mac-dmg.mjs)가 **DMG마다** 같은 신원으로 서명(`codesign --timestamp`) →
+   `xcrun notarytool submit --wait` → `xcrun stapler staple` → `spctl -a -t open --context context:primary-signature -v`(accepted, Notarized
+   Developer ID)·`xcrun stapler validate`로 확인하고 build report의 `dmgNotarization`에 적는다. staple은 DMG 바이트를 바꾸므로 크기와
+   SHA-256은 그 뒤에 계산하며, `latest-mac.yml`은 DMG를 가리키지 않는다(업데이트는 zip). DMG 서명에는 키체인의 신원(`CSC_NAME`)이 필요하다:
+   `CSC_LINK` 인증서는 electron-builder의 임시 키체인에만 있다가 빌드가 끝나면 사라진다(그러면 DMG는 공증하지 않고 이유를 report에 적으며,
+   `--require-notarization`은 실패한다). notarytool 자격 증명 값은 출력에 `***`로만 나온다.
+4. CI에서 만들려면 macOS 서명·공증 시크릿을 모두 넣는다(RELEASING.md 부록: 워크플로가 인증서를 임시 키체인에 넣고 `CSC_NAME`으로 빌드).
+   시크릿이 없으면 Release 워크플로는 macOS 작업을 건너뛰고 로컬 빌드를 안내한다.
+5. 확인(`release-mac.mjs`가 모두 한다): `codesign --verify --deep --strict --verbose=2 OrbitDrop.app`,
+   `spctl --assess --type execute -vv OrbitDrop.app`(accepted, source=Notarized Developer ID), `xcrun stapler validate OrbitDrop.dmg`,
+   `spctl -a -t open --context context:primary-signature -v OrbitDrop.dmg`, 격리 속성을 붙인 사본으로 `syspolicy_check distribution`.
 
 ## 5. Windows: NSIS 설치 프로그램 · Authenticode · SmartScreen
 
@@ -215,7 +236,8 @@ Windows 10/11에 포함되어 있어 허용한다. 훅이 PE import 표를 읽�
 배포 전 체크리스트:
 
 - [ ] `--require-signing`으로 빌드했고 `build-report`의 `signing.mode`가 Developer ID / Authenticode
-- [ ] macOS: `spctl` accepted(Notarized), `stapler validate` 통과
+- [ ] macOS: `--require-notarization`으로 빌드, 앱·DMG 모두 `spctl` accepted(Notarized), `stapler validate` 통과
+- [ ] `latest-mac.yml`(arm64·x64 zip)·`latest.yml`이 릴리스 파일과 일치(`package.mjs`·릴리스 스크립트가 검사) — [RELEASING.md](RELEASING.md) 5단계
 - [ ] smoke test와 [verification.md](verification.md)의 수동 GUI 검증 결과 기록(설치본에서 창이 실제로 그려지는지 포함)
 - [ ] `THIRD_PARTY_LICENSES.md`가 최신(`node scripts/licenses.mjs --check`)
 - [x] LGPL/MPL 구성요소의 소스 제공 방법: 릴리스마다 대응 소스 묶음을 함께 공개(아래 "LGPL·MPL 소스 제공", 2026-11-12 결정)
@@ -322,3 +344,64 @@ sharp·canvas·docx·pdf.js를 올리면 `licenses.mjs --check`가 "run node scr
 ## 8. 로컬 검증 기록
 
 실측 결과(명령과 출력)는 [verification.md §자동 검증 증거](verification.md#자동-검증-증거)에 있다.
+
+## 9. 자동 업데이트
+
+[electron-updater](https://www.electron.build/auto-update) 6.8.12(`apps/desktop` 의존성, 정확한 버전 고정)가 GitHub Releases
+(`keilvher1/orbitdrop`)에서 업데이트를 받는다. 코드: [`apps/desktop/src/main/update/`](../apps/desktop/src/main/update/).
+
+**동작**
+
+* 확인: 실행 60초 뒤, 그 뒤 6시간마다(설정 › 일반 › "업데이트 자동 확인", 기본 켬). 잠자기에서 깨어났을 때 확인할 때가 지났으면 60초 뒤.
+  정보 창의 "지금 확인"과 트레이의 "업데이트 확인…"은 자동 확인이 꺼져 있어도 동작한다.
+* 새 버전이 있으면 바로 내려받고(`autoDownload`), **종료할 때 설치**한다(`autoInstallOnAppQuit`). 내려받기가 끝나면 시스템 알림 한 번
+  ("OrbitDrop {version} 업데이트 준비 완료", 알림 설정을 따른다)과 트레이 항목 "재시작하여 업데이트". macOS에서는 Squirrel.Mac이
+  업데이트를 받아들인(서명 확인) 뒤에야 "준비 완료"가 된다.
+* **재시작해도 작업을 잃지 않는다**: 대기·실행 중인 작업(놓았지만 아직 확인·제출 중인 파일 포함), 열린 편집기나 형식 선택 창,
+  진행 중인 드래그(휠)가 있으면 재시작을 미루고
+  (`restartPending` — 정보 창과 트레이에 표시, 트레이에서 취소 가능) 모두 끝난 뒤 3초 동안 아무 일이 없을 때 재시작한다. 대화상자는
+  띄우지 않는다(드래그 중 모달 없음). 아무것도 없으면 바로 재시작한다. Windows는 NSIS 설치 프로그램이 약 1초 뒤 실행 중인 앱을 강제로
+  끝내므로 OrbitDrop이 먼저 정상 종료 절차(설정·기록 저장, 작업자 종료)를 마치고 넘긴다. 넘기기에 실패하면 지금 버전을 다시 시작한다.
+* 확인·내려받기 실패(오프라인, GitHub 접속 불가, 그 밖)는 조용한 상태다: 정보 창의 한 줄과 로그(`logs/main.log`)뿐, 대화상자 없음.
+  공개된 릴리스가 없거나 이 OS용 파일이 아직 없으면 "최신 버전입니다"로 본다. 5분 넘게 끝나지 않는 확인은 포기한다.
+* 초안과 pre-release는 정식 버전에 제공되지 않는다(GitHub의 `releases/latest`). `-alpha.n`/`-beta.n` 설치본은 더 새 프리릴리스와
+  정식 버전을 받는다. 그 밖의 프리릴리스 이름(`-rc.n` 등)은 electron-updater에서 별도 채널이라 같은 이름의 프리릴리스만 따라간다 —
+  그래서 프리릴리스는 `-beta`로 낸다. 낮은 버전으로는 내려가지 않는다.
+* electron-updater가 쓰는 Electron `net` 요청에는 자체 시간 제한이 없다: 5분 안에 끝나지 않는 확인이나 10분 동안 진행이 없는 내려받기는
+  포기하고(오류 상태, 버튼은 다시 쓸 수 있음) 다음 확인은 새 업데이트 객체로 한다.
+
+**네트워크와 개인정보** — 업데이트 확인이 OrbitDrop의 유일한 네트워크 사용이다.
+
+* 요청: `https://github.com/keilvher1/orbitdrop/releases.atom`, `…/releases/latest`, 그 릴리스의 `latest-mac.yml` 또는 `latest.yml`,
+  새 버전이 있으면 해당 zip/설치 프로그램(GitHub가 자산 서버로 리디렉션; macOS는 두 번째 업데이트부터 이전 zip과의 차이만 받기 위해
+  blockmap 두 개). User-Agent는 electron-updater 고정값(`electron-builder`)이고 쿠키는 보내지 않는다.
+* electron-updater는 원래 설치마다 무작위 ID(`<userData>/.updaterId`)를 만들어 `x-user-staging-id` 헤더로 보내는데(단계적 배포용),
+  OrbitDrop은 그 ID를 만들지도 보내지도 않는다([`privacy.ts`](../apps/desktop/src/main/update/privacy.ts), 실제 라이브러리로 테스트).
+  GitHub에 전달되는 것은 IP 주소 같은 일반 접속 정보와 어느 OS·아키텍처의 업데이트 파일을 요청했는지뿐이다.
+* electron-updater는 창들과 다른 자체 세션(`electron-updater` 파티션, 메모리 전용)으로 요청한다. 렌더러는 그대로 네트워크에 닿지 못한다
+  (CSP `connect-src 'self'`, 원격 이미지 없음, 탐색·리디렉션·`window.open`·webview 차단 — `src/main/security.ts`; 오프라인 E2E가 창 세션의
+  http(s) 요청 0을 확인). 업데이트를 지원하지 않는 실행은 electron-updater를 불러오지도 않는다.
+
+**업데이트하지 않는 실행**(정보 창에 이유 표시, 요청 없음): 개발 실행(패키지 아님, E2E 포함), `--smoke-test`, Linux, `app-update.yml`이
+없는 패키지, macOS에서 Developer ID 서명이 아닌 빌드(`build-info.json`의 `signing`이 `adhoc` — Squirrel.Mac은 실행 중인 앱과 같은 서명
+요구 사항을 만족하는 업데이트만 설치하므로 ad-hoc 빌드는 절대 설치할 수 없다)나 빌드 정보가 없는 빌드, DMG 같은 읽기 전용 위치나
+App Translocation에서 실행 중인 앱(번들을 바꿀 수 없다; 응용 프로그램 폴더로 옮기라고 안내), Windows에서 설치 프로그램으로 설치하지 않은
+사본(옆에 `Uninstall OrbitDrop.exe`가 없음 — 예: `win-unpacked`).
+
+**서명과 파일 이름**
+
+* macOS 미서명(`-unsigned`) 패키지는 업데이트 대상도 원본도 아니다: 그런 설치본은 확인하지 않고, 릴리스에는 Developer ID + 공증된 패키지만
+  올라간다(릴리스 스크립트가 build report로 확인). `latest-mac.yml`은 zip만 가리키므로 DMG를 staple해도 그대로 유효하다.
+* Windows는 서명 인증서를 살 때까지 미서명으로 배포하며 업데이트도 된다: 설치본은 HTTPS로 받은 `latest.yml`의 sha512로 설치 프로그램을
+  확인한다. `latest.yml`은 electron-builder가 실제 파일 이름(`…-unsigned-setup.exe` 포함)으로 쓰고 `package.mjs`가 대조한다. 서명을 시작하면
+  `app-update.yml`에 게시자 이름(`publisherName`)이 들어가 그 뒤 설치본은 같은 게시자가 서명한 설치 프로그램만 받는다(미서명 → 서명 전환은
+  문제없음; 나중에 게시자 이름이 다른 인증서로 바꿀 때는 주의).
+* 파일 이름이나 형식을 바꾸면 `latest*.yml`과 어긋나지 않는지 `package.mjs`의 검사로 확인한다.
+
+**설치본에 남는 것**: 내려받은 업데이트는 `~/Library/Caches/@orbitdropdesktop-updater`(macOS),
+`%LOCALAPPDATA%\@orbitdropdesktop-updater`(Windows; NSIS 설치 프로그램도 차이 업데이트용 사본 `installer.exe`를 여기에 둔다)에 있고 지워도
+된다(이름은 electron-builder가 `apps/desktop/package.json`의 `name`에서 만든다).
+
+**시험**: 개발 실행과 미서명 빌드는 업데이트하지 않으므로, 끝까지 시험하려면 Developer ID 빌드와 pre-release 두 개를 쓴다
+([RELEASING.md](RELEASING.md) 5단계). 단위 테스트: `apps/desktop/test/main/update-*.test.ts`(상태 기계·지원 판정·개인정보),
+`tests/integration/release-scripts.test.ts`(메타데이터·공증·릴리스 스크립트, 가짜 실행기).

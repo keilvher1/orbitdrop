@@ -11,6 +11,8 @@
 //     copy of a hoisted package before; see apps/desktop/build/before-pack.cjs);
 //   * a Windows binary imports the Visual C++ runtime without shipping it next to itself
 //     (policy: static CRT or app-local DLLs; the installer never installs a VC++ redistributable).
+// It also writes Resources/build-info.json (version, commit, signing mode — handed over by
+// scripts/package.mjs in ORBITDROP_BUILD_INFO) before electron-builder signs the app.
 // It also prunes native packages built for a foreign architecture (normally already excluded
 // by electron-builder.yml) and prints a short inventory.
 //
@@ -207,6 +209,34 @@ function checkDependencyTree(asarFile, entries) {
   return { packages: roots.size - 1, edges, problems };
 }
 
+const SIGNING_MODES = { darwin: ['developer-id', 'adhoc'], win32: ['authenticode', 'none'] };
+
+/**
+ * The build information scripts/package.mjs hands over (JSON in ORBITDROP_BUILD_INFO):
+ * { version, commit, dirty, signing, builtAt }. { info: null } when it is absent.
+ */
+function buildInfoFromEnv(raw, version, os) {
+  if (raw === undefined || raw === '') return { info: null };
+  let info;
+  try {
+    info = JSON.parse(raw);
+  } catch {
+    return { error: 'ORBITDROP_BUILD_INFO is not JSON' };
+  }
+  const modes = SIGNING_MODES[os] || [];
+  const problems = [];
+  if (info === null || typeof info !== 'object') problems.push('not an object');
+  else {
+    if (info.version !== version) problems.push(`version ${JSON.stringify(info.version)} is not the package version ${version}`);
+    if (info.commit !== null && !/^[0-9a-f]{7,40}$/.test(String(info.commit))) problems.push('commit must be a hex commit id or null');
+    if (typeof info.dirty !== 'boolean') problems.push('dirty must be a boolean');
+    if (!modes.includes(info.signing)) problems.push(`signing must be one of ${modes.join(', ')} on ${os}`);
+    if (typeof info.builtAt !== 'string' || Number.isNaN(Date.parse(info.builtAt))) problems.push('builtAt must be an ISO date');
+  }
+  if (problems.length) return { error: `ORBITDROP_BUILD_INFO: ${problems.join('; ')}` };
+  return { info: { version: info.version, commit: info.commit, dirty: info.dirty, signing: info.signing, builtAt: info.builtAt } };
+}
+
 async function afterPack(context) {
   const platform = context.electronPlatformName; // darwin | win32 | linux | mas
   const arch = ARCH_NAMES[context.arch] || String(context.arch);
@@ -248,6 +278,8 @@ async function afterPack(context) {
       'node_modules/pdf-lib/cjs/index.js', // what require('pdf-lib') loads (the es/ build is trimmed)
       'node_modules/@napi-rs/canvas/package.json',
       'node_modules/docx/package.json',
+      'node_modules/electron-updater/package.json', // automatic updates (loaded by main on first use)
+      'node_modules/electron-updater/out/main.js',
       'node_modules/docx/dist/index.cjs', // what require('docx') loads (other dist entry points are trimmed)
     ];
     for (const r of required) if (!entries.has(r)) errors.push(`app.asar is missing ${r}`);
@@ -361,6 +393,15 @@ async function afterPack(context) {
     if (!fs.existsSync(path.join(runtimeLicenseDir, f))) errors.push(`${f} (Electron/Chromium notices) is missing from ${path.relative(context.appOutDir, runtimeLicenseDir) || 'the app folder'}`);
   }
 
+  // ── 7. build information (main reads it: About, update support) ───────────
+  const buildInfo = buildInfoFromEnv(process.env.ORBITDROP_BUILD_INFO, context.packager.appInfo.version, os);
+  if (buildInfo.error) errors.push(buildInfo.error);
+  else if (buildInfo.info === null) warnings.push('no ORBITDROP_BUILD_INFO (not built through scripts/package.mjs): the package carries no build-info.json, so the app cannot tell how it was signed (no automatic updates on macOS)');
+  else {
+    fs.writeFileSync(path.join(resources, 'build-info.json'), `${JSON.stringify(buildInfo.info, null, 2)}\n`);
+    notes.push(`build-info.json: ${buildInfo.info.version} ${buildInfo.info.commit ? buildInfo.info.commit.slice(0, 12) : 'no commit'}${buildInfo.info.dirty ? ' (dirty)' : ''}, signing ${buildInfo.info.signing}`);
+  }
+
   for (const n of notes) log(n);
   for (const w of warnings) console.warn(`  ⚠ [after-pack] ${w}`);
   if (errors.length) {
@@ -378,3 +419,4 @@ module.exports.peInfo = peInfo;
 module.exports.binaryInfo = binaryInfo;
 module.exports.checkDependencyTree = checkDependencyTree;
 module.exports.listAsar = listAsar;
+module.exports.buildInfoFromEnv = buildInfoFromEnv;

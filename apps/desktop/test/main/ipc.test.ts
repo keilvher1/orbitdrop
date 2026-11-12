@@ -53,6 +53,8 @@ const guard = {
   isTrustedUrl: (url: string) => url.startsWith('file:///app/out/renderer/index.html'),
 };
 
+const UPDATE_STATE = { state: 'upToDate', currentVersion: '0.1.0', autoCheck: true, lastCheckedAt: 1 } as const;
+
 function services(): OrbitIpcServices<Rec> & Record<string, ReturnType<typeof vi.fn>> {
   const fn = <T>(value?: T) => vi.fn(async () => value);
   return {
@@ -95,6 +97,9 @@ function services(): OrbitIpcServices<Rec> & Record<string, ReturnType<typeof vi
     clearFinishedJobs: vi.fn(() => 0),
     retryJob: fn({ kind: 'jobs', jobIds: ['job_2'] }),
     setCloseGuard: vi.fn(),
+    updateState: vi.fn(() => UPDATE_STATE),
+    checkForUpdates: vi.fn(async () => UPDATE_STATE),
+    restartToUpdate: vi.fn(() => ({ ...UPDATE_STATE, state: 'downloaded', version: '0.2.0', restartPending: true })),
   } as unknown as OrbitIpcServices<Rec> & Record<string, ReturnType<typeof vi.fn>>;
 }
 
@@ -300,6 +305,26 @@ describe('IPC channels', () => {
     ipc.send(IPC_CHANNELS.rendererError, fromForeign, report);
     ipc.send(IPC_CHANNELS.rendererError, fromSubframe, report);
     expect(support.rendererError).toHaveBeenCalledTimes(1);
+  });
+
+  it('update channels: answered for our windows, without a payload; foreign senders, sub-frames and payloads are refused', async () => {
+    const { ipc, s } = setup();
+    expect(EVENT_CHANNELS).toContain(IPC_CHANNELS.updateStateChanged); // main → renderer only
+    expect(ipc.handlers.has(IPC_CHANNELS.updateStateChanged) || ipc.listeners.has(IPC_CHANNELS.updateStateChanged)).toBe(false);
+    expect(await ipc.invoke(IPC_CHANNELS.updateState, fromOurs)).toEqual(UPDATE_STATE);
+    expect(await ipc.invoke(IPC_CHANNELS.updateCheck, fromOurs)).toEqual(UPDATE_STATE);
+    expect(await ipc.invoke(IPC_CHANNELS.updateRestart, fromOurs)).toMatchObject({ state: 'downloaded', restartPending: true });
+    for (const channel of [IPC_CHANNELS.updateState, IPC_CHANNELS.updateCheck, IPC_CHANNELS.updateRestart]) {
+      await expect(ipc.invoke(channel, fromForeign), channel).rejects.toThrow('INTERNAL: Untrusted sender');
+      await expect(ipc.invoke(channel, fromSubframe), channel).rejects.toThrow(/^INTERNAL/);
+      await expect(ipc.invoke(channel, fromOurWindowBadPage), channel).rejects.toThrow('INTERNAL: Untrusted page');
+      for (const payload of [{}, { force: true }, 'now', 0, null]) {
+        await expect(ipc.invoke(channel, fromOurs, payload), `${channel} ${JSON.stringify(payload)}`).rejects.toThrow('INVALID_OPTIONS: Invalid request');
+      }
+    }
+    expect(s.updateState).toHaveBeenCalledTimes(1);
+    expect(s.checkForUpdates).toHaveBeenCalledTimes(1);
+    expect(s.restartToUpdate).toHaveBeenCalledTimes(1);
   });
 
   it('dispose removes every channel', () => {
