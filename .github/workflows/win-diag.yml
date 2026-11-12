@@ -1,0 +1,51 @@
+# TEMPORARY (ci/windows branch only, removed before merging): fast Windows feedback while the
+# Windows CI job is being fixed — runner facts (.github/diag/win-diag.mjs) and the unit and
+# integration tests, without the macOS job and the packaging steps of ci.yml.
+name: win-diag
+
+on:
+  push:
+    branches: [ci/windows]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: win-diag-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diag:
+    name: Windows diagnostics + vitest
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Runner
+        shell: pwsh
+        run: |
+          Get-CimInstance Win32_OperatingSystem | Format-List Caption, Version, BuildNumber, OSArchitecture
+          cmd /c ver
+          reg query HKLM\SYSTEM\CurrentControlSet\Control\FileSystem /v LongPathsEnabled
+          Get-ChildItem C:\Windows\Fonts -Filter malgun* | Format-Table Name, Length
+
+      - name: Diagnostics
+        continue-on-error: true
+        run: node .github/diag/win-diag.mjs
+
+      - name: Unit and integration tests
+        run: pnpm test
