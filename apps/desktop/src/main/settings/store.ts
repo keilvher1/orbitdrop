@@ -3,6 +3,7 @@ import { DEFAULT_SETTINGS, OrbitError, applySettingsPatch, defaultSettingsFor, m
 import { describeError, silentLogger, type Logger } from '../log';
 import { SerialQueue, moveAside, readJson, writeJsonAtomic, type StoreLoadIssue, type UnusableReason } from '../util/atomic-json';
 import { existingFileDefaults, firstRunSettings } from './defaults';
+import { applyInstallerPreferences, type InstallerPreferencesRead } from './installer-preferences';
 
 export type SettingsListener = (next: Settings, previous: Settings) => void;
 
@@ -25,6 +26,11 @@ export function modifierProblem(settings: Settings, platform: NodeJS.Platform): 
 export interface SettingsStoreOptions {
   /** The OS's preferred languages, most preferred first: a first run picks the UI language from them. */
   readonly systemLanguages?: () => readonly string[];
+  /**
+   * Windows: what the installer recorded (installer-preferences.json next to OrbitDrop.exe —
+   * installer-preferences.ts). Read on the first run only; never overrides an existing settings file.
+   */
+  readonly installerPreferences?: () => InstallerPreferencesRead;
 }
 
 /**
@@ -35,7 +41,9 @@ export interface SettingsStoreOptions {
  *    its place) as settings.unreadable-<time>.json, and defaults are used —
  *    `loadIssue` tells the app, which lets the user know. Never a crash.
  *  - no file (first run, `firstRun`): the platform defaults in the OS language,
- *    welcome window still to show; nothing is written until the first change.
+ *    welcome window still to show, plus what the Windows installer recorded
+ *    (automatic update checks off when the user unticked them); nothing is
+ *    written until the first change.
  *  - update: `applySettingsPatch` (deep merge + schema validation); invalid
  *    patches are rejected with INVALID_OPTIONS and nothing changes.
  *  - reset: the defaults of this computer; the language and the first-run state stay.
@@ -71,6 +79,34 @@ export class SettingsStore {
     return firstRunSettings(this.platform, languages);
   }
 
+  /**
+   * First run only: the defaults with the Windows installer's choices (installer-preferences.ts), logged
+   * either way. A file that cannot be used is ignored: the defaults apply.
+   */
+  private withInstallerPreferences(settings: Settings): Settings {
+    const read = this.options.installerPreferences;
+    if (!read) return settings;
+    let result: InstallerPreferencesRead;
+    try {
+      result = read();
+    } catch (error) {
+      this.log.warn('first run: could not read the installer preferences; using the defaults', { error: describeError(error) });
+      return settings;
+    }
+    if (result.kind === 'none') {
+      this.log.info('first run: no installer preferences; automatic update checks stay on');
+      return settings;
+    }
+    if (result.kind === 'invalid') {
+      this.log.warn('first run: installer preferences ignored; automatic update checks stay on', { reason: result.reason });
+      return settings;
+    }
+    const next = applyInstallerPreferences(settings, result.preferences);
+    if (result.preferences.autoCheck === undefined) this.log.info('first run: the installer preferences name no update-check choice; automatic update checks stay on');
+    else this.log.info(`first run: automatic update checks ${next.updates.autoCheck ? 'on' : 'off'}, as chosen in the installer`, { autoCheck: next.updates.autoCheck });
+    return next;
+  }
+
   /** Stored modifiers that break the rules fall back to the defaults (the rest of the file is kept). */
   private repairModifiers(settings: Settings): Settings {
     if (modifierProblem(settings, this.platform) === null) return settings;
@@ -103,7 +139,7 @@ export class SettingsStore {
     }
     if (raw.kind === 'missing') {
       this.firstRun = true;
-      this.current = this.defaults();
+      this.current = this.withInstallerPreferences(this.defaults());
       return this.current;
     }
     // Not JSON, or JSON that is no settings object at all (null, an array, a number…).
