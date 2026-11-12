@@ -10,7 +10,8 @@
 > https://github.com/keilvher1/orbitdrop/releases
 
 **내려받기: https://keilvher1.github.io/orbitdrop/** (설치 파일은 [GitHub Releases](https://github.com/keilvher1/orbitdrop/releases)).
-무료·오픈 소스(MIT)입니다.
+무료·오픈 소스(MIT)입니다. 누가 어떻게 서명하는지: [코드 서명 정책(Code signing policy)](https://keilvher1.github.io/orbitdrop/code-signing-policy/)
+([English](https://keilvher1.github.io/orbitdrop/en/code-signing-policy/)).
 
 <p align="center"><img src="apps/desktop/build/icon.png" width="128" alt="OrbitDrop icon"></p>
 
@@ -21,7 +22,7 @@
 | 영역 | 상태 |
 |---|---|
 | macOS (14 이상, Apple 실리콘·Intel) | **Developer ID 서명·Apple 공증**(앱과 DMG, 공증 티켓 부착). 가상 머신의 실제 Finder로 드래그부터 변환·편집까지 검증(macOS 14.8.7 전 기능, 26.6.2 핵심 흐름, Intel 판은 Rosetta 2). 실물 Mac에서 사람이 한 확인은 아직 없음 · [verification.md](docs/verification.md) |
-| Windows 11 x64 | **베타, 아직 코드 서명 없음**(파일 이름의 `-unsigned`). GitHub의 Windows Server 2025 러너에서 빌드·무인 설치/제거·실행 시험과, 실제 탐색기 창의 파일을 끌어 Shift로 휠을 띄우고 변환하는 자동 GUI 시험(9가지 경우)을 통과. 실제 Windows 11 PC에서 사람이 한 확인, 125% 이상 배율·다중 모니터·도구 휠·편집기 확인은 아직 없음 |
+| Windows 11 x64 | **베타, 아직 코드 서명 없음**(파일 이름의 `-unsigned`; SignPath Foundation 무료 코드 서명을 준비·신청 중 — [코드 서명 정책](https://keilvher1.github.io/orbitdrop/code-signing-policy/)). GitHub의 Windows Server 2025 러너에서 빌드·무인 설치/제거·실행 시험과, 실제 탐색기 창의 파일을 끌어 Shift로 휠을 띄우고 변환하는 자동 GUI 시험(9가지 경우)을 통과. 실제 Windows 11 PC에서 사람이 한 확인, 125% 이상 배율·다중 모니터·도구 휠·편집기 확인은 아직 없음 |
 | 업데이트 | GitHub Releases에서 자동 확인·내려받기·종료 시 설치(설정에서 끌 수 있음). 서명되지 않은 빌드와 개발 빌드는 업데이트하지 않음 |
 | 변환·편집 엔진 | sharp(libvips), PDF.js + @napi-rs/canvas, pdf-lib, docx — 설치본 안에서 엔진 probe와 변환 파이프라인 확인 |
 
@@ -51,7 +52,7 @@ Windows에서 Alt+Shift는 입력 언어 전환 단축키와 겹쳐 기본값으
 
 * **처음 실행**: 설정 파일이 아직 없으면 환영 창이 한 번 열립니다. 지금 설정된 키를 이 OS의 키 이름(macOS는 Option, Windows는
   Alt·Ctrl)으로 보여 주고, 앱이 있는 곳(메뉴 막대 / 알림 영역 — Windows 11은 새 아이콘을 ^ 안에 숨길 수 있음), Drop Zone 열기,
-  "로그인 시 실행" 스위치(직접 켜기 전에는 꺼짐)를 안내합니다. 메뉴의 도움말 › 사용법으로 다시 열 수 있습니다. UI 언어는 OS 언어를
+  "로그인 시 실행" 스위치(직접 켜기 전에는 꺼짐)와 "업데이트 자동 확인" 스위치(기본 켬, Windows에서는 설치할 때 고른 값)를 안내합니다. 메뉴의 도움말 › 사용법으로 다시 열 수 있습니다. UI 언어는 OS 언어를
   따릅니다(한국어 → 한국어, 그 밖 → 영어). 이미 있는 설정 파일의 언어는 바꾸지 않습니다. macOS에서 디스크 이미지나 다운로드 폴더에서
   실행하면 응용 프로그램 폴더로 옮길지 한 번 묻습니다(이동 / 나중에).
 * **도움말**(메뉴 막대 / 알림 영역 메뉴): 사용법 · OrbitDrop 웹사이트 · 문제 신고(GitHub 새 이슈, 앱 버전·OS 버전·아키텍처만 미리
@@ -60,13 +61,13 @@ Windows에서 Alt+Shift는 입력 언어 전환 단축키와 겹쳐 기본값으
 * **개인정보**: 파일은 이 컴퓨터에서만 처리되고 어디로도 보내지 않습니다. 계정과 텔레메트리가 없습니다. OrbitDrop이 네트워크를 쓰는
   곳은 **업데이트 확인** 하나뿐입니다: 실행 1분 뒤와 6시간마다 GitHub Releases(`github.com/keilvher1/orbitdrop`)에서 새 버전을
   확인하고, 있으면 내려받아 종료할 때 설치합니다. GitHub에는 IP 주소 같은 일반 접속 정보와 이 운영체제용 업데이트 파일 요청만
-  전달되며, 기기 식별자·파일·사용 기록은 보내지 않습니다. 설정 › 일반 › "업데이트 자동 확인"으로 끌 수 있습니다(정보 창의
-  "지금 확인"은 그대로 동작). 자세히: [packaging.md §9](docs/packaging.md#9-자동-업데이트). 충돌 보고서(crash dump)는 앱 데이터
+  전달되며, 기기 식별자·파일·사용 기록은 보내지 않습니다. 설정 › 일반 › "업데이트 자동 확인", 환영 창, Windows 설치 프로그램의
+  같은 상자(무인 설치는 `/NOUPDATECHECK`)로 끌 수 있습니다(정보 창의 "지금 확인"은 그대로 동작). 자세히: [packaging.md §9](docs/packaging.md#9-자동-업데이트). 충돌 보고서(crash dump)는 앱 데이터
   폴더의 `Crashpad`에만 저장되고 업로드하지 않습니다. 작업 기록(`history.json`)은 최근 파일 이름을 이 컴퓨터에만 보관하며 작업 창의
   "끝난 작업 지우기"로 지울 수 있습니다.
 
 > Privacy: files never leave your computer. The only network use is the update check against GitHub Releases (60 s after launch,
-> then every 6 h; Settings › General turns it off). GitHub sees standard connection details such as your IP address and which update
+> then every 6 h; turn it off in Settings › General, the welcome window, or the Windows installer's privacy step / `/NOUPDATECHECK`). GitHub sees standard connection details such as your IP address and which update
 > file is requested — no device ID, files or usage data. Crash dumps stay on your computer.
 
 ## 요구 사항
@@ -82,7 +83,8 @@ Windows에서 Alt+Shift는 입력 언어 전환 단축키와 겹쳐 기본값으
 
 * macOS 설치본(`OrbitDrop-<버전>-mac-<arch>.dmg`)은 Developer ID로 서명되고 Apple 공증을 받았습니다.
 * Windows 설치본(`OrbitDrop-<버전>-win-x64-unsigned-setup.exe`)은 아직 코드 서명이 없는 베타라 Windows가 경고를 표시할 수 있습니다.
-  이 문서는 그 경고를 끄거나 우회하는 방법을 안내하지 않습니다. 코드 서명은 준비 중입니다([docs/packaging.md](docs/packaging.md)).
+  이 문서는 그 경고를 끄거나 우회하는 방법을 안내하지 않습니다. SignPath Foundation을 통한 코드 서명을 준비했습니다:
+  [코드 서명 정책](https://keilvher1.github.io/orbitdrop/code-signing-policy/), [docs/packaging.md §5](docs/packaging.md#windows-코드-서명-signpath-foundation).
 * 직접 빌드하면서 서명 자격 증명이 없으면 이름에 `-unsigned`가 붙는 시험용 빌드가 됩니다(배포하지 않음).
 
 **macOS (14 이상)**
@@ -101,6 +103,8 @@ Windows에서 Alt+Shift는 입력 언어 전환 단축키와 겹쳐 기본값으
 
 * 설치: `…-setup.exe`를 실행합니다. 현재 사용자용으로 설치되며 관리자 권한(UAC)을 묻지 않습니다. 기본 위치
   `%LOCALAPPDATA%\Programs\OrbitDrop`(변경 가능 — OrbitDrop 전용 폴더를 고릅니다), 시작 메뉴·바탕 화면 바로가기가 생깁니다.
+  폴더 다음의 "개인정보와 업데이트" 단계가 업데이트 확인이 GitHub에 보내는 것을 설명하고, "업데이트 자동 확인" 상자(기본 선택)로 끌 수
+  있습니다(1.0.1부터; 무인 설치는 `/S`, 끄려면 `/S /NOUPDATECHECK`). 그 선택은 첫 실행에만 적용되고 이미 있는 설정은 바꾸지 않습니다.
 * 제거: 설정 › 앱 › 설치된 앱 › OrbitDrop › 제거(또는 설치 폴더의 `Uninstall OrbitDrop.exe`). 설치 폴더 전체, 바로가기, 제거 항목,
   "로그인 시 실행" 시작 항목을 지웁니다.
 * 사용자 데이터 `%APPDATA%\OrbitDrop`(설정, 작업 기록, 로그, 충돌 보고서 `Crashpad`, 캐시)과 업데이트 캐시 `%LOCALAPPDATA%\@orbitdropdesktop-updater`는 남깁니다. 함께 지우려면 폴더를 직접 지우거나

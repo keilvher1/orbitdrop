@@ -32,7 +32,8 @@ node scripts/package.mjs win --arch x64   # Windows에서 실행
 | `--require-notarization` | (macOS) 앱과 DMG가 공증·staple되지 않으면 실패. `CSC_NAME`(키체인의 신원)과 `APPLE_*` 공증 자격 증명이 필요하다. `--require-signing` 포함 |
 | `--skip-native` / `--skip-build` | 이미 스테이징된 helper / 이미 빌드된 `apps/desktop/out` 재사용 |
 | `--skip-smoke` | 패키지 실행 검사 생략 |
-| `--install-test` | (Windows) NSIS 설치 → HKCU 제거 항목 확인 → 설치본 smoke test → 제거 |
+| `--install-test` | (Windows) NSIS 무인 설치 → HKCU 제거 항목, `installer-preferences.json`(업데이트 확인 켬), 설치된 실행 파일의 버전 정보·서명 → 설치본 smoke test → 제거(파일도 사라짐) → `/S /NOUPDATECHECK`로 한 번 더(파일이 끔) |
+| `--signpath prepare\|installer\|finish`, `--signed <dir>` | (Windows 릴리스) SignPath로 서명하는 세 단계(§5 "Windows 코드 서명") |
 | `--allow-incomplete` | helper나 `--smoke-test` 구현이 아직 없을 때 파이프라인만 시험(산출물에 `-incomplete` 표시) |
 
 `package.mjs`의 단계: 사전 점검(호스트 OS, 대상 아키텍처의 sharp/libvips/canvas 바이너리 설치 여부,
@@ -67,7 +68,7 @@ UI를 `loadFile()`로 `app.asar` 안에서 여는 동안 `GrantFileProtocolExtra
 |---|---|---|
 | macOS arm64 | `OrbitDrop-<ver>-mac-arm64[-unsigned].dmg`, `.zip` | 최소 macOS 14.0 |
 | macOS x64 | `OrbitDrop-<ver>-mac-x64[-unsigned].dmg`, `.zip` | 최소 macOS 14.0, Intel 실기 검증은 별도 기록. Apple 실리콘에서 실행하면 Rosetta 2로 동작하지만 첫 실행이 느리고(가상 머신에서 약 1분 40초), 앱이 시작 알림·설정·정보 창으로 arm64 설치본을 안내한다 |
-| Windows x64 | `OrbitDrop-<ver>-win-x64[-unsigned]-setup.exe` | NSIS, 사용자별 설치 |
+| Windows x64 | `OrbitDrop-<ver>-win-x64[-unsigned]-setup.exe` | NSIS, 사용자별 설치. SignPath로 서명한 릴리스는 `-unsigned` 없음(`-rehearsal`은 서명 흐름 시험용, 배포 안 함) |
 | 업데이트 메타데이터 | `latest-mac.yml`(두 아키텍처의 zip), `OrbitDrop-<ver>-mac-<arch>[-unsigned].zip.blockmap`, `latest.yml`(setup.exe) | §9. DMG는 업데이트 파일이 아니다(`dmg.writeUpdateInfo: false`). Windows 설치 프로그램에는 blockmap이 없다(`nsis.differentialPackage: false`) |
 | 릴리스에만 | `SHA256SUMS.txt` | 릴리스의 모든 파일의 SHA-256. CI(`release-assets.mjs`)와 `release-mac.mjs`가 다시 쓴다 |
 
@@ -222,12 +223,110 @@ Windows 10/11에 포함되어 있어 허용한다. 훅이 PE import 표를 읽�
 * **C++ 런타임**: helper는 `/MT`(정적 CRT, CMake 프리셋 `msvc-x64`). 함께 들어가는 sharp(`sharp-win32-x64-0.35.5.node`,
   `libvips-42.dll`, `libvips-cpp-8.18.7.dll`)와 `skia.win32-x64-msvc.node`의 import 표에도 VC++ 재배포 DLL이 없다(npm 배포본을
   after-pack 판별기로 확인, UCRT `api-ms-win-crt-*`만 사용). Electron의 `electron.exe`도 마찬가지.
-* **서명**: `WIN_CSC_LINK`(또는 `CSC_LINK`) + `WIN_CSC_KEY_PASSWORD`가 있으면 electron-builder가
-  signtool로 exe·설치 프로그램에 Authenticode 서명한다. Azure Trusted Signing을 쓰려면
+* **개인정보 안내와 업데이트 확인 선택(설치 프로그램)**: 대화형 설치는 폴더 페이지 다음에 짧은 안내 페이지를 보여 준다
+  ([`build/installer.nsh`](../apps/desktop/build/installer.nsh)의 `customPageAfterChangeDir`, nsDialogs, 설치 프로그램 언어에 맞춰
+  한국어/영어): 파일은 이 컴퓨터에서만 처리, 업데이트 자동 확인이 GitHub에 연결하는 때와 GitHub이 받는 정보, 개인정보 처리방침
+  링크(`/privacy/`, `/en/privacy/`), 그리고 **"업데이트 자동 확인 / Check for updates automatically"** 상자(기본 선택).
+  선택은 설치 폴더의 `installer-preferences.json`(`{"version":1,"updates":{"autoCheck":true|false}}`)에 기록되고, 앱은 **첫 실행에만**
+  (설정 파일이 아직 없을 때) 이를 읽어 `updates.autoCheck`를 정한다. 이미 있는 설정은 절대 덮어쓰지 않고, 결과는 로그에 남긴다
+  ([`installer-preferences.ts`](../apps/desktop/src/main/settings/installer-preferences.ts)). 무인 설치(`/S`)는 기본값(켬)을 쓰며
+  `/NOUPDATECHECK`로 끌 수 있다: `OrbitDrop-<ver>-win-x64-setup.exe /S /NOUPDATECHECK`. 앱이 설치하는 업데이트(`--updated`, 무인)는
+  페이지를 건너뛴다. 제거 프로그램이 설치 폴더째 지우므로 파일도 함께 사라진다. 환영 창(모든 OS)과 설정 › 일반에도 같은 스위치가 있다.
+  `--install-test`가 `/S`(켬)와 `/S /NOUPDATECHECK`(끔), 제거 후 파일 삭제를 확인하고, windows-gui 워크플로가 실제 설치 화면에서 상자를
+  해제해 첫 실행이 끔으로 시작하는지 확인한다.
+* **버전 정보(직접 만드는 실행 파일 네 개)**: `OrbitDrop.exe`, `resources\helper\OrbitDropHelper.exe`, 설치 프로그램, 제거
+  프로그램(`Uninstall OrbitDrop.exe`)은 모두 ProductName `OrbitDrop`, ProductVersion = `apps/desktop/package.json`의 버전(프리릴리스
+  접미사 포함)을 가진다(SignPath Foundation 조건: 제품 이름 = 프로젝트 이름, 한 빌드의 모든 파일에 같은 제품 버전). electron-builder는
+  `OrbitDrop.exe`의 ProductVersion 문자열을 `x.y.z.0`으로 쓰므로, 서명 훅
+  [`scripts/win-sign.cjs`](../scripts/win-sign.cjs)(`win.signtoolOptions.sign`, electron-builder가 서명할 파일마다 부른다)가 그 문자열을
+  릴리스 버전으로 고친다. helper는 CMake의 `ORBITDROP_VERSION_STRING`(VERSIONINFO 문자열, `scripts/set-version.mjs`가 함께 바꾼다)을 쓴다.
+  `package.mjs`가 PowerShell `(Get-Item …).VersionInfo`와 `Get-AuthenticodeSignature`로 네 파일을 읽어(제거 프로그램은 훅이 남긴 사본)
+  하나라도 다르거나 서명 상태가 빌드 방식과 맞지 않으면 실패시키고, build report의 `signatures`에 남긴다
+  ([`scripts/win-files.mjs`](../scripts/win-files.mjs)). 설치 시험은 설치된 파일을 다시 확인한다.
+* **서명**: SignPath Foundation(아래)을 쓰기로 했다. 그 밖에 `WIN_CSC_LINK`(또는 `CSC_LINK`) + `WIN_CSC_KEY_PASSWORD`가 있으면
+  서명 훅이 electron-builder의 signtool 호출을 그대로 실행해 exe·제거 프로그램·설치 프로그램에 Authenticode 서명한다(인증서를 산 경우;
+  SignPath가 설정되어 있으면 쓰지 않는다). Azure Trusted Signing을 쓰려면
   `win.azureSignOptions`(endpoint, certificateProfileName, codeSigningAccountName)를 설정하고
   `AZURE_TENANT_ID`/`AZURE_CLIENT_ID`/`AZURE_CLIENT_SECRET`을 제공한다(아직 설정하지 않음).
 * **SmartScreen**: 미서명이거나 평판이 쌓이지 않은 인증서로 서명된 설치 프로그램은 "Windows의 PC 보호"
   경고가 뜰 수 있다. 미서명 빌드는 테스트용이며, SmartScreen을 끄라고 안내하지 않는다.
+
+### Windows 코드 서명 (SignPath Foundation)
+
+**왜 SignPath Foundation인가**: 오픈 소스 프로젝트에 무료로 코드 서명 인증서(SignPath Foundation 명의)와 서명 서비스(SignPath.io)를
+준다. 개인 키는 SignPath의 하드웨어 보안 모듈에만 있어 소유자가 인증서를 사거나 키를 보관·갱신할 필요가 없고, 서명은 GitHub이 확인해 준
+빌드 출처(이 저장소, 태그, 커밋, 워크플로 실행)와 사람의 승인을 거쳐서만 일어난다. Windows가 보여 주는 게시자는 **SignPath Foundation**이다.
+조건(<https://signpath.org/terms>, 2026-11 확인): OSI 라이선스(상업 이중 라이선스 없음 — MIT), 공개·문서화된 릴리스, 모든 팀원의
+GitHub·SignPath 다단계 인증, 홈페이지·다운로드·릴리스 페이지의 "Code signing policy"(아래 웹페이지), 사용자가 지정하지 않은 곳에 보내는
+기능의 개인정보 안내·설치 중 표시·설치 옵션(위), 자기 소스로 빌드한 파일만 서명(상위 프로젝트의 DLL은 서명 없이 포함 가능), 파일 메타데이터
+제한(제품 이름·버전), 릴리스마다 승인자의 수동 승인.
+
+**웹페이지**: [`site/code-signing-policy/`](../site/code-signing-policy/index.html)와 [`site/en/code-signing-policy/`](../site/en/code-signing-policy/index.html)
+(다운로드 영역·바닥글·FAQ·릴리스 노트에서 링크). 지금은 "아직 서명 안 됨, 신청함"을 말하는 상태 줄(`<p class="status" data-state="pending">`)
+하나와 그 아래의 SignPath 문구로 되어 있다. **첫 서명 릴리스를 공개할 때 각 페이지에서 그 한 줄만 바꾼다**: 바로 위 주석에 바꿀 줄이 있다
+(`data-state="active"`, "OrbitDrop 1.0.1부터 Windows 릴리스는 아래 방식으로 서명합니다." / "since OrbitDrop 1.0.1, Windows releases are
+signed as described below."). 같은 때 홈페이지 FAQ "Windows 판은 왜 베타인가요?"와 README의 "아직 코드 서명 없음" 문장도 고친다.
+
+**서명하는 것 / 하지 않는 것**: `OrbitDrop.exe`, `OrbitDropHelper.exe`, 제거 프로그램, 설치 프로그램만. Electron의 DLL(`ffmpeg.dll`,
+`d3dcompiler_47.dll`, `dxcompiler.dll`, `dxil.dll`, `vk_swiftshader.dll`, `vulkan-1.dll`), sharp/libvips(`sharp-win32-x64-<ver>.node`,
+`libvips-42.dll`, `libvips-cpp-<ver>.dll`), `@napi-rs/canvas`의 `skia.win32-x64-msvc.node`는 상위 프로젝트 배포본 그대로 둔다.
+electron-builder도 이 파일들에는 서명 훅을 부르지 않는다(`signExts` 없음: `.exe`만).
+
+**흐름**(`.github/workflows/release.yml`의 Windows 작업, SignPath가 설정되어 있고 실행이 태그 자체일 때):
+
+| 단계 | 하는 일 |
+|---|---|
+| `package.mjs win --signpath prepare` | 보통 빌드(앱 폴더 + 버리는 설치 프로그램), 모든 검사와 smoke test·네이티브 모듈 검사. 서명 훅이 남긴 제거 프로그램과 함께 `OrbitDrop.exe`·`OrbitDropHelper.exe`를 `release/signpath/request-1/`에 둔다 |
+| 요청 1 | `actions/upload-artifact`로 올린 산출물(ZIP)을 [`signpath/github-action-submit-signing-request@v3`](https://github.com/SignPath/github-action-submit-signing-request)가 아티팩트 구성 `windows-binaries`로 보내고 승인·서명을 기다린다(최대 90분) |
+| `--signpath installer --signed …/signed-1` | 돌아온 파일마다 "보낸 파일 + 서명"인지(서명이 바꾸는 PE 체크섬·인증서 표 항목 밖의 모든 바이트가 같은지), 서명 Valid·버전 정보를 확인하고 앱 폴더에 넣는다. electron-builder가 그 폴더로 설치 프로그램을 만들고(`--prepackaged`), NSIS가 다시 만든 제거 프로그램 대신 서명된 사본을 넣는다(서명 훅이 같은 파일 + 서명인지 확인). 설치 프로그램을 `request-2/`에 둔다 |
+| 요청 2 | 아티팩트 구성 `windows-installer`로 설치 프로그램 서명 |
+| `--signpath finish --signed …/signed-2 --install-test` | 서명된 설치 프로그램으로 바꾸고 `latest.yml`의 sha512·크기를 다시 계산(`refreshUpdateInfo`), 네 파일 모두 서명 Valid를 요구하는 전체 검사, smoke test, 설치 시험, build report. 파일 이름에 `-unsigned`가 붙지 않는다 |
+
+제거 프로그램이 요청 1에 들어가는 이유: electron-builder의 NSIS 대상은 제거 프로그램을 먼저 만들어 서명 훅에 넘긴 뒤 설치 프로그램 안에
+넣는다. NSIS는 SignPath가 안쪽까지 서명하는(deep signing) 형식이 아니므로 설치 프로그램을 만든 뒤에는 제거 프로그램을 서명할 수 없다.
+서명 훅이 그 순간 SignPath REST API를 부르는 방법은 쓰지 않았다: Foundation 프로젝트에는 출처 검증이 필수이고(Open Source Code Signing:
+origin verification required), SignPath의 GitHub 연동은 GitHub 작업 산출물과 공식 action이 전하는 GitHub의 실행 정보로 출처를 확인하는데,
+빌드 도구 안에서 보내는 요청에는 그 정보가 없다. 그래서 prepare 단계의 NSIS 실행에서 제거 프로그램을 받아 실행 파일들과 함께 서명하고,
+installer 단계에서 같은 제거 프로그램(서명만 더해진)을 넣는다.
+
+**시험(리허설)**: SignPath 자격 증명 없이 같은 단계를 GitHub 러너에서 돌린다 — Actions › Release › Run workflow, `tag`는 비우고
+`signpath_rehearsal`을 켠다(`gh workflow run Release --ref <branch> -f signpath_rehearsal=true`). SignPath action 대신
+[`scripts/signpath-rehearsal.ps1`](../scripts/signpath-rehearsal.ps1)이 그 러너만 신뢰하는 임시 자체 서명 인증서로 서명한다. 산출물은
+`-rehearsal`로 표시되고 릴리스에 올라가지 않는다(`release-assets.mjs`도 거부). SignPath 쪽 설정(승인, 아티팩트 구성, 출처 검증)은 실제
+릴리스에서만 확인된다.
+
+**업데이트와 게시자**: electron-builder가 인증서를 직접 보지 않으므로 `app-update.yml`에 게시자 이름(`publisherName`)이 들어가지 않는다.
+설치본은 지금처럼 HTTPS로 받은 `latest.yml`의 sha512로 설치 프로그램을 확인한다(미서명 → 서명 전환에 문제없음). 업데이트를
+"SignPath Foundation이 서명한 설치 프로그램만"으로 묶으려면 나중에 `win.signtoolOptions.publisherName: SignPath Foundation`을 따로
+결정한다(그 뒤 다른 인증서로 바꾸면 그 설치본들은 업데이트를 받지 못한다).
+
+**소유자가 할 일(순서대로)** — 비밀 값은 저장소·문서에 쓰지 않는다:
+
+1. GitHub 계정에 2단계 인증이 켜져 있는지 확인한다(Settings › Password and authentication).
+2. <https://signpath.org/apply>에서 신청한다: 저장소 `https://github.com/keilvher1/orbitdrop`, 라이선스 MIT, 홈페이지
+   `https://keilvher1.github.io/orbitdrop/`, 코드 서명 정책 `https://keilvher1.github.io/orbitdrop/en/code-signing-policy/`, 릴리스
+   `https://github.com/keilvher1/orbitdrop/releases`, 서명할 파일(위 네 개)과 빌드 방법(GitHub Actions, GitHub 호스팅 러너, 태그 빌드).
+   승인 메일을 기다린다.
+3. SignPath(<https://app.signpath.io>) 계정을 만들고 다단계 인증을 켠다. 승인 안내에 따라 OrbitDrop 프로젝트가 있는 조직에 들어간다.
+4. SignPath에서:
+   * **Trusted Build Systems**: 미리 정의된 **GitHub.com**을 조직에 추가하고 OrbitDrop 프로젝트에 연결한다.
+   * **프로젝트**: 저장소 URL `https://github.com/keilvher1/orbitdrop`. 프로젝트 슬러그를 적어 둔다.
+   * **Artifact Configurations**: 두 개를 만든다 — 슬러그 `windows-binaries`에
+     [`apps/desktop/build/signpath/windows-binaries.xml`](../apps/desktop/build/signpath/windows-binaries.xml), 슬러그
+     `windows-installer`에 [`windows-installer.xml`](../apps/desktop/build/signpath/windows-installer.xml)을 붙여 넣는다(워크플로가 이
+     슬러그로 고른다. 매개변수 `version`은 워크플로가 넘긴다).
+   * **Signing Policy**(Foundation의 릴리스 정책, 예: `release-signing`): 승인자 keilvher1, 승인 필수, 출처 검증(Verify origin) 켬, 허용
+     브랜치/태그는 릴리스 태그(`v*`)로 제한할 수 있으면 제한한다. GitHub 파이프라인 정책을 쓸 수 있으면
+     `github-build-policies: { version: '1.0', runners: { require_github_hosted: true } }`(재실행을 막으려면 `disallow_reruns: true`).
+     정책 슬러그를 적어 둔다.
+   * **API 토큰**: 그 정책에 제출(Submitter) 권한이 있는 사용자(가능하면 CI 전용 사용자)의 API 토큰을 만든다. 조직 ID를 적어 둔다.
+5. GitHub 저장소 Settings › Secrets and variables › Actions: 시크릿 `SIGNPATH_API_TOKEN`, 변수 `SIGNPATH_ORGANIZATION_ID`,
+   `SIGNPATH_PROJECT_SLUG`, `SIGNPATH_SIGNING_POLICY_SLUG`. 넷이 모두 있어야 켜지고, 하나라도 없으면 Windows 작업은 지금과 같다(일부만 있으면
+   경고). `WIN_CSC_LINK`가 함께 있어도 SignPath가 우선한다.
+6. (권장) 리허설을 한 번 돌린다(위).
+7. 첫 서명 릴리스(1.0.1): [RELEASING.md](RELEASING.md)대로 버전을 올리고 태그를 push한다. Release 워크플로의 Windows 작업이 요청 1을
+   보내면 SignPath에서 승인하고, 몇 분 뒤 요청 2도 승인한다. 초안의 `OrbitDrop-1.0.1-win-x64-setup.exe`(이름에 `-unsigned` 없음)를
+   내려받아 서명(Valid, SignPath Foundation)을 확인하고 공개한 뒤, 웹페이지의 상태 줄(위)을 바꾼다.
 
 ## 6. 미서명 빌드 표시
 
@@ -235,7 +334,8 @@ Windows 10/11에 포함되어 있어 허용한다. 훅이 PE import 표를 읽�
 `signing.mode`로 표시된다. `-incomplete`는 helper 또는 smoke test 구현이 빠진 파이프라인 시험 빌드다.
 배포 전 체크리스트:
 
-- [ ] `--require-signing`으로 빌드했고 `build-report`의 `signing.mode`가 Developer ID / Authenticode
+- [ ] `--require-signing`으로 빌드했고(Windows는 SignPath 단계) `build-report`의 `signing.mode`가 Developer ID / Authenticode /
+      Authenticode (SignPath), Windows는 `signatures.ok`(네 실행 파일 모두 Valid, 같은 제품 이름·버전)
 - [ ] macOS: `--require-notarization`으로 빌드, 앱·DMG 모두 `spctl` accepted(Notarized), `stapler validate` 통과
 - [ ] `latest-mac.yml`(arm64·x64 zip)·`latest.yml`이 릴리스 파일과 일치(`package.mjs`·릴리스 스크립트가 검사) — [RELEASING.md](RELEASING.md) 5단계
 - [ ] smoke test와 [verification.md](verification.md)의 수동 GUI 검증 결과 기록(설치본에서 창이 실제로 그려지는지 포함)
@@ -392,10 +492,10 @@ App Translocation에서 실행 중인 앱(번들을 바꿀 수 없다; 응용 �
 
 * macOS 미서명(`-unsigned`) 패키지는 업데이트 대상도 원본도 아니다: 그런 설치본은 확인하지 않고, 릴리스에는 Developer ID + 공증된 패키지만
   올라간다(릴리스 스크립트가 build report로 확인). `latest-mac.yml`은 zip만 가리키므로 DMG를 staple해도 그대로 유효하다.
-* Windows는 서명 인증서를 살 때까지 미서명으로 배포하며 업데이트도 된다: 설치본은 HTTPS로 받은 `latest.yml`의 sha512로 설치 프로그램을
-  확인한다. `latest.yml`은 electron-builder가 실제 파일 이름(`…-unsigned-setup.exe` 포함)으로 쓰고 `package.mjs`가 대조한다. 서명을 시작하면
-  `app-update.yml`에 게시자 이름(`publisherName`)이 들어가 그 뒤 설치본은 같은 게시자가 서명한 설치 프로그램만 받는다(미서명 → 서명 전환은
-  문제없음; 나중에 게시자 이름이 다른 인증서로 바꿀 때는 주의).
+* Windows는 SignPath 서명이 시작될 때까지 미서명으로 배포하며 업데이트도 된다: 설치본은 HTTPS로 받은 `latest.yml`의 sha512로 설치 프로그램을
+  확인한다. `latest.yml`은 electron-builder가 실제 파일 이름(`…-unsigned-setup.exe` 포함)으로 쓰고 `package.mjs`가 대조한다(SignPath가 서명한
+  설치 프로그램은 finish 단계가 sha512·크기를 다시 쓴다). 인증서 파일(`WIN_CSC_LINK`)로 서명하면 `app-update.yml`에 게시자 이름(`publisherName`)이
+  들어가 그 뒤 설치본은 같은 게시자가 서명한 설치 프로그램만 받는다. SignPath 서명에서는 들어가지 않는다(§5 "업데이트와 게시자").
 * 파일 이름이나 형식을 바꾸면 `latest*.yml`과 어긋나지 않는지 `package.mjs`의 검사로 확인한다.
 
 **설치본에 남는 것**: 내려받은 업데이트는 `~/Library/Caches/@orbitdropdesktop-updater`(macOS),
