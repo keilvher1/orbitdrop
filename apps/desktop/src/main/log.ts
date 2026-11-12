@@ -27,9 +27,23 @@ const QUOTED_PATH_PATTERN = /(["'`])(?:file:\/\/|[A-Za-z]:[\\/]|\\\\|~\/|\/(?=[^
 // file:// URLs anywhere; otherwise a path must start a token (after a space, quote, '=', '(', ',', ':' or '[').
 const PATH_PATTERN = /file:\/\/[^\s"'<>]*|(?<=^|[\s"'=(,:[])(?:[A-Za-z]:[\\/]|\\\\|~\/|\/(?=[^\s/]))[^\s"'<>|*?]*/g;
 
-/** Replace anything that looks like an absolute path (POSIX, Windows, UNC, ~/, file://) with <path>. */
+// An Anthropic API key (Claude analysis): `sk-ant-` and the characters keys consist of.
+const API_KEY_PATTERN = /sk-ant-[A-Za-z0-9_-]+/g;
+
+/**
+ * Replace anything that looks like an Anthropic API key with `sk-ant-<redacted>`. Nothing logs the
+ * key on purpose; this is the last line of defense (every log line, diagnostics, worker output,
+ * text that reaches the renderer or history goes through redactPaths / scrubPaths).
+ */
+export function redactSecrets(text: string): string {
+  return text.replace(API_KEY_PATTERN, 'sk-ant-<redacted>');
+}
+
+/** Replace anything that looks like an absolute path (POSIX, Windows, UNC, ~/, file://) with <path>, and API keys (redactSecrets). */
 export function redactPaths(text: string): string {
-  return text.replace(QUOTED_PATH_PATTERN, '$1<path>$1').replace(PATH_PATTERN, (match) => (match.length <= 1 ? match : '<path>'));
+  return redactSecrets(text)
+    .replace(QUOTED_PATH_PATTERN, '$1<path>$1')
+    .replace(PATH_PATTERN, (match) => (match.length <= 1 ? match : '<path>'));
 }
 
 // An unquoted absolute path may contain spaces: take everything up to a quote, bracket or line end.
@@ -42,7 +56,7 @@ const PATH_TO_LINE_END_PATTERN = /file:\/\/[^\n"'`<>]*|(?<=^|[\s=(,:[])(?:[A-Za-
  * token with a path separator are replaced.
  */
 export function scrubPaths(text: string): string {
-  return text
+  return redactSecrets(text)
     .replace(QUOTED_PATH_PATTERN, '$1<path>$1')
     .replace(PATH_TO_LINE_END_PATTERN, '<path>')
     .replace(/[^\s"'`]*[\\/][^\s"'`]*/g, '<path>');

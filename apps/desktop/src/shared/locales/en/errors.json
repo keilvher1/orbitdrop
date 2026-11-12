@@ -27,6 +27,15 @@
   "error.TIMEOUT": "Processing took too long and was stopped.",
   "error.WORKER_CRASHED": "The processor stopped unexpectedly. You can try again.",
   "error.HELPER_UNAVAILABLE": "The drag helper isn't available.",
+  "error.ANALYSIS_NOT_CONFIGURED": "Claude analysis is off or no API key is saved. Turn it on and save a key in Settings › Claude Analysis.",
+  "error.ANALYSIS_KEY_INVALID": "That isn't an Anthropic API key. Paste the whole key, starting with sk-ant-.",
+  "error.ANALYSIS_KEY_STORAGE_UNAVAILABLE": "This computer can't encrypt or read the API key with the operating system's secure storage. Try saving the key again.",
+  "error.ANALYSIS_AUTH_FAILED": "Anthropic refused the API key. Check that the key is correct and hasn't been deleted or restricted.",
+  "error.ANALYSIS_RATE_LIMITED": "Too many requests, or a usage limit was reached. Try again in a moment.",
+  "error.ANALYSIS_INPUT_TOO_LARGE": "The file is too large for Claude analysis. PDFs can have up to 100 pages and 30 MB.",
+  "error.ANALYSIS_UNAVAILABLE": "Couldn't reach the Claude API, or it's temporarily unavailable. Check your internet connection and try again.",
+  "error.ANALYSIS_REFUSED": "Claude declined to analyze this file.",
+  "error.ANALYSIS_FAILED": "Claude analysis failed. Try again; if it keeps failing, check your account and billing in the Anthropic Console.",
   "error.INTERNAL": "An unexpected error occurred.",
   "warning.OUTPUT_LARGER_THAN_INPUT": "The result isn't smaller than the original. You may want to keep the original.",
   "warning.EXTENSION_MISMATCH": "The extension didn't match the content, so the file was processed by its actual format.",
@@ -39,5 +48,6 @@
   "warning.SKIPPED_SAME_FORMAT": "Skipped because the file is already in this format.",
   "warning.ANNOTATION_FONT_FALLBACK": "Some characters can't be drawn with the installed fonts, so they may appear as boxes or be missing in the result.",
   "warning.FIRST_FRAME_ONLY": "This is an animated image, so only its first frame was used. The other frames aren't in the result.",
-  "warning.FIRST_PAGE_ONLY": "This file has several pages (images), so only the first one was used. The other pages aren't in the result."
+  "warning.FIRST_PAGE_ONLY": "This file has several pages (images), so only the first one was used. The other pages aren't in the result.",
+  "warning.ANALYSIS_TRUNCATED": "The answer reached its length limit, so the end of the report may be cut off."
 }

@@ -19,6 +19,7 @@ import {
   wheelTokens,
   DEFAULT_WHEEL_GEOMETRY,
   ALLOWED_WEB_PAGES,
+  ANTHROPIC_KEYS_URL,
   LicenseOpenRequestSchema,
   ORBITDROP_NEW_ISSUE,
   ORBITDROP_WEBSITE,
@@ -173,9 +174,9 @@ describe('settings', () => {
 });
 
 describe('external URLs', () => {
-  it('web pages: exactly the website (ko, en), a new issue (with a prefilled query) and the releases', () => {
-    expect(ALLOWED_WEB_PAGES.map((page) => `${page.origin}${page.path}`)).toEqual([ORBITDROP_WEBSITE.ko, ORBITDROP_WEBSITE.en, ORBITDROP_NEW_ISSUE, RELEASES_URL]);
-    for (const url of [ORBITDROP_WEBSITE.ko, ORBITDROP_WEBSITE.en, ORBITDROP_NEW_ISSUE, `${ORBITDROP_NEW_ISSUE}?title=a&body=b`, RELEASES_URL]) {
+  it('web pages: exactly the website (ko, en), a new issue (with a prefilled query), the releases and the API key page', () => {
+    expect(ALLOWED_WEB_PAGES.map((page) => `${page.origin}${page.path}`)).toEqual([ORBITDROP_WEBSITE.ko, ORBITDROP_WEBSITE.en, ORBITDROP_NEW_ISSUE, RELEASES_URL, ANTHROPIC_KEYS_URL]);
+    for (const url of [ORBITDROP_WEBSITE.ko, ORBITDROP_WEBSITE.en, ORBITDROP_NEW_ISSUE, `${ORBITDROP_NEW_ISSUE}?title=a&body=b`, RELEASES_URL, ANTHROPIC_KEYS_URL]) {
       expect(isAllowedWebPage(url), url).toBe(true);
       expect(isAllowedExternalUrl(url), url).toBe(true);
     }
@@ -190,6 +191,13 @@ describe('external URLs', () => {
       'http://keilvher1.github.io/orbitdrop/',
       'javascript:alert(1)',
       'not a url',
+      // Claude analysis: the key page only — no other page of the console, no query, no other host.
+      'https://platform.claude.com/settings/keys?token=x',
+      'https://platform.claude.com/settings/',
+      'https://platform.claude.com/',
+      'http://platform.claude.com/settings/keys',
+      'https://console.anthropic.com/settings/keys',
+      'https://platform.claude.com.evil.example/settings/keys',
     ]) {
       expect(isAllowedExternalUrl(url), url).toBe(false);
     }

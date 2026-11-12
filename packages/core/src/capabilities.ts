@@ -17,6 +17,7 @@ import {
   type Locale,
   type LocalizedText,
   type MenuKey,
+  type MenuOptions,
   type Platform,
   type WheelMenu,
   type WheelMode,
@@ -128,6 +129,17 @@ export function buildCapabilitySnapshot(probe: EngineProbe): CapabilitySnapshot 
         actions[id] = capability(id, ok, ['image'], images, reason);
         break;
       }
+      case 'tool.analyze': {
+        // Claude analysis: images are sent as a re-encoded JPEG/PNG copy (sharp); PDFs as they are, after
+        // PDF.js has counted their pages (and refused encrypted ones). The report is Markdown text. Whether
+        // the user turned analysis on and saved a key is not an engine question: menus.ts MenuOptions.
+        const canWriteMd = probe.formats.md?.output === true;
+        const kinds: InputKind[] = [];
+        if (canEmbedImages) kinds.push('image');
+        if (isReadableFormat(probe, 'pdf')) kinds.push('pdf');
+        actions[id] = capability(id, canWriteMd, kinds, images, canWriteMd ? REASONS.noImageDecoder : REASONS.noEncoder('MD'));
+        break;
+      }
       default: {
         // Crop, Add Background, Compress, Metadata, Edit, Redact: sharp only (previews are PNG).
         const ok = hasImages && canWritePng;
@@ -187,11 +199,15 @@ function sectorDisabledReason(
   return undefined;
 }
 
-/** Sectors for one menu key and mode (before per-drag adjustments such as the file count). */
-export function buildWheelMenu(snapshot: CapabilitySnapshot, key: MenuKey, mode: WheelMode, locale: Locale): WheelMenu {
+/**
+ * Sectors for one menu key and mode (before per-drag adjustments such as the file count). `options`
+ * adds the sectors that depend on the user's setup (Claude analysis); without them every menu is the
+ * reference order.
+ */
+export function buildWheelMenu(snapshot: CapabilitySnapshot, key: MenuKey, mode: WheelMode, locale: Locale, options: MenuOptions = {}): WheelMenu {
   const kinds = kindsOfKey(key);
   const ownFormat = imageFormatOfKey(key);
-  const sectors: WheelSector[] = baseMenuOrder(key, mode).map((actionId) => {
+  const sectors: WheelSector[] = baseMenuOrder(key, mode, options).map((actionId) => {
     const action = ACTIONS[actionId];
     const reason = sectorDisabledReason(snapshot, snapshot.actions[actionId], kinds, ownFormat);
     return {
@@ -225,12 +241,12 @@ export interface HelperMenu {
   readonly tools: WheelSector[];
 }
 
-/** All menus the native helper needs, keyed by MenuKey. */
-export function buildHelperMenus(snapshot: CapabilitySnapshot, locale: Locale): HelperMenu[] {
+/** All menus the native helper needs, keyed by MenuKey (`options` as for buildWheelMenu). */
+export function buildHelperMenus(snapshot: CapabilitySnapshot, locale: Locale, options: MenuOptions = {}): HelperMenu[] {
   return MENU_KEYS.map((key) => ({
     key,
-    convert: [...buildWheelMenu(snapshot, key, 'convert', locale).sectors],
-    tools: [...buildWheelMenu(snapshot, key, 'tools', locale).sectors],
+    convert: [...buildWheelMenu(snapshot, key, 'convert', locale, options).sectors],
+    tools: [...buildWheelMenu(snapshot, key, 'tools', locale, options).sectors],
   }));
 }
 

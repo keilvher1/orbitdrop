@@ -4,7 +4,8 @@ import type { FileFormat, InputKind } from './formats';
 export const CONVERT_TARGETS = ['jpeg', 'png', 'webp', 'heic', 'tiff', 'avif', 'bmp', 'pdf', 'docx', 'txt'] as const;
 export type ConvertTarget = (typeof CONVERT_TARGETS)[number];
 
-export const TOOL_NAMES = ['compress', 'metadata', 'edit', 'annotate', 'addBackground', 'crop', 'redact'] as const;
+/** The analyze tool (Claude analysis, opt-in) was added last; native helpers mirror this order. */
+export const TOOL_NAMES = ['compress', 'metadata', 'edit', 'annotate', 'addBackground', 'crop', 'redact', 'analyze'] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 
 export type ConvertActionId = `convert.${ConvertTarget}`;
@@ -29,7 +30,7 @@ export const WHEEL_MODES: readonly WheelMode[] = ['convert', 'tools'];
 export type Tier = 'P0' | 'P1' | 'P2';
 
 /** Abstract icon ids. macOS maps them to SF Symbols, Windows to Segoe Fluent Icons, the renderer to SVG. */
-export const ICON_IDS = ['compress', 'metadata', 'edit', 'annotate', 'background', 'crop', 'redact'] as const;
+export const ICON_IDS = ['compress', 'metadata', 'edit', 'annotate', 'background', 'crop', 'redact', 'analyze'] as const;
 export type IconId = (typeof ICON_IDS)[number];
 
 export interface LocalizedText {
@@ -184,6 +185,25 @@ export const ACTIONS: Readonly<Record<ActionId, ActionDescriptor>> = {
     'P1',
     ' Redacted',
   ),
+  /**
+   * Claude analysis (opt-in, ./analysis.ts): one Markdown report per file, written next to it. On the
+   * wheel only while it is available (enabled in Settings and a key saved — menus.ts MenuOptions).
+   */
+  'tool.analyze': {
+    id: 'tool.analyze',
+    mode: 'tools',
+    wheelLabel: { ko: 'Claude 분석', en: 'ANALYZE' },
+    title: { ko: 'Claude로 분석', en: 'Analyze with Claude' },
+    icon: 'analyze',
+    inputs: ['image', 'pdf'],
+    output: 'md',
+    interactive: 'never',
+    batch: true,
+    merges: false,
+    cancellable: true,
+    tier: 'P2',
+    outputSuffix: ' Analysis',
+  },
 };
 
 const DOCX_FROM_IMAGES_TITLE: LocalizedText = { ko: 'DOCX로 변환 (이미지 삽입, OCR 없음)', en: 'Convert to DOCX (image embedded, no OCR)' };

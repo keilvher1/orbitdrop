@@ -11,7 +11,8 @@ export type JobState = 'queued' | 'running' | 'completed' | 'failed' | 'cancelle
 
 export const TERMINAL_JOB_STATES: ReadonlySet<JobState> = new Set<JobState>(['completed', 'failed', 'cancelled']);
 
-export type JobStage = 'reading' | 'decoding' | 'rendering' | 'encoding' | 'writing';
+/** 'analyzing' (added later): waiting for Claude's answer (tool.analyze). */
+export type JobStage = 'reading' | 'decoding' | 'rendering' | 'encoding' | 'analyzing' | 'writing';
 
 /**
  * Progress is either real (pages/files/steps counted by the processor) or
@@ -49,7 +50,7 @@ export interface OutputFileInfo {
  *   Counts only — never the text itself.
  * - FIRST_FRAME_ONLY `{frames, files}` / FIRST_PAGE_ONLY `{pages, files}`: frames/pages in the
  *   input (only the first was used), files = inputs of the job it applies to (added later)
- * - DOCX_TEXT_ONLY, DOCX_IMAGE_ONLY, SKIPPED_SAME_FORMAT: no params
+ * - DOCX_TEXT_ONLY, DOCX_IMAGE_ONLY, SKIPPED_SAME_FORMAT, ANALYSIS_TRUNCATED: no params
  */
 export const WARNING_CODES = [
   /** Compressed result is not smaller than the input. */
@@ -79,6 +80,8 @@ export const WARNING_CODES = [
   'FIRST_FRAME_ONLY',
   /** Multi-page input (TIFF, HEIF collection): only the first page was converted or edited (added later). */
   'FIRST_PAGE_ONLY',
+  /** Claude analysis: the answer reached its length limit, so the report may end early (added later). */
+  'ANALYSIS_TRUNCATED',
 ] as const;
 export type WarningCode = (typeof WARNING_CODES)[number];
 

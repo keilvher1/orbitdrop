@@ -94,6 +94,7 @@ export function AboutSupport() {
           <li>{t('about.legal.privacyUpdates')}</li>
           <li>{t('about.legal.privacyCrashes')}</li>
           <li>{t('about.legal.privacyHistory')}</li>
+          <li>{t('about.legal.privacyAnalysis')}</li>
         </ul>
       </section>
     </div>

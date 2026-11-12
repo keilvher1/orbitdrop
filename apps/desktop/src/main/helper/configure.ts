@@ -27,6 +27,11 @@ export interface HelperStrings {
 export interface ConfigureInputs {
   readonly settings: Settings;
   readonly snapshot: CapabilitySnapshot;
+  /**
+   * Claude analysis is available (enabled and a key saved): "Claude 분석" joins the image tools wheel
+   * and is the tools wheel of PDFs and mixed drags. Absent/false: the menus are exactly the reference.
+   */
+  readonly analysis?: boolean;
   readonly theme: ThemeName;
   readonly reduceMotion: boolean;
   readonly highContrast: boolean;
@@ -65,7 +70,7 @@ export function buildConfigureMessage(inputs: ConfigureInputs): HelperConfigureM
     highContrast: inputs.highContrast,
     modifiers: { convert: [...settings.globalDrag.convertModifiers], tools: [...settings.globalDrag.toolsModifiers] },
     extensions: helperExtensionMap(snapshot),
-    menus: buildHelperMenus(snapshot, locale).map((menu) => ({
+    menus: buildHelperMenus(snapshot, locale, { analysis: inputs.analysis === true }).map((menu) => ({
       key: menu.key,
       convert: menu.convert.map(sector),
       tools: menu.tools.map(sector),

@@ -75,6 +75,7 @@
   "notify.warning.ANNOTATION_FONT_FALLBACK": "some characters couldn't be drawn",
   "notify.warning.FIRST_FRAME_ONLY": "only the first frame of the animation was used",
   "notify.warning.FIRST_PAGE_ONLY": "only the first of several pages was used",
+  "notify.warning.ANALYSIS_TRUNCATED": "the report may be cut off",
   "notify.batchDone.body": "{count} files done",
   "notify.partial.title": "Partly failed: {action}",
   "notify.partial.body": "{done} done, {failed} failed",
@@ -172,5 +173,14 @@
   "error.TIMEOUT": "Timed out",
   "error.WORKER_CRASHED": "Processing failed unexpectedly",
   "error.HELPER_UNAVAILABLE": "The global drag helper is not available",
+  "error.ANALYSIS_NOT_CONFIGURED": "Claude analysis is off or has no API key",
+  "error.ANALYSIS_KEY_INVALID": "This is not a valid API key",
+  "error.ANALYSIS_KEY_STORAGE_UNAVAILABLE": "The API key cannot be encrypted or read",
+  "error.ANALYSIS_AUTH_FAILED": "The API key was refused",
+  "error.ANALYSIS_RATE_LIMITED": "Too many requests; try again shortly",
+  "error.ANALYSIS_INPUT_TOO_LARGE": "The file is too large for Claude analysis",
+  "error.ANALYSIS_UNAVAILABLE": "Could not reach the Claude API",
+  "error.ANALYSIS_REFUSED": "Claude declined to analyze the file",
+  "error.ANALYSIS_FAILED": "Claude analysis failed",
   "error.INTERNAL": "An unexpected error occurred"
 }

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ANALYSIS_LIMITS } from './analysis';
 import { COMPOSITION_LIMITS } from './composition';
 import { WHEEL_DIAMETER_RANGE } from './geometry';
 import { LocaleSchema, ModifierCombo, Quality } from './schemas';
@@ -73,6 +74,17 @@ const UpdateSettings = z.strictObject({
   autoCheck: z.boolean().default(true),
 });
 
+/**
+ * Added for Claude analysis (additive: files without it get the defaults, SETTINGS_VERSION is
+ * unchanged). Off until the user turns it on; the wheel offers it only once an API key is saved too.
+ * The key itself is not a setting (main keeps it encrypted in its own file). instruction: an
+ * optional standing request added to every analysis.
+ */
+const AnalysisSettings = z.strictObject({
+  enabled: z.boolean().default(false),
+  instruction: z.string().max(ANALYSIS_LIMITS.maxInstructionLength).default(''),
+});
+
 export const SettingsSchema = z.strictObject({
   version: z.literal(SETTINGS_VERSION),
   locale: LocaleSchema.default('ko'),
@@ -89,6 +101,8 @@ export const SettingsSchema = z.strictObject({
   /** First-run state: welcome window, macOS move-to-Applications offer. */
   onboarding: OnboardingSettings.prefault({}),
   updates: UpdateSettings.prefault({}),
+  /** Claude analysis (opt-in). */
+  analysis: AnalysisSettings.prefault({}),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 

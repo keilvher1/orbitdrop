@@ -30,6 +30,11 @@ export interface OrbitTestHooks {
   holdNextJob(): Promise<void>;
   /** Let held attempts continue to the processor pool; returns how many were waiting. */
   releaseHeldJobs(): Promise<number>;
+  /**
+   * Claude analysis in automation (analysis/test-backend.ts — never the Keychain / DPAPI or the API):
+   * whether the OS "can encrypt", what "연결 확인" answers. Returns how often the check ran so far.
+   */
+  scriptAnalysis(script: { readonly encryption?: boolean; readonly verify?: 'ok' | ErrorCode }): Promise<{ readonly verifyCalls: number }>;
 }
 
 type ScriptStep = { readonly kind: 'fail'; readonly code: ErrorCode } | { readonly kind: 'hold' };
@@ -167,6 +172,14 @@ export function installTestHooks(orbit: OrbitApp): void {
     releaseHeldJobs: async () => {
       await started();
       return script.release();
+    },
+    scriptAnalysis: async ({ encryption, verify }) => {
+      await started();
+      const backend = orbit.analysisTestBackend;
+      if (!backend) throw new OrbitError('INTERNAL', 'No scripted analysis backend in this run');
+      if (encryption !== undefined) backend.encryption = encryption;
+      if (verify !== undefined) backend.verifyOutcome = verify;
+      return { verifyCalls: backend.verifyCalls };
     },
   };
   (globalThis as { __orbitdrop?: OrbitTestHooks }).__orbitdrop = hooks;

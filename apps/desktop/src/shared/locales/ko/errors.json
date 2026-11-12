@@ -27,6 +27,15 @@
   "error.TIMEOUT": "처리 시간이 너무 길어 중단했습니다.",
   "error.WORKER_CRASHED": "처리 중 문제가 생겨 작업이 중단되었습니다. 다시 시도할 수 있습니다.",
   "error.HELPER_UNAVAILABLE": "드래그 도우미를 사용할 수 없습니다.",
+  "error.ANALYSIS_NOT_CONFIGURED": "Claude 분석이 꺼져 있거나 API 키가 저장되어 있지 않습니다. 설정 › Claude 분석에서 켜고 키를 저장하세요.",
+  "error.ANALYSIS_KEY_INVALID": "Anthropic API 키 형식이 아닙니다. sk-ant-로 시작하는 키 전체를 붙여 넣으세요.",
+  "error.ANALYSIS_KEY_STORAGE_UNAVAILABLE": "이 컴퓨터에서는 운영체제의 보안 저장소로 API 키를 암호화하거나 읽을 수 없습니다. 키를 다시 저장해 보세요.",
+  "error.ANALYSIS_AUTH_FAILED": "Anthropic이 API 키를 거부했습니다. 키가 맞는지, 삭제되거나 권한이 바뀌지 않았는지 확인하세요.",
+  "error.ANALYSIS_RATE_LIMITED": "요청이 너무 많거나 사용 한도에 도달했습니다. 잠시 후 다시 시도하세요.",
+  "error.ANALYSIS_INPUT_TOO_LARGE": "파일이 너무 커서 Claude로 분석할 수 없습니다. PDF는 100쪽, 30MB까지 보낼 수 있습니다.",
+  "error.ANALYSIS_UNAVAILABLE": "Claude API에 연결하지 못했거나 일시적으로 사용할 수 없습니다. 인터넷 연결을 확인하고 다시 시도하세요.",
+  "error.ANALYSIS_REFUSED": "Claude가 이 파일의 분석을 거절했습니다.",
+  "error.ANALYSIS_FAILED": "Claude 분석에 실패했습니다. 다시 시도해 보고, 계속 실패하면 Anthropic 콘솔에서 계정과 결제 상태를 확인하세요.",
   "error.INTERNAL": "알 수 없는 오류가 발생했습니다.",
   "warning.OUTPUT_LARGER_THAN_INPUT": "결과 파일이 원본보다 작지 않습니다. 원본을 그대로 쓰는 편이 나을 수 있습니다.",
   "warning.EXTENSION_MISMATCH": "확장자와 실제 형식이 달라 실제 형식을 기준으로 처리했습니다.",
@@ -39,5 +48,6 @@
   "warning.SKIPPED_SAME_FORMAT": "이미 같은 형식이라 건너뛰었습니다.",
   "warning.ANNOTATION_FONT_FALLBACK": "설치된 글꼴로 그릴 수 없는 글자가 있어 결과에서 네모로 보이거나 빠질 수 있습니다.",
   "warning.FIRST_FRAME_ONLY": "움직이는 이미지라 첫 프레임만 사용했습니다. 나머지 프레임은 결과에 없습니다.",
-  "warning.FIRST_PAGE_ONLY": "여러 페이지(이미지)가 든 파일이라 첫 페이지만 사용했습니다. 나머지 페이지는 결과에 없습니다."
+  "warning.FIRST_PAGE_ONLY": "여러 페이지(이미지)가 든 파일이라 첫 페이지만 사용했습니다. 나머지 페이지는 결과에 없습니다.",
+  "warning.ANALYSIS_TRUNCATED": "답변이 최대 길이에 도달해 보고서 끝부분이 잘렸을 수 있습니다."
 }

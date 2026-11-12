@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS, IPC_CHANNELS, OrbitError, applySettingsPatch } from '@orbitdrop/contracts';
+import { registerAnalysisIpc, type AnalysisIpcServices } from '../../src/main/ipc/analysis';
 import { EVENT_CHANNELS, registerOrbitIpc, type OrbitIpcServices } from '../../src/main/ipc/channels';
 import { IpcRouter, resolveSender, type FrameLike, type IpcEventLike, type IpcMainLike, type SenderLike } from '../../src/main/ipc/router';
 import { registerSupportIpc, type SupportIpcServices } from '../../src/main/ipc/support';
@@ -116,14 +117,27 @@ function supportServices(): SupportIpcServices<Rec> & Record<string, ReturnType<
   } as unknown as SupportIpcServices<Rec> & Record<string, ReturnType<typeof vi.fn>>;
 }
 
+const ANALYSIS_STATUS = { enabled: true, hasKey: true, keyHint: '…WXYZ', encryptionAvailable: true, available: true } as const;
+
+function analysisServices(): AnalysisIpcServices & Record<string, ReturnType<typeof vi.fn>> {
+  return {
+    status: vi.fn(() => ANALYSIS_STATUS),
+    saveKey: vi.fn(async () => ANALYSIS_STATUS),
+    deleteKey: vi.fn(async () => ({ ...ANALYSIS_STATUS, hasKey: false, keyHint: null, available: false })),
+    testKey: vi.fn(async () => ({ ok: true })),
+  } as unknown as AnalysisIpcServices & Record<string, ReturnType<typeof vi.fn>>;
+}
+
 function setup() {
   const ipc = new FakeIpcMain();
   const s = services();
   const support = supportServices();
+  const analysis = analysisServices();
   const router = new IpcRouter<Rec>(ipc, guard);
   registerOrbitIpc(router, s);
   registerSupportIpc(router, support);
-  return { ipc, s, support, router };
+  registerAnalysisIpc(router, analysis);
+  return { ipc, s, support, analysis, router };
 }
 
 describe('resolveSender', () => {
@@ -325,6 +339,56 @@ describe('IPC channels', () => {
     expect(s.updateState).toHaveBeenCalledTimes(1);
     expect(s.checkForUpdates).toHaveBeenCalledTimes(1);
     expect(s.restartToUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('Claude analysis channels: the key goes in only through saveKey (validated), replies are statuses; foreign senders, sub-frames and stray payloads are refused', async () => {
+    const { ipc, analysis } = setup();
+    const KEY = `sk-ant-api03-${'T'.repeat(80)}WXYZ`;
+    expect(await ipc.invoke(IPC_CHANNELS.analysisStatus, fromOurs)).toEqual(ANALYSIS_STATUS);
+    expect(await ipc.invoke(IPC_CHANNELS.analysisSaveKey, fromOurs, { key: KEY })).toEqual(ANALYSIS_STATUS);
+    expect(analysis.saveKey).toHaveBeenCalledWith(KEY);
+    expect(await ipc.invoke(IPC_CHANNELS.analysisTestKey, fromOurs)).toEqual({ ok: true });
+    expect(await ipc.invoke(IPC_CHANNELS.analysisDeleteKey, fromOurs)).toMatchObject({ hasKey: false, keyHint: null });
+    // Payload validation: a string key of 1–1024 characters and nothing else; the other channels take none.
+    for (const payload of [{ key: '' }, { key: 'x'.repeat(1025) }, { key: 42 }, { key: KEY, store: 'settings' }, KEY, undefined, null]) {
+      await expect(ipc.invoke(IPC_CHANNELS.analysisSaveKey, fromOurs, payload), JSON.stringify(payload)?.slice(0, 40)).rejects.toThrow('INVALID_OPTIONS: Invalid request');
+    }
+    for (const channel of [IPC_CHANNELS.analysisStatus, IPC_CHANNELS.analysisDeleteKey, IPC_CHANNELS.analysisTestKey]) {
+      for (const payload of [{}, { key: KEY }, 'now']) {
+        await expect(ipc.invoke(channel, fromOurs, payload), channel).rejects.toThrow('INVALID_OPTIONS: Invalid request');
+      }
+    }
+    for (const [channel, payload] of [
+      [IPC_CHANNELS.analysisStatus, undefined],
+      [IPC_CHANNELS.analysisSaveKey, { key: KEY }],
+      [IPC_CHANNELS.analysisDeleteKey, undefined],
+      [IPC_CHANNELS.analysisTestKey, undefined],
+    ] as const) {
+      await expect(ipc.invoke(channel, fromForeign, payload), channel).rejects.toThrow('INTERNAL: Untrusted sender');
+      await expect(ipc.invoke(channel, fromSubframe, payload), channel).rejects.toThrow(/^INTERNAL/);
+      await expect(ipc.invoke(channel, fromOurWindowBadPage, payload), channel).rejects.toThrow('INTERNAL: Untrusted page');
+    }
+    expect(analysis.saveKey).toHaveBeenCalledTimes(1);
+    expect(analysis.deleteKey).toHaveBeenCalledTimes(1);
+    expect(analysis.testKey).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failing saveKey reaches the renderer as "<CODE>: message" without the key', async () => {
+    const { ipc, analysis } = setup();
+    const KEY = `sk-ant-api03-${'Q'.repeat(80)}LEAK`;
+    const saveKey = analysis.saveKey as unknown as ReturnType<typeof vi.fn>;
+    saveKey.mockRejectedValueOnce(new OrbitError('ANALYSIS_KEY_STORAGE_UNAVAILABLE', 'The OS cannot encrypt the key on this computer'));
+    const error = await ipc.invoke(IPC_CHANNELS.analysisSaveKey, fromOurs, { key: KEY }).then(
+      () => null,
+      (e: unknown) => e as Error,
+    );
+    expect(error?.message).toBe('ANALYSIS_KEY_STORAGE_UNAVAILABLE: The OS cannot encrypt the key on this computer');
+    saveKey.mockRejectedValueOnce(new Error(`unexpected ${KEY}`));
+    const unexpected = await ipc.invoke(IPC_CHANNELS.analysisSaveKey, fromOurs, { key: KEY }).then(
+      () => null,
+      (e: unknown) => e as Error,
+    );
+    expect(unexpected?.message).toBe('INTERNAL: Unexpected error');
   });
 
   it('dispose removes every channel', () => {

@@ -140,6 +140,7 @@ const PROBE: EngineProbe = {
     pdf: { input: true, output: true, inputEngine: 'pdfjs', outputEngine: 'pdf-lib' },
     docx: { input: false, output: true, inputEngine: 'none', outputEngine: 'docx' },
     txt: { input: false, output: true, inputEngine: 'none', outputEngine: 'text' },
+    md: { input: false, output: true, inputEngine: 'none', outputEngine: 'text' },
   } satisfies Record<FileFormat, FormatSupport>,
   pdfRender: true,
   pdfText: true,

@@ -10,6 +10,7 @@ import {
   type PreviewRequest,
   type PreviewResult,
   type ProcessingLimits,
+  type ProcessorCredentials,
   type ProcessorInput,
   type ProcessorJob,
   type ProcessorResult,
@@ -69,6 +70,11 @@ export interface PoolRunContext {
   readonly onProgress: (progress: JobProgress) => void;
   /** Time limit counted once a worker has the job; undefined/0 = none. */
   readonly timeoutMs?: number;
+  /**
+   * Secrets of this attempt (Claude analysis: the API key). Sent in the `run` message next to the
+   * job, never inside it; the pool keeps no copy (an automatic retry gets them from its own run()).
+   */
+  readonly credentials?: ProcessorCredentials;
 }
 
 export interface ProcessorPoolOptions {
@@ -312,7 +318,7 @@ export class ProcessorPool {
       }
       slot.job = active;
       try {
-        child.postMessage({ type: 'run', job });
+        child.postMessage(ctx.credentials ? { type: 'run', job, credentials: ctx.credentials } : { type: 'run', job });
       } catch (error) {
         this.log.error('could not send job to worker', { jobId: job.jobId, error: describeError(error) });
         this.kill(slot); // the exit handler fails the job with WORKER_CRASHED after cleanup

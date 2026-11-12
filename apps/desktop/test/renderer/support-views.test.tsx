@@ -42,17 +42,28 @@ describe('About: legal, troubleshooting, privacy', () => {
     expect(await screen.findByText('진단 정보를 복사하지 못했습니다.')).toBeTruthy();
   });
 
-  it('a short privacy statement: local files, no account or telemetry, the update check, local crash dumps, history', () => {
+  it('a short privacy statement: local files, no account or telemetry, the update check, local crash dumps, history, optional Claude analysis', () => {
     renderWithEnv(<AboutView />);
     const privacy = screen.getByRole('region', { name: '개인정보' });
     const items = within(privacy)
       .getAllByRole('listitem')
       .map((item) => item.textContent ?? '');
-    expect(items).toHaveLength(4);
-    expect(items[0]).toMatch(/이 컴퓨터 밖으로 나가지 않습니다.*계정이 없고.*텔레메트리/);
+    expect(items).toHaveLength(5);
+    expect(items[0]).toMatch(/Claude 분석.*을 빼면 파일은 이 컴퓨터 밖으로 나가지 않습니다.*계정이 없고.*텔레메트리/);
     expect(items[1]).toMatch(/기본으로 켜짐.*GitHub.*IP 주소 같은 일반 접속 정보.*기기 식별자는 보내지 않습니다.*설정 › 일반에서 끌 수 있습니다/);
     expect(items[2]).toMatch(/충돌 보고서는 이 컴퓨터에만 저장/);
     expect(items[3]).toMatch(/history\.json.*끝난 작업 지우기/);
+    // The optional analysis: off by default, own key, only on a drop, what goes where, billing, the key's storage.
+    expect(items[4]).toMatch(/기본으로 꺼져.*자신의 Anthropic API 키.*파일을 놓을 때만.*1568px.*PDF는 파일 그대로.*파일 이름, 추가 요청, 보고서 언어.*api\.anthropic\.com.*API 약관.*키의 계정에 청구.*암호화.*설정·로그·작업 기록에는 남기지 않습니다/);
+  });
+
+  it('the English privacy statement names the same facts about Claude analysis', () => {
+    renderWithEnv(<AboutView />, { settings: { ...DEFAULT_SETTINGS, locale: 'en' } });
+    const items = within(screen.getByRole('region', { name: 'Privacy' }))
+      .getAllByRole('listitem')
+      .map((item) => item.textContent ?? '');
+    expect(items[0]).toMatch(/^Unless you turn on and use Claude analysis.*never leave this computer/);
+    expect(items[4]).toMatch(/off by default.*your own Anthropic API key.*Only when you drop a file.*1568 px.*PDFs as they are.*file name.*standing request.*report language.*api\.anthropic\.com.*API terms.*billed.*Keychain.*DPAPI.*never written to settings, logs or history/);
   });
 
   it('is English with an English UI', () => {

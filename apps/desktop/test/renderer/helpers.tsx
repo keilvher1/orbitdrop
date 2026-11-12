@@ -2,6 +2,7 @@ import {
   DEFAULT_SETTINGS,
   applySettingsPatch,
   type ActionId,
+  type AnalysisStatus,
   type EditorContext,
   type EngineProbe,
   type FileFormat,
@@ -57,6 +58,7 @@ export const FAKE_PROBE: EngineProbe = {
     pdf: { input: true, output: true, inputEngine: 'pdfjs', outputEngine: 'pdf-lib' },
     docx: { input: false, output: true, inputEngine: 'none', outputEngine: 'docx' },
     txt: { input: false, output: true, inputEngine: 'none', outputEngine: 'text' },
+    md: { input: false, output: true, inputEngine: 'none', outputEngine: 'text' },
   } satisfies Record<FileFormat, FormatSupport>,
   pdfRender: true,
   pdfText: true,
@@ -155,6 +157,14 @@ export function pushUpdateState(orbit: FakeOrbit, state: UpdateState): void {
 
 export function createFakeOrbit(overrides: Partial<OrbitApi> = {}): FakeOrbit {
   let settings: Settings = DEFAULT_SETTINGS;
+  let analysisHint: string | null = null;
+  const analysisStatus = (): AnalysisStatus => ({
+    enabled: settings.analysis.enabled,
+    hasKey: analysisHint !== null,
+    keyHint: analysisHint,
+    encryptionAvailable: true,
+    available: settings.analysis.enabled && analysisHint !== null,
+  });
   const unsubscribe = () => undefined;
   const base: FakeOrbit = {
     platform: 'darwin',
@@ -237,6 +247,17 @@ export function createFakeOrbit(overrides: Partial<OrbitApi> = {}): FakeOrbit {
     }),
     checkForUpdates: vi.fn(async () => sampleUpdateState()),
     restartToUpdate: vi.fn(async () => sampleUpdateState()),
+    // Claude analysis: like main, only the hint of a saved key is kept and returned.
+    getAnalysisStatus: vi.fn(async () => analysisStatus()),
+    saveAnalysisKey: vi.fn(async (key: string) => {
+      analysisHint = `…${key.trim().slice(-4)}`;
+      return analysisStatus();
+    }),
+    deleteAnalysisKey: vi.fn(async () => {
+      analysisHint = null;
+      return analysisStatus();
+    }),
+    testAnalysisKey: vi.fn(async () => ({ ok: true as const })),
   };
   for (const [key, value] of Object.entries(overrides)) {
     const current = (base as Record<string, unknown>)[key];

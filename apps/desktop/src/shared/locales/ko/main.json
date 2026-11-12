@@ -75,6 +75,7 @@
   "notify.warning.ANNOTATION_FONT_FALLBACK": "일부 글자를 그릴 수 없었습니다",
   "notify.warning.FIRST_FRAME_ONLY": "움직이는 이미지의 첫 프레임만 사용했습니다",
   "notify.warning.FIRST_PAGE_ONLY": "여러 페이지 중 첫 페이지만 사용했습니다",
+  "notify.warning.ANALYSIS_TRUNCATED": "보고서 끝부분이 잘렸을 수 있습니다",
   "notify.batchDone.body": "{count}개 파일 완료",
   "notify.partial.title": "일부 실패: {action}",
   "notify.partial.body": "{done}개 완료, {failed}개 실패",
@@ -172,5 +173,14 @@
   "error.TIMEOUT": "시간이 초과되었습니다",
   "error.WORKER_CRASHED": "처리 중 오류가 발생했습니다",
   "error.HELPER_UNAVAILABLE": "전역 드래그 도우미를 사용할 수 없습니다",
+  "error.ANALYSIS_NOT_CONFIGURED": "Claude 분석이 꺼져 있거나 API 키가 없습니다",
+  "error.ANALYSIS_KEY_INVALID": "API 키 형식이 올바르지 않습니다",
+  "error.ANALYSIS_KEY_STORAGE_UNAVAILABLE": "API 키를 암호화하거나 읽을 수 없습니다",
+  "error.ANALYSIS_AUTH_FAILED": "API 키가 거부되었습니다",
+  "error.ANALYSIS_RATE_LIMITED": "요청이 너무 많습니다. 잠시 후 다시 시도하세요",
+  "error.ANALYSIS_INPUT_TOO_LARGE": "Claude로 분석하기에 파일이 너무 큽니다",
+  "error.ANALYSIS_UNAVAILABLE": "Claude API에 연결하지 못했습니다",
+  "error.ANALYSIS_REFUSED": "Claude가 분석을 거절했습니다",
+  "error.ANALYSIS_FAILED": "Claude 분석에 실패했습니다",
   "error.INTERNAL": "알 수 없는 오류가 발생했습니다"
 }

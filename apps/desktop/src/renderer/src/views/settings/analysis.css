@@ -1,0 +1,69 @@
+/* Settings › Claude 분석 (AnalysisPanel.tsx). */
+
+/* Long Korean sentences wrap between words, like the welcome window. */
+.analysis-panel {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.analysis-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.analysis-privacy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.analysis-key-status {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.analysis-key-status[data-saved] {
+  color: var(--c-success, var(--c-text));
+}
+
+.analysis-key-form {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.analysis-key-input {
+  width: 100%;
+  max-width: 340px;
+}
+
+.analysis-keys-link {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.analysis-instruction {
+  align-items: stretch;
+}
+
+.analysis-instruction-input {
+  width: 100%;
+  height: auto;
+  min-height: 64px;
+  padding: 6px 8px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.analysis-count {
+  align-self: flex-end;
+}

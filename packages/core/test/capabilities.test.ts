@@ -161,7 +161,8 @@ describe('supports()', () => {
 
   it('accepts PDF input only where it is allowed', () => {
     const pdfOk = ACTION_IDS.filter((id) => supports(mac, id, pdf));
-    expect(pdfOk).toEqual(['convert.jpeg', 'convert.png', 'convert.docx', 'convert.txt']);
+    // tool.analyze (Claude analysis) reads PDFs too; whether it is offered at all is MenuOptions (opt-in).
+    expect(pdfOk).toEqual(['convert.jpeg', 'convert.png', 'convert.docx', 'convert.txt', 'tool.analyze']);
     expect(supports(mac, 'convert.txt', img('png'))).toBe(false);
   });
 

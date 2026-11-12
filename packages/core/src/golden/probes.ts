@@ -46,6 +46,7 @@ function formats(heic: FormatSupport): Readonly<Record<FileFormat, FormatSupport
     pdf: { input: true, output: true, inputEngine: 'pdfjs', outputEngine: 'pdf-lib' },
     docx: { input: false, output: true, inputEngine: 'none', outputEngine: 'docx', note: 'output only' },
     txt: { input: false, output: true, inputEngine: 'none', outputEngine: 'text', note: 'output only' },
+    md: { input: false, output: true, inputEngine: 'none', outputEngine: 'text', note: 'output only' },
   };
 }
 

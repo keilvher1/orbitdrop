@@ -56,13 +56,17 @@ const MAIN_OWNED_WORKER_VARS: ReadonlySet<string> = new Set(['ORBITDROP_IMAGEIO_
  * `launchctl setenv` would otherwise load foreign code into a process that
  * reads files with OrbitDrop's permissions. Names are compared case-
  * insensitively: on Windows `orbitdrop_pdfjs_dir` is the same variable.
+ * No build passes inherited ANTHROPIC_* variables (base URL, key, auth
+ * token, log level, custom headers): Claude analysis in the worker uses only
+ * the key main hands over for one job attempt, and nothing in the
+ * environment may change where it is sent or what the SDK logs.
  */
 export function workerEnv(extra: Readonly<Record<string, string | undefined>>, packaged = false, source: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(source)) {
     if (value === undefined) continue;
     const name = key.toUpperCase();
-    if (MAIN_OWNED_WORKER_VARS.has(name) || (packaged && name.startsWith('ORBITDROP_'))) continue;
+    if (MAIN_OWNED_WORKER_VARS.has(name) || name.startsWith('ANTHROPIC_') || (packaged && name.startsWith('ORBITDROP_'))) continue;
     env[key] = value;
   }
   if (ORIGINAL_UV_THREADPOOL_SIZE === undefined) delete env.UV_THREADPOOL_SIZE;
