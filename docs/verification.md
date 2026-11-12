@@ -13,6 +13,38 @@
 
 ---
 
+## 공개 릴리스 1.1.0 (2026-11-13 KST)
+
+[v1.1.0](https://github.com/keilvher1/orbitdrop/releases/tag/v1.1.0) — 소스 `3ab51d7`(태그 `v1.1.0`), 2026-11-12 17:59 UTC 공개. 새 기능: 반투명 휠(기본 70 %,
+설정 › 드래그 › 휠 불투명도), 선택 기능 Claude 분석(`tool.analyze`, 사용자 본인의 Anthropic API 키).
+
+| 항목 | 결과 |
+|---|---|
+| 통합 전 검사(개발 Mac) | typecheck, vitest 1398 통과 / 7 건너뜀, Playwright E2E 46/46, electron-verify 39/39(콘솔·CSP 오류 없음), swift test 174, 라이선스·golden·버전·사이트 검사 |
+| 브랜치 CI(`integrate/1.1.0`) | CI(run 43257098517), native-windows(MSVC, run 43256967357), **windows-gui 9/9**(run 43257105256): 실제 탐색기 드래그가 반투명 휠(70 %)에서도 모두 통과 — 링 바깥 투명 모서리에 놓기 포함. 설치 프로그램 개인정보 페이지의 늘어난 문구(Claude 분석)가 잘리지 않음(스크린샷 확인) |
+| 첫 태그 | 버전을 올린 뒤 `THIRD_PARTY_LICENSES.md`(머리말에 앱 버전)를 다시 만들지 않아 main CI(run 43271125082)와 Release(run 43271167050)의 생성 파일 검사에서 멈춤. 공개 전이라 `3ab51d7`에서 고치고 태그를 그 커밋으로 다시 만듦. RELEASING.md에 단계 추가, `set-version.mjs`가 안내 |
+| Windows 패키지 | Release(run 43272229405)에서 빌드·smoke·설치 시험 후 초안에 업로드. **코드 서명 없음**(`-unsigned`, SignPath 신청 전) |
+| macOS 패키지 | `scripts/release-mac.mjs v1.1.0`: Developer ID 서명, 앱·DMG 공증과 티켓 부착, build-info `1.1.0 3ab51d77e02e`(dirty 아님). arm64·x64 DMG `spctl` accepted(Notarized Developer ID)·`stapler validate`, 격리 표시를 붙인 앱 사본 `spctl`·`stapler`·`syspolicy_check distribution` 통과 |
+| 공개 후 확인 | 12개 파일 `shasum -a 256 -c SHA256SUMS.txt` 전부 OK. `latest-mac.yml`(1.1.0, arm64·x64 zip), `latest.yml`(1.1.0, 설치 파일). 공개 사이트의 개인정보 처리방침(ko/en)·첫 페이지·코드 서명 정책에 Claude 분석 안내, API 최신 릴리스 v1.1.0 |
+| **실제 자동 업데이트 1.0.0 → 1.1.0 (macOS, arm64)** | 공개 1.0.0 zip(SHA-256 대조, Notarized Developer ID)을 풀어 실행 → 사용자가 첫 실행 물음에서 ‘이동’을 골라 `/Applications`로 옮겨 다시 실행 → 실행 61초 뒤 자동 확인이 1.1.0을 찾아 arm64 zip을 내려받음(22초, 전체 다운로드) → 종료(AppleEvent quit) 시 Squirrel.Mac이 설치("Installation completed successfully") → `/Applications/OrbitDrop.app` 1.1.0, `spctl` accepted(Notarized Developer ID) → 다시 실행: `core started version="1.1.0"`, helper 1.1.0 `globalDrag=true`, `enabledActions=18 probeErrors=0` |
+| Claude 분석(실제 API) | 통합 코드의 `scripts/analysis-live-check.mjs`로 소유자의 키를 써서 PNG 슬라이드·2쪽 PDF·TIFF와 추가 요청까지 성공(요청은 api.anthropic.com만, 파일당 약 $0.03–0.06, 8–24초). 자동 시험은 가짜 API만 씀 |
+
+SHA-256(`SHA256SUMS.txt`와 같음):
+
+| 파일 | SHA-256 |
+|---|---|
+| `OrbitDrop-1.1.0-mac-arm64.dmg` | `9f884c12cc00cffe85f78aea51790410f776b3dfbbadbf2d0f1cafcb0ad869d8` |
+| `OrbitDrop-1.1.0-mac-x64.dmg` | `d8f1656cdecabb26b15c4673329dae9369d7ffe10aef66450396562dd7c38be8` |
+| `OrbitDrop-1.1.0-mac-arm64.zip` | `a9a0ac55cfd9ab6e16886e4aa017d043e5aa4deb650ef1f80fc66c0e2abf299c` |
+| `OrbitDrop-1.1.0-mac-x64.zip` | `5111eea646acdd7e7d82357da7c132b087b88274e42997daace5102b21997220` |
+| `OrbitDrop-1.1.0-win-x64-unsigned-setup.exe` | `36b8739ca72cf458d1c33b157e02845408d06833ebf0f7bdee27a187d3630a34` |
+| `OrbitDrop-1.1.0-third-party-sources.tar.gz` | `c119f26bac7d7e803ae53874ad1ba3b445dfd9e2509584167f0882406805825c` |
+
+아직 확인하지 않은 것: Windows에서 공개 1.0.0 → 1.1.0 자동 업데이트, 실물 Windows 11 PC에서 사람이 한 확인, 실제 Finder 드래그로
+‘Claude 분석’에 놓기(사람 확인), 시스템 프록시 뒤에서의 Claude 분석(지원하지 않음 — 알려진 제한).
+
+---
+
 ## 공개 릴리스 1.0.0 (2026-11-12)
 
 [v1.0.0](https://github.com/keilvher1/orbitdrop/releases/tag/v1.0.0) — 소스 `ba703ad`(태그 `v1.0.0`), 2026-11-12 09:17 UTC 공개.
