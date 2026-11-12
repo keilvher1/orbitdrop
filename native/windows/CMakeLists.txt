@@ -10,13 +10,13 @@
 # Or use scripts/build-native-win.mjs from the repository root.
 cmake_minimum_required(VERSION 3.21)
 
-project(OrbitDropHelper VERSION 1.0.0 DESCRIPTION "OrbitDrop native drag helper (Windows)" LANGUAGES CXX)
+project(OrbitDropHelper VERSION 1.1.0 DESCRIPTION "OrbitDrop native drag helper (Windows)" LANGUAGES CXX)
 
 # The release version as apps/desktop/package.json states it, a prerelease suffix (-beta.1) included:
 # project(VERSION) only takes numbers. It is the helper's reported version and the ProductVersion /
 # FileVersion strings of its VERSIONINFO (res/OrbitDropHelper.rc.in), which must equal the app's version
 # on every signed file. scripts/set-version.mjs keeps both lines in step (--check fails otherwise).
-set(ORBITDROP_VERSION_STRING "1.0.0")
+set(ORBITDROP_VERSION_STRING "1.1.0")
 
 option(ORBITDROP_BUILD_TESTS "Build the portable core unit tests" ON)
 option(ORBITDROP_BUILD_HELPER "Build the Win32 helper executable (Windows targets only)" ${WIN32})

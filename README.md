@@ -16,7 +16,7 @@
 
 <p align="center"><img src="apps/desktop/build/icon.png" width="128" alt="OrbitDrop icon"></p>
 
-## 상태 (2026-11-12, 1.0.0)
+## 상태 (2026-11-13, 1.1.0)
 
 기능별·OS별 상태는 [docs/support-matrix.md](docs/support-matrix.md)가 기준입니다.
 
@@ -26,6 +26,7 @@
 | Windows 11 x64 | **베타, 아직 코드 서명 없음**(파일 이름의 `-unsigned`; SignPath Foundation 무료 코드 서명을 준비·신청 중 — [코드 서명 정책](https://keilvher1.github.io/orbitdrop/code-signing-policy/)). GitHub의 Windows Server 2025 러너에서 빌드·무인 설치/제거·실행 시험과, 실제 탐색기 창의 파일을 끌어 Shift로 휠을 띄우고 변환하는 자동 GUI 시험(9가지 경우)을 통과. 실제 Windows 11 PC에서 사람이 한 확인, 125% 이상 배율·다중 모니터·도구 휠·편집기 확인은 아직 없음 |
 | 업데이트 | GitHub Releases에서 자동 확인·내려받기·종료 시 설치(설정에서 끌 수 있음). 서명되지 않은 빌드와 개발 빌드는 업데이트하지 않음 |
 | 변환·편집 엔진 | sharp(libvips), PDF.js + @napi-rs/canvas, pdf-lib, docx — 설치본 안에서 엔진 probe와 변환 파이프라인 확인 |
+| Claude 분석(선택) | 기본으로 꺼짐. 설정 › Claude 분석에서 켜고 본인의 Anthropic API 키를 저장하면 도구 휠에 'Claude 분석'이 생김. 실제 API로 이미지(PNG·TIFF)·PDF 분석과 추가 요청을 확인. 자동 시험은 가짜 API만 씀(CI에 키 없음). 키는 OS 보안 저장소(키체인·DPAPI)로 암호화 |
 
 직접 빌드했지만 서명 자격 증명이 없으면 산출물 이름에 `-unsigned`가 붙는 시험용 빌드가 됩니다. 이 문서는 Gatekeeper/SmartScreen
 검사를 끄거나 우회하는 방법을 안내하지 않습니다([docs/packaging.md](docs/packaging.md)).
@@ -37,6 +38,7 @@
 | **P0** | PDF → JPG/PNG(1쪽은 같은 이름, 여러 쪽은 `report-p001.jpg`…, 300/150 DPI) · JPG/PNG/WebP 상호 변환 · **Crop** 편집기(Free, 1:1, 16:9, 9:16, 4:3, 3:4, 픽셀 W/H) · **Add Background** 편집기(프리셋/단색/이미지 배경, Padding·Corners·Shadow, Auto/1:1/16:9/4:5, 기본 PNG) · 트레이/메뉴 막대, 설정, 작업 진행·취소·결과 위치 열기 · 대체 입력(파일 열기, Drop Zone) · 네이티브 전역 드래그 |
 | **P1** | Compress · Metadata(읽기/제거) · Edit(회전·반전·밝기·대비·채도) · Annotate(텍스트·화살표·사각형, 한글) · Redact(가림·모자이크) · TIFF/AVIF · 이미지 → PDF · 텍스트 PDF → TXT · 여러 파일 제한 병렬 처리 |
 | **P2** | HEIC/BMP(플랫폼 코덱이 지원하는 방향만) · PDF/이미지 → DOCX(텍스트 중심) |
+| **선택** | **Claude 분석**(1.1.0, 기본 꺼짐, 본인의 Anthropic API 키 필요): 도구 휠의 'Claude 분석'에 이미지나 PDF를 놓으면 Claude Opus 5.5가 쓴 Markdown 보고서(`… Analysis.md` — 요약·주요 내용·보이는 텍스트·확인할 점)를 원본 옆에 저장. PDF는 100쪽·20MB까지. 설정에 적은 추가 요청은 모든 보고서 끝에 답으로 붙음. 요금은 키의 계정에 청구(파일당 대략 수 센트) |
 
 | 형식 선택(PDF) | 자르기 | 배경 추가 | macOS helper 휠 |
 |---|---|---|---|
