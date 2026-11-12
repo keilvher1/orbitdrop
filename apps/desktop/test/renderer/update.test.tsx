@@ -44,6 +44,7 @@ describe('About › 업데이트', () => {
   it('up to date: status and last check; "지금 확인" asks main; the releases page opens on GitHub', async () => {
     const { orbit, section, user } = await about();
     expect(await within(section).findByText('최신 버전입니다.')).toBeTruthy();
+    expect(within(section).getByText('현재 버전 0.1.0')).toBeTruthy();
     expect(within(section).getByText(/^마지막 확인: /)).toBeTruthy();
     const check = within(section).getByRole('button', { name: '지금 확인' });
     const answer = deferred<ReturnType<typeof sampleUpdateState>>();

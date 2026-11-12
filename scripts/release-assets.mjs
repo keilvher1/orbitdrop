@@ -58,6 +58,7 @@ export async function checkAssets(found, version) {
       if (report.signing?.mode !== 'Developer ID' || report.signing?.notarize !== true) problems.push(`macOS ${arch}: not signed with a Developer ID and notarized ("${report.signing?.mode}")`);
       if (report.dmgNotarization?.ok !== true) problems.push(`macOS ${arch}: the DMG is not notarized and stapled`);
       if (report.smoke?.ok !== true) problems.push(`macOS ${arch}: the smoke test did not pass`);
+      for (const ext of ['dmg', 'zip']) if (!found.has(`${PRODUCT}-${version}-mac-${arch}.${ext}`)) problems.push(`macOS ${arch}: ${PRODUCT}-${version}-mac-${arch}.${ext} is missing`);
     }
     if (!found.has('latest-mac.yml')) problems.push('latest-mac.yml is missing');
     else {

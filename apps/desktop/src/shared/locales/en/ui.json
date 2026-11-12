@@ -335,6 +335,7 @@
   "settings.notifications": "Notify me when a job started by dragging finishes",
   "update.title": "Updates",
   "update.versionWithCommit": "Version {version} ({commit})",
+  "update.current": "Current version {version}",
   "update.state.idle": "Not checked for updates yet.",
   "update.state.idleAutoOff": "Automatic checks are off. Use “Check Now” to check.",
   "update.state.checking": "Checking for updates…",

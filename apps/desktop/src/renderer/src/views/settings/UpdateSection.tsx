@@ -102,6 +102,7 @@ export function UpdateSection() {
       <h3 id={headingId} className="about-update-title">
         {t('update.title')}
       </h3>
+      {state ? <p className="about-update-checked tabular">{t('update.current', { version: state.currentVersion })}</p> : null}
       {state ? (
         <p className="about-update-status" aria-live="polite" aria-atomic="true" aria-busy={busy}>
           {busy ? <Spinner size={11} /> : null}
