@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration, slug "windows-binaries": request 1 of a Windows release
+  (.github/workflows/release.yml, step "SignPath 1/2"). Paste it into SignPath › the OrbitDrop project ›
+  Artifact Configurations (docs/packaging.md §5 "Windows 코드 서명 (SignPath Foundation)").
+
+  The GitHub workflow artifact is a ZIP with exactly these three files at its root, built from a tagged
+  commit by scripts/package.mjs, SignPath stage "prepare" (release/signpath/request-1/):
+    OrbitDrop.exe            the app executable (Electron, stamped by electron-builder)
+    OrbitDropHelper.exe      the drag helper (native/windows, C++)
+    Uninstall OrbitDrop.exe  the NSIS uninstaller, which then goes into the installer (request 2)
+  Upstream binaries (Electron's DLLs, sharp/libvips, @napi-rs/canvas) are not part of it: they stay unsigned.
+
+  Metadata restrictions: every file must say ProductName "OrbitDrop" and ProductVersion = the release version,
+  which the workflow passes as the parameter "version" (apps/desktop/package.json, e.g. "1.0.1").
+  scripts/package.mjs checks the same before it uploads anything.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file-set product-name="OrbitDrop" product-version="${version}">
+      <include path="OrbitDrop.exe" />
+      <include path="OrbitDropHelper.exe" />
+      <include path="Uninstall OrbitDrop.exe" />
+      <for-each>
+        <authenticode-sign hash-algorithm="sha256" description="OrbitDrop" description-url="https://keilvher1.github.io/orbitdrop/" />
+      </for-each>
+    </pe-file-set>
+  </zip-file>
+</artifact-configuration>

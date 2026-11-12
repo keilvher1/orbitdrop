@@ -19,6 +19,7 @@ import {
   parseReleaseTag,
   parseSums,
   refreshSha256Sums,
+  refreshUpdateInfo,
   releaseNotes,
   sha256File,
   sha512File,
@@ -140,6 +141,22 @@ describe('update metadata', () => {
     expect(await checkUpdateInfo({ version: '0.2.0', files: [setup], path: setup.url, sha512: setup.sha512 }, dir, options)).toEqual([]);
     expect(await checkUpdateInfo({ version: '0.2.0', files: [{ ...setup, url: 'OrbitDrop-0.2.0-win-x64-setup.exe' }] }, dir, options)).toEqual(expect.arrayContaining([expect.stringMatching(/listed but missing/)]));
     expect(await checkUpdateInfo({ version: '0.2.0', files: [{ ...setup, size: 1 }] }, dir, options)).toEqual(expect.arrayContaining([expect.stringMatching(/size/)]));
+  });
+
+  it('Windows: after SignPath signed the installer, latest.yml gets its new sha512 and size, nothing else', async () => {
+    const dir = tempDir();
+    const setup = await releaseFile(dir, 'OrbitDrop-1.0.1-win-x64-setup.exe');
+    const written = { version: '1.0.1', files: [setup], path: setup.url, sha512: setup.sha512, releaseDate: '2026-11-20T10:00:00.000Z' };
+    const signedBytes = 'the same installer with an Authenticode signature appended';
+    writeFileSync(join(dir, setup.url), signedBytes);
+    const options = { platform: 'win32' as const, version: '1.0.1' };
+    expect(await checkUpdateInfo(written, dir, options)).toEqual(expect.arrayContaining([expect.stringMatching(/sha512 does not match/)]));
+    const refreshed = await refreshUpdateInfo(written, dir);
+    expect(await checkUpdateInfo(refreshed, dir, options)).toEqual([]);
+    expect(refreshed).toEqual({ ...written, files: [{ url: setup.url, sha512: await sha512File(join(dir, setup.url)), size: Buffer.byteLength(signedBytes) }], sha512: await sha512File(join(dir, setup.url)) });
+    // An installer with a blockmap would need the blockmap rebuilt as well: refused.
+    await expect(refreshUpdateInfo({ ...written, files: [{ ...setup, blockMapSize: 10 }] }, dir)).rejects.toThrow(/blockmap/);
+    await expect(refreshUpdateInfo({ ...written, path: 'other.exe' }, dir)).rejects.toThrow(/legacy path/);
   });
 });
 
@@ -471,6 +488,28 @@ describe('scripts/release-assets.mjs (CI)', () => {
     expect(await checkAssets(withMac, '0.2.0')).toEqual(expect.arrayContaining([expect.stringMatching(/macOS arm64: not signed with a Developer ID and notarized/)]));
     const noReports = new Map([...withMac].filter(([name]) => !name.startsWith('build-report-darwin')));
     expect(await checkAssets(noReports, '0.2.0')).toEqual(expect.arrayContaining([expect.stringMatching(/unsigned or unverified macOS packages are never uploaded/)]));
+  });
+
+  it('Windows: an installer named as signed needs a build report with verified signatures; rehearsals never go up', async () => {
+    const folder = async (name: string, report: object) => {
+      const root = tempDir();
+      const setup = await releaseFile(root, name);
+      writeFileSync(join(root, 'latest.yml'), yaml().dump({ version: '1.0.1', files: [setup], path: setup.url, sha512: setup.sha512 }));
+      writeFileSync(join(root, 'build-report-win32-x64.json'), JSON.stringify({ version: '1.0.1', ...report }));
+      writeFileSync(join(root, 'OrbitDrop-1.0.1-third-party-sources.tar.gz'), 'sources');
+      return collectAssets(root);
+    };
+    const verified = { expected: 'signed', ok: true, files: [{ file: 'OrbitDrop.exe', signature: 'Valid' }] };
+    // SignPath: signed, every own executable Valid (scripts/package.mjs --signpath finish).
+    expect(await checkAssets(await folder('OrbitDrop-1.0.1-win-x64-setup.exe', { signing: { mode: 'Authenticode (SignPath)' }, signatures: verified }), '1.0.1')).toEqual([]);
+    // Unsigned and labelled so: as before.
+    expect(await checkAssets(await folder('OrbitDrop-1.0.1-win-x64-unsigned-setup.exe', { signing: { mode: 'unsigned' }, signatures: { expected: 'unsigned', ok: true } }), '1.0.1')).toEqual([]);
+    // A signed-looking name without the evidence, or a label that contradicts the report.
+    expect(await checkAssets(await folder('OrbitDrop-1.0.1-win-x64-setup.exe', { signing: { mode: 'unsigned' } }), '1.0.1')).toEqual([expect.stringMatching(/named as a signed installer, but .* no verified Authenticode signatures \("unsigned"\)/)]);
+    expect(await checkAssets(await folder('OrbitDrop-1.0.1-win-x64-setup.exe', { signing: { mode: 'Authenticode (SignPath)' }, signatures: { ...verified, ok: false } }), '1.0.1')).toEqual([expect.stringMatching(/no verified Authenticode signatures/)]);
+    expect(await checkAssets(await folder('OrbitDrop-1.0.1-win-x64-unsigned-setup.exe', { signing: { mode: 'Authenticode (SignPath)' }, signatures: verified }), '1.0.1')).toEqual([expect.stringMatching(/labelled unsigned, but its build report says "Authenticode \(SignPath\)"/)]);
+    // The rehearsal of the SignPath flow (self-signed stand-in) is never released, whatever its report says.
+    expect(await checkAssets(await folder('OrbitDrop-1.0.1-win-x64-rehearsal-setup.exe', { signing: { mode: 'Authenticode (SignPath rehearsal: self-signed stand-in, never released)' }, signatures: verified }), '1.0.1')).toEqual([expect.stringMatching(/rehearsal of the SignPath flow .* never goes to a release/)]);
   });
 
   it('uploads what CI built to the draft (created if needed) and the sums', async () => {

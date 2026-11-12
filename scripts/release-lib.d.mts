@@ -52,6 +52,7 @@ export function yaml(): { load(text: string): unknown; dump(value: unknown, opti
 export function formatSums(entries: Iterable<{ name: string; sha256: string }>): string;
 export function parseSums(text: string): Map<string, string>;
 export function mergeUpdateInfo(infos: readonly (UpdateInfo | null | undefined)[]): UpdateInfo | null;
+export function refreshUpdateInfo(info: UpdateInfo, dir: string): Promise<UpdateInfo>;
 export function checkUpdateInfo(info: unknown, dir: string, options: { platform: 'darwin' | 'win32'; version: string; archs?: readonly string[] }): Promise<string[]>;
 export function findReleases(options: { tag: string; run: Runner; repo?: string }): GitHubRelease[];
 export function findRelease(options: { tag: string; run: Runner; repo?: string }): GitHubRelease | null;

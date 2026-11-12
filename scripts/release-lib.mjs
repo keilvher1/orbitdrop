@@ -161,6 +161,32 @@ export async function checkUpdateInfo(info, dir, { platform, version, archs = []
   return problems;
 }
 
+/**
+ * Update metadata for files that changed after electron-builder wrote it — the Windows installer that
+ * SignPath signed (scripts/package.mjs --signpath finish): every listed file's sha512 and size from the
+ * file as it is now, the legacy top-level sha512 with them; version, path and release date stay. A file
+ * with a blockmap is refused (its blockmap would describe the old bytes; OrbitDrop's NSIS installer has
+ * none, nsis.differentialPackage: false).
+ */
+export async function refreshUpdateInfo(info, dir) {
+  if (!info || !Array.isArray(info.files) || info.files.length === 0) throw new Error('the update metadata lists no files');
+  const files = [];
+  for (const file of info.files) {
+    const url = String(file?.url ?? '');
+    if (!url || url !== basename(url)) throw new Error(`${JSON.stringify(url)} is not a plain file name`);
+    if (file.blockMapSize !== undefined) throw new Error(`${url} has a blockmap, which changing the file would invalidate`);
+    const path = join(dir, url);
+    files.push({ ...file, sha512: await sha512File(path), size: statSync(path).size });
+  }
+  const next = { ...info, files };
+  if (info.path !== undefined) {
+    const main = files.find((f) => f.url === info.path);
+    if (!main) throw new Error(`legacy path ${info.path} is not one of the files`);
+    next.sha512 = main.sha512;
+  }
+  return next;
+}
+
 // ── GitHub releases (gh CLI) ─────────────────────────────────────────────────
 
 /** Every release named after `tag`, drafts included (needs push access). */

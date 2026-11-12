@@ -21,9 +21,31 @@
 //
 // Signing: real signing happens only when credentials are provided through the environment
 // (macOS: CSC_LINK/CSC_NAME [+ APPLE_* for notarization]; Windows: WIN_CSC_LINK/CSC_LINK +
-// CSC_KEY_PASSWORD). Otherwise the build is explicitly UNSIGNED: macOS apps get an ad-hoc
-// signature (hardened runtime, build/entitlements.mac.adhoc.plist), notarization is disabled,
-// and every artifact name carries "-unsigned". Nothing is ever published.
+// CSC_KEY_PASSWORD), or — Windows releases — through SignPath (--signpath, below). Otherwise the build
+// is explicitly UNSIGNED: macOS apps get an ad-hoc signature (hardened runtime,
+// build/entitlements.mac.adhoc.plist), notarization is disabled, and every artifact name carries
+// "-unsigned". Nothing is ever published.
+//
+// Windows: every package's own executables (OrbitDrop.exe, OrbitDropHelper.exe, the installer and its
+// uninstaller) must carry ProductName "OrbitDrop" and ProductVersion = apps/desktop/package.json's
+// version (scripts/win-files.mjs); their Authenticode status must match the signing mode. The signing hook
+// scripts/win-sign.cjs (electron-builder.yml win.signtoolOptions.sign) fixes OrbitDrop.exe's ProductVersion
+// string and keeps a copy of the uninstaller for these checks.
+//
+// SignPath (Windows releases, .github/workflows/release.yml; docs/packaging.md §5): the signing happens
+// between three runs of this script in the same job, each followed by a SignPath signing request:
+//   --signpath prepare    full build (app folder + an installer that is thrown away), checks, smoke test;
+//                         stages OrbitDrop.exe, OrbitDropHelper.exe and the uninstaller in
+//                         release/signpath/request-1/ (request 1)
+//   --signpath installer --signed <dir>   the signed request-1 files (each checked to be the staged file
+//                         plus a signature) go into the app folder; electron-builder builds the installer
+//                         from it (--prepackaged) and puts the signed uninstaller in (scripts/win-sign.cjs);
+//                         the installer is staged in release/signpath/request-2/ (request 2)
+//   --signpath finish --signed <dir>      the signed installer replaces the unsigned one, latest.yml gets its
+//                         new sha512 and size, then every check, the smoke test, the native-module check, the
+//                         install test (--install-test) and the build report, with Valid signatures required.
+// ORBITDROP_SIGNPATH_REHEARSAL=1 marks a rehearsal of that flow (a self-signed stand-in instead of SignPath,
+// release.yml): the artifacts are labelled "-rehearsal" and never go to a release.
 //
 // Options:
 //   --arch <a>          arm64 | x64 | all (mac); x64 (win). Default: host architecture.
@@ -44,16 +66,21 @@
 //                       cache warm). best-effort reports it without failing the build — for CI runners
 //                       whose Rosetta 2 is unreliable (GitHub's macOS VM, docs/verification.md)
 //   --install-test      Windows: silently install the NSIS package per-user into a temp folder,
-//                       check the HKCU uninstall entry, smoke-test the installed exe, uninstall
+//                       check the HKCU uninstall entry, installer-preferences.json (update check on), the
+//                       installed executables' version information and signatures, smoke-test the installed
+//                       exe, uninstall (the file goes too); then once more with /NOUPDATECHECK (the file says off)
+//   --signpath <stage>  Windows release builds signed through SignPath: prepare | installer | finish (above)
+//   --signed <dir>      the files SignPath returned for the previous request (installer and finish stages)
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { homedir, tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findSigningIdentity, notaryCredentials, signAndNotarizeDmg } from './mac-dmg.mjs';
-import { checkUpdateInfo, createRunner, mergeUpdateInfo, yaml } from './release-lib.mjs';
+import { checkUpdateInfo, createRunner, mergeUpdateInfo, refreshUpdateInfo, yaml } from './release-lib.mjs';
+import { readWindowsFileFacts, signatureAddedOnly, signatureProblems, versionInfoProblems } from './win-files.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DESKTOP = join(ROOT, 'apps', 'desktop');
@@ -85,6 +112,9 @@ const opts = {
   installTest: flag('install-test'),
   smokeTimeoutMs: Number(option('smoke-timeout', '180')) * 1000,
   rosettaSmoke: option('rosetta-smoke', 'strict'),
+  signpath: option('signpath', null),
+  // Absolute: the signing hook reads files from it with electron-builder's working directory (apps/desktop).
+  signedDir: option('signed', null) === null ? null : resolve(option('signed', null)),
 };
 
 const errors = []; // always fatal
@@ -99,6 +129,15 @@ if (!['mac', 'win'].includes(target)) fatal(`unknown target "${target}" (expecte
 if (!['strict', 'best-effort'].includes(opts.rosettaSmoke)) fatal(`--rosetta-smoke must be strict or best-effort, not "${opts.rosettaSmoke}"`);
 if (target === 'mac' && process.platform !== 'darwin') fatal('macOS packages are built on macOS (codesign, hdiutil, the Swift helper). Use the macOS CI job.');
 if (target === 'win' && process.platform !== 'win32') fatal('Windows packages are built on Windows (MSVC helper, win32 sharp/canvas binaries). Use the Windows CI job.');
+if (opts.signpath !== null) {
+  if (!['prepare', 'installer', 'finish'].includes(opts.signpath)) fatal(`--signpath must be prepare, installer or finish, not "${opts.signpath}"`);
+  if (target !== 'win') fatal('--signpath is for Windows packages (macOS packages are signed with the Developer ID: docs/RELEASING.md)');
+  if (opts.unsigned || opts.dir) fatal('--signpath cannot be combined with --unsigned or --dir');
+  if (opts.signpath !== 'prepare' && !(opts.signedDir && existsSync(opts.signedDir))) fatal(`--signpath ${opts.signpath} needs --signed <folder with the files SignPath returned>`);
+}
+/** The second and third SignPath runs reuse what the first one built in this job (helper, bundles, licences). */
+const signpathLater = opts.signpath === 'installer' || opts.signpath === 'finish';
+const rehearsal = opts.signpath !== null && process.env.ORBITDROP_SIGNPATH_REHEARSAL === '1';
 
 const hostArch = process.arch === 'arm64' ? 'arm64' : 'x64';
 const archArg = option('arch', hostArch);
@@ -181,12 +220,17 @@ const hasSigningCreds = target === 'mac' ? Boolean(env.CSC_LINK || env.CSC_NAME)
 const canNotarize =
   target === 'mac' &&
   Boolean((env.APPLE_ID && env.APPLE_APP_SPECIFIC_PASSWORD && env.APPLE_TEAM_ID) || (env.APPLE_API_KEY && env.APPLE_API_KEY_ID && env.APPLE_API_ISSUER) || env.APPLE_KEYCHAIN_PROFILE);
-if (opts.requireSigning && (!hasSigningCreds || opts.unsigned)) fatal('--require-signing: no signing credentials in the environment (see docs/packaging.md)');
-const signed = hasSigningCreds && !opts.unsigned;
-const signing = signed
-  ? { mode: target === 'mac' ? 'Developer ID' : 'Authenticode', notarize: target === 'mac' ? canNotarize : null }
-  : { mode: target === 'mac' ? 'unsigned (ad-hoc signature)' : 'unsigned', notarize: target === 'mac' ? false : null };
-console.log(`  signing: ${signing.mode}${target === 'mac' ? `, notarization: ${signing.notarize ? 'yes' : 'no'}` : ''}`);
+if (opts.requireSigning && opts.signpath === null && (!hasSigningCreds || opts.unsigned)) fatal('--require-signing: no signing credentials in the environment (see docs/packaging.md)');
+// SignPath builds are signed (by SignPath, between the stages), never by a local certificate.
+const signed = opts.signpath !== null || (hasSigningCreds && !opts.unsigned);
+const signing =
+  opts.signpath !== null
+    ? { mode: rehearsal ? 'Authenticode (SignPath rehearsal: self-signed stand-in, never released)' : 'Authenticode (SignPath)', notarize: null, signpath: opts.signpath }
+    : signed
+      ? { mode: target === 'mac' ? 'Developer ID' : 'Authenticode', notarize: target === 'mac' ? canNotarize : null }
+      : { mode: target === 'mac' ? 'unsigned (ad-hoc signature)' : 'unsigned', notarize: target === 'mac' ? false : null };
+console.log(`  signing: ${signing.mode}${target === 'mac' ? `, notarization: ${signing.notarize ? 'yes' : 'no'}` : ''}${opts.signpath ? `, SignPath stage: ${opts.signpath}` : ''}`);
+if (opts.signpath !== null && hasSigningCreds) console.warn('  ⚠ WIN_CSC_LINK/CSC_LINK is set but ignored: this build is signed through SignPath');
 if (signed && target === 'mac' && !canNotarize) console.warn('  ⚠ signed but NOT notarized (no APPLE_* credentials): Gatekeeper will still block downloaded copies');
 if (opts.requireNotarization && target === 'mac' && !canNotarize) fatal('--require-notarization: no notarization credentials (APPLE_API_KEY + APPLE_API_KEY_ID + APPLE_API_ISSUER, or APPLE_KEYCHAIN_PROFILE; see docs/RELEASING.md)');
 
@@ -223,10 +267,10 @@ if (!/\bpnpm\//.test(env.npm_config_user_agent ?? '') && String(rootPkg.packageM
 }
 
 const builderConfig = [];
-if (!signed) {
+if (!signed || opts.signpath !== null) {
   for (const v of credentialVars) delete env[v];
   env.CSC_IDENTITY_AUTO_DISCOVERY = 'false';
-  if (target === 'mac') {
+  if (target === 'mac' && !signed) {
     // Ad-hoc signing involves no credentials, so it is safe on pull-request CI too
     // (electron-builder otherwise skips all signing when GITHUB_BASE_REF is set).
     env.CSC_FOR_PULL_REQUEST = 'true';
@@ -239,19 +283,34 @@ if (!signed) {
   }
 }
 
+// Windows: the signing hook (scripts/win-sign.cjs) records what electron-builder signs and copies the
+// uninstaller it generated, for the checks below (and for SignPath request 1).
+const UNINSTALLER_NAME = `Uninstall ${desktopPkg.productName}.exe`;
+const uninstallerCopy = join(RELEASE, 'uninstaller', UNINSTALLER_NAME);
+const signLog = join(RELEASE, 'sign-requests.jsonl');
+if (target === 'win') {
+  env.ORBITDROP_UNINSTALLER_COPY = uninstallerCopy;
+  env.ORBITDROP_SIGN_LOG = signLog;
+  delete env.ORBITDROP_SIGNED_UNINSTALLER;
+}
+
 // ── 3. license list + icons ──────────────────────────────────────────────────
-step('third-party license list');
-if (!existsSync(join(ROOT, 'scripts', 'licenses.mjs'))) fatal('scripts/licenses.mjs is missing');
-nodeScript('licenses.mjs', []);
-step('icons');
-nodeScript('gen-icons.mjs', ['--verify']);
+if (signpathLater) {
+  step(`SignPath ${opts.signpath} stage: licences, icons, helper and bundles come from the prepare stage of this job`);
+} else {
+  step('third-party license list');
+  if (!existsSync(join(ROOT, 'scripts', 'licenses.mjs'))) fatal('scripts/licenses.mjs is missing');
+  nodeScript('licenses.mjs', []);
+  step('icons');
+  nodeScript('gen-icons.mjs', ['--verify']);
+}
 
 // ── 4. native helper ─────────────────────────────────────────────────────────
 const helperName = target === 'mac' ? 'OrbitDropHelper' : 'OrbitDropHelper.exe';
 const stagedHelper = (a) => join(DESKTOP, 'resources', 'helper', `${os}-${a}`, helperName);
-step('native helper');
+if (!signpathLater) step('native helper');
 const nativeScript = join(ROOT, 'scripts', target === 'mac' ? 'build-native-mac.mjs' : 'build-native-win.mjs');
-for (const a of archs) {
+for (const a of signpathLater ? [] : archs) {
   if (!opts.skipNative) {
     if (!existsSync(nativeScript)) {
       incomplete.push(`native helper build script ${rel(nativeScript)} does not exist yet (owned by the ${target === 'mac' ? 'macos' : 'windows'}-helper workstream)`);
@@ -269,12 +328,12 @@ for (const a of archs) {
     else fatal(`${rel(buildInfo)} says CROSS-COMPILED / NOT VERIFIED ON WINDOWS. Build the helper on Windows (node scripts/build-native-win.mjs), or set ORBITDROP_ALLOW_CROSS_HELPER=1 for a config-only test build.`);
   }
 }
-const helperMissing = archs.some((a) => !existsSync(stagedHelper(a)));
+const helperMissing = !signpathLater && archs.some((a) => !existsSync(stagedHelper(a)));
 if (incomplete.length && !opts.allowIncomplete) fatal(`cannot package:\n  - ${incomplete.join('\n  - ')}\n  (use --allow-incomplete to test the pipeline anyway; artifacts will be labelled "-incomplete")`);
 
 // ── 5. bundles ───────────────────────────────────────────────────────────────
 step('electron-vite build');
-if (!opts.skipBuild) {
+if (!opts.skipBuild && !signpathLater) {
   const viteCli = join(ROOT, 'node_modules', 'electron-vite', 'bin', 'electron-vite.js');
   run(process.execPath, [viteCli, 'build'], { cwd: DESKTOP });
 }
@@ -290,9 +349,123 @@ else if (aumid !== builderYml.appId) fatal(`appId mismatch: electron-builder.yml
 // The windows load the UI from file:// inside app.asar (loadFile), which needs this fuse enabled.
 const uiFromFile = /\.loadFile\(/.test(mainBundle);
 
+// ── 6a. SignPath stages (Windows releases: .github/workflows/release.yml, docs/packaging.md §5) ──
+const SIGNPATH_DIR = join(RELEASE, 'signpath');
+const SIGNPATH_STATE = join(SIGNPATH_DIR, 'state.json');
+const winExe = `${desktopPkg.productName}.exe`;
+/** Request 1: our executables inside the app folder, and the uninstaller (which goes into the installer). */
+const REQUEST_1 = [
+  { name: winExe, inApp: [winExe] },
+  { name: 'OrbitDropHelper.exe', inApp: ['resources', 'helper', 'OrbitDropHelper.exe'] },
+  { name: UNINSTALLER_NAME, inApp: null },
+];
+
+function readSignpathState() {
+  if (!existsSync(SIGNPATH_STATE)) fatal(`${rel(SIGNPATH_STATE)} is missing: run --signpath prepare first, in the same job`);
+  const state = JSON.parse(readFileSync(SIGNPATH_STATE, 'utf8'));
+  if (state.version !== desktopPkg.version || state.commit !== (source?.commit ?? null)) {
+    fatal(`${rel(SIGNPATH_STATE)} belongs to ${state.version} (${state.commit}), not to this ${desktopPkg.version} checkout (${source?.commit ?? 'no commit'})`);
+  }
+  return state;
+}
+
+/**
+ * A file SignPath returned must be the file that was sent plus a signature (scripts/win-files.mjs), with a
+ * Valid signature and the right version information. Returns the problems.
+ */
+function checkSignedFile(sent, returned) {
+  if (!existsSync(returned)) return [`${basename(returned)} is not among the files SignPath returned (${rel(dirname(returned))})`];
+  const match = signatureAddedOnly(readFileSync(sent), readFileSync(returned));
+  if (!match.ok) return [`${basename(returned)}: not the file sent for signing plus a signature (${match.reason})`];
+  const facts = readWindowsFileFacts([returned]);
+  return [...signatureProblems(facts, { expected: 'signed' }), ...versionInfoProblems(facts, { productName: desktopPkg.productName, version: desktopPkg.version })];
+}
+
+/** prepare, after every check passed: request 1 in release/signpath/request-1/ and the state for the next stages. */
+function stageRequest1(result) {
+  step('SignPath request 1: stage OrbitDrop.exe, OrbitDropHelper.exe and the uninstaller');
+  const dir = join(SIGNPATH_DIR, 'request-1');
+  rmSync(SIGNPATH_DIR, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+  const files = [];
+  for (const item of REQUEST_1) {
+    const from = item.inApp ? join(ROOT, result.app.path, ...item.inApp) : uninstallerCopy;
+    if (!existsSync(from)) {
+      errors.push(`SignPath request 1: ${rel(from)} is missing`);
+      continue;
+    }
+    copyFileSync(from, join(dir, item.name));
+    files.push({ name: item.name, bytes: statSync(from).size });
+    console.log(`  ${item.name} (${mb(statSync(from).size)})`);
+  }
+  writeFileSync(SIGNPATH_STATE, `${JSON.stringify({ version: desktopPkg.version, commit: source?.commit ?? null, request1: files }, null, 2)}\n`);
+  // The installer built in this stage contains the unsigned executables: the installer stage builds the real one.
+  for (const x of result.artifacts) rmSync(join(ROOT, x.path), { force: true });
+  rmSync(join(RELEASE, 'latest.yml'), { force: true });
+  result.artifacts = [];
+  console.log(`  → upload ${rel(dir)} as the artifact of SignPath request 1 (artifact configuration apps/desktop/build/signpath/windows-binaries.xml)`);
+}
+
+/** installer, before electron-builder: the signed request-1 files go into the app folder (each one checked). */
+function useSignedRequest1(appDir) {
+  step(`SignPath installer: the signed executables from ${rel(opts.signedDir)}`);
+  readSignpathState();
+  const problems = [];
+  for (const item of REQUEST_1) problems.push(...checkSignedFile(join(SIGNPATH_DIR, 'request-1', item.name), join(opts.signedDir, item.name)));
+  if (problems.length) fatal(`SignPath request 1 did not return what was sent, signed:\n  - ${problems.join('\n  - ')}`);
+  for (const item of REQUEST_1) {
+    if (!item.inApp) continue;
+    copyFileSync(join(opts.signedDir, item.name), join(appDir, ...item.inApp));
+    console.log(`  ${item.name}: signed copy in ${rel(join(appDir, ...item.inApp))}`);
+  }
+  // scripts/win-sign.cjs puts this signed uninstaller into the installer instead of the one NSIS generates now.
+  env.ORBITDROP_SIGNED_UNINSTALLER = join(opts.signedDir, UNINSTALLER_NAME);
+}
+
+/** installer, after every check passed: request 2 (the installer) in release/signpath/request-2/. */
+function stageRequest2(result) {
+  step('SignPath request 2: stage the installer');
+  const state = readSignpathState();
+  const setup = result.artifacts.find((x) => x.path.endsWith('-setup.exe'));
+  if (!setup) {
+    errors.push('SignPath request 2: electron-builder built no installer');
+    return;
+  }
+  const dir = join(SIGNPATH_DIR, 'request-2');
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+  const name = basename(setup.path);
+  copyFileSync(join(ROOT, setup.path), join(dir, name));
+  writeFileSync(SIGNPATH_STATE, `${JSON.stringify({ ...state, request2: { name, bytes: setup.bytes, sha256: setup.sha256 } }, null, 2)}\n`);
+  console.log(`  ${name} (${mb(setup.bytes)}) → upload ${rel(dir)} as the artifact of SignPath request 2 (apps/desktop/build/signpath/windows-installer.xml)`);
+}
+
+/** finish: the signed installer replaces the unsigned one, latest.yml follows it. False when it cannot. */
+async function useSignedInstaller() {
+  const state = readSignpathState();
+  if (!state.request2?.name) fatal(`${rel(SIGNPATH_STATE)} names no installer: run --signpath installer first`);
+  const name = state.request2.name;
+  const problems = checkSignedFile(join(SIGNPATH_DIR, 'request-2', name), join(opts.signedDir, name));
+  if (problems.length) {
+    for (const problem of problems) errors.push(`SignPath request 2: ${problem}`);
+    return false;
+  }
+  copyFileSync(join(opts.signedDir, name), join(RELEASE, name));
+  const file = join(RELEASE, 'latest.yml');
+  if (!existsSync(file)) {
+    errors.push(`${rel(file)} is missing (written by the installer stage)`);
+    return false;
+  }
+  const info = await refreshUpdateInfo(yaml().load(readFileSync(file, 'utf8')), RELEASE);
+  writeFileSync(file, yaml().dump(info, { lineWidth: 8000, noRefs: true }));
+  console.log(`  ${name}: signed (${mb(statSync(join(RELEASE, name)).size)}); latest.yml: new sha512 and size`);
+  return true;
+}
+
 // ── 6. electron-builder per arch ─────────────────────────────────────────────
 const labels = [];
 if (!signed) labels.push('unsigned');
+if (rehearsal) labels.push('rehearsal');
 if (helperMissing) labels.push('incomplete');
 const suffix = labels.map((l) => `-${l}`).join('');
 if (suffix) {
@@ -343,16 +516,32 @@ const results = [];
 /** latest-mac.yml of every macOS arch run (each run writes only its own zip; merged below). */
 const macUpdateInfos = [];
 for (const a of archs) {
-  step(`electron-builder ${target} ${a}`);
   const started = Date.now() - 2000;
   const outBefore = outManifest();
   const targets = opts.dir ? ['dir'] : target === 'mac' ? ['dmg', 'zip'] : ['nsis'];
-  const r = run(process.execPath, [builderCli, `--${target}`, ...targets, `--${a}`, '--publish', 'never', '--projectDir', '.', ...builderConfig], {
-    cwd: DESKTOP,
-    env,
-    allowFail: true,
-  });
-  const result = { os, arch: a, ok: r.status === 0, signing, labels, artifacts: [], app: null, inspection: {}, smoke: null };
+  const winAppDir = join(RELEASE, 'win-unpacked');
+  let status;
+  if (opts.signpath === 'finish') {
+    // No electron-builder run: the installer SignPath signed replaces the one the installer stage built.
+    step(`SignPath finish: the signed installer from ${rel(opts.signedDir)}`);
+    status = (await useSignedInstaller()) ? 0 : 1;
+  } else {
+    if (target === 'win') {
+      rmSync(signLog, { force: true });
+      rmSync(dirname(uninstallerCopy), { recursive: true, force: true });
+    }
+    // SignPath installer stage: the signed executables go into the app folder, which electron-builder packs as it is.
+    const prepackaged = opts.signpath === 'installer' ? ['--prepackaged', winAppDir] : [];
+    if (opts.signpath === 'installer') useSignedRequest1(winAppDir);
+    step(`electron-builder ${target} ${a}${prepackaged.length ? ' (installer from the signed app folder)' : ''}`);
+    const r = run(process.execPath, [builderCli, `--${target}`, ...targets, `--${a}`, '--publish', 'never', '--projectDir', '.', ...prepackaged, ...builderConfig], {
+      cwd: DESKTOP,
+      env,
+      allowFail: true,
+    });
+    status = r.status;
+  }
+  const result = { os, arch: a, ok: status === 0, signing, labels, artifacts: [], app: null, inspection: {}, smoke: null };
   results.push(result);
   if (outManifest() !== outBefore) {
     result.ok = false;
@@ -360,11 +549,11 @@ for (const a of archs) {
     continue;
   }
   if (!result.ok) {
-    console.error(`  ✖ electron-builder failed for ${os}-${a} (exit ${r.status}); see the after-pack messages above`);
+    console.error(`  ✖ electron-builder failed for ${os}-${a} (exit ${status}); see the after-pack messages above`);
     continue;
   }
   // unpacked app produced by electron-builder
-  const appDir = target === 'mac' ? join(RELEASE, a === 'arm64' ? 'mac-arm64' : 'mac', `${desktopPkg.productName}.app`) : join(RELEASE, 'win-unpacked');
+  const appDir = target === 'mac' ? join(RELEASE, a === 'arm64' ? 'mac-arm64' : 'mac', `${desktopPkg.productName}.app`) : winAppDir;
   result.app = { path: rel(appDir), bytes: existsSync(appDir) ? duBytes(appDir) : 0 };
   // artifacts written during this run (blockmaps: differential downloads of the macOS zips)
   for (const name of existsSync(RELEASE) ? readdirSync(RELEASE) : []) {
@@ -531,7 +720,48 @@ function inspectWin(result, appDir) {
   ins.chromiumLicenses = existsSync(join(appDir, 'LICENSES.chromium.html'));
   if (!ins.exe) errors.push('win: OrbitDrop.exe missing from win-unpacked');
   if (!ins.licenses) errors.push('win: THIRD_PARTY_LICENSES.md missing from resources');
+  // What electron-builder handed to the signing hook in this run (scripts/win-sign.cjs; none in the finish stage).
+  if (existsSync(signLog)) {
+    ins.signRequests = readFileSync(signLog, 'utf8').trim().split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line).name);
+  }
   for (const [k, v] of Object.entries(ins)) console.log(`  ${k}: ${JSON.stringify(v)}`);
+  inspectWinExecutables(result, appDir);
+}
+
+/** The Authenticode state OrbitDrop's own executables must be in after this run (null: mixed, SignPath installer stage). */
+function expectedWinSignatures() {
+  if (opts.signpath === 'prepare') return 'unsigned'; // SignPath signs them after this stage
+  if (opts.signpath === 'installer') return null; // the executables are signed, the new installer not yet
+  return signed ? 'signed' : 'unsigned';
+}
+
+/**
+ * OrbitDrop.exe, OrbitDropHelper.exe, the installer and the uninstaller (the copy the signing hook kept):
+ * ProductName "OrbitDrop", ProductVersion = the package version, and the signature state of this build
+ * (scripts/win-files.mjs). The facts go to the build report (`signatures`).
+ */
+function inspectWinExecutables(result, appDir) {
+  const files = [join(appDir, `${desktopPkg.productName}.exe`), join(appDir, 'resources', 'helper', 'OrbitDropHelper.exe')];
+  const setup = result.artifacts.find((x) => x.path.endsWith('-setup.exe'));
+  if (setup) files.push(join(ROOT, setup.path));
+  if (existsSync(uninstallerCopy)) files.push(uninstallerCopy);
+  else if (!opts.dir) errors.push(`win: no copy of the uninstaller at ${rel(uninstallerCopy)} — electron-builder did not call scripts/win-sign.cjs (electron-builder.yml win.signtoolOptions.sign)`);
+  let facts = [];
+  try {
+    facts = readWindowsFileFacts(files.filter((f) => existsSync(f)));
+  } catch (err) {
+    errors.push(`win: ${err.message}`);
+  }
+  const expected = expectedWinSignatures();
+  const versionProblems = versionInfoProblems(facts, { productName: desktopPkg.productName, version: desktopPkg.version });
+  const signatureIssues = expected === null ? [] : signatureProblems(facts, { expected });
+  for (const problem of [...versionProblems, ...signatureIssues]) errors.push(`win: ${problem}`);
+  result.signatures = {
+    expected,
+    ok: facts.length === files.length && versionProblems.length === 0 && signatureIssues.length === 0 && expected !== null,
+    files: facts.map((f) => ({ file: basename(f.path), productName: f.productName, productVersion: f.productVersion, fileVersion: f.fileVersion, signature: f.signature, signer: f.signer ?? null, timestamped: Boolean(f.timestamped) })),
+  };
+  for (const f of result.signatures.files) console.log(`  ${f.file}: ${f.productName} ${f.productVersion} · ${f.signature}${f.signer ? ` (${f.signer})` : ''}`);
 }
 
 /**
@@ -588,6 +818,8 @@ if (target === 'mac' && dmgPlan.mode === 'notarize') {
 }
 
 // ── 8. smoke test ────────────────────────────────────────────────────────────
+/** The SignPath installer stage only builds the installer; the finish stage runs every check on the signed result. */
+const runChecks = opts.signpath !== 'installer';
 function smokeTest(binary, { x64OnArm = false } = {}) {
   return new Promise((resolve) => {
     const cmd = x64OnArm ? 'arch' : binary;
@@ -710,7 +942,7 @@ for (const result of results) {
       if (!opts.skipSmoke) await runSmoke(result, exe(appInDmg));
     });
     if (result.smoke) result.smoke.ranFrom = 'dmg';
-  } else if (!opts.skipSmoke) {
+  } else if (!opts.skipSmoke && runChecks) {
     await runSmoke(result, exe(join(ROOT, result.app.path)));
     if (result.smoke) result.smoke.ranFrom = 'app folder';
   }
@@ -770,7 +1002,7 @@ function nativeCheck(result) {
   console.log(`  → ${report.ok ? 'OK' : `FAILED: ${report.problems.join('; ')}`}`);
   return { ran: true, ...report };
 }
-if (!opts.skipSmoke) {
+if (!opts.skipSmoke && runChecks) {
   for (const result of results) {
     if (!result.ok) continue;
     result.nativeCheck = nativeCheck(result);
@@ -780,13 +1012,36 @@ if (!opts.skipSmoke) {
 }
 
 // ── 10. Windows install / uninstall test ─────────────────────────────────────
+const PREFERENCES_FILE = 'installer-preferences.json';
+const uninstallKey = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall';
+const uninstallEntryPresent = () => {
+  const r = capture('reg', ['query', uninstallKey, '/s', '/f', desktopPkg.productName, '/d']);
+  return r.status === 0 && r.out.includes(desktopPkg.productName);
+};
+/** installer-preferences.json of an installation folder (apps/desktop/build/installer.nsh), parsed; null when missing or not JSON. */
+function installedPreferences(dir) {
+  try {
+    return JSON.parse(readFileSync(join(dir, PREFERENCES_FILE), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+/** Runs the uninstaller silently and waits for it: the NSIS uninstaller re-launches itself from %TEMP% and returns at once. */
+async function uninstallSilently(dir, uninstaller, exe) {
+  spawnSync(join(dir, uninstaller), ['/S'], { stdio: 'inherit', timeout: 300000 });
+  // The copy removes the files first and the uninstall registry key after them. Wait for both (seen on the runner: the
+  // key was still there right after the files had gone).
+  for (let i = 0; i < 60 && (existsSync(exe) || uninstallEntryPresent()); i++) await new Promise((r) => setTimeout(r, 1000));
+  return { uninstalled: !existsSync(exe), uninstallEntryRemoved: !uninstallEntryPresent(), installFolderRemoved: !existsSync(dir), preferencesRemoved: !existsSync(join(dir, PREFERENCES_FILE)) };
+}
+
 async function installTestWin(result) {
   const setup = result.artifacts.find((x) => x.path.endsWith('-setup.exe'));
   const out = { ran: false };
   if (!setup) return { ...out, error: 'no NSIS installer was built' };
   const dir = mkdtempSync(join(tmpdir(), 'orbitdrop-install-'));
   const setupPath = join(ROOT, setup.path);
-  step(`install test: ${rel(setupPath)} → ${dir}`);
+  step(`install test: ${rel(setupPath)} /S → ${dir}`);
   // NSIS: /S = silent; /D= must be the last argument and must not be quoted.
   const install = spawnSync(setupPath, ['/S', `/D=${dir}`], { stdio: 'inherit', windowsVerbatimArguments: true, timeout: 300000 });
   out.ran = true;
@@ -797,10 +1052,23 @@ async function installTestWin(result) {
   out.licenses = existsSync(join(dir, 'resources', 'THIRD_PARTY_LICENSES.md')) && existsSync(join(dir, 'LICENSES.chromium.html'));
   const uninstaller = readdirSync(dir).find((f) => /^Uninstall .*\.exe$/i.test(f));
   out.uninstaller = uninstaller ?? null;
-  const reg = capture('reg', ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall', '/s', '/f', desktopPkg.productName, '/d']);
-  out.perUserUninstallEntry = reg.status === 0 && reg.out.includes(desktopPkg.productName);
+  out.perUserUninstallEntry = uninstallEntryPresent();
   const regLm = capture('reg', ['query', 'HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall', '/s', '/f', desktopPkg.productName, '/d']);
   out.perMachineUninstallEntry = regLm.status === 0 && regLm.out.includes(desktopPkg.productName);
+  // A silent install keeps the default: automatic update checks on.
+  out.preferences = installedPreferences(dir);
+  // What the installer put on disk: OrbitDrop.exe, the helper and the uninstaller as they were built (and signed).
+  if (out.installed) {
+    const installedFiles = [exe, join(dir, 'resources', 'helper', 'OrbitDropHelper.exe'), ...(uninstaller ? [join(dir, uninstaller)] : [])].filter((f) => existsSync(f));
+    try {
+      const facts = readWindowsFileFacts(installedFiles);
+      out.files = facts.map((f) => ({ file: basename(f.path), productName: f.productName, productVersion: f.productVersion, signature: f.signature, signer: f.signer ?? null }));
+      const expected = expectedWinSignatures();
+      out.fileProblems = [...versionInfoProblems(facts, { productName: desktopPkg.productName, version: desktopPkg.version }), ...(expected ? signatureProblems(facts, { expected }) : [])];
+    } catch (err) {
+      out.fileProblems = [err.message];
+    }
+  }
   if (out.installed && !opts.skipSmoke) {
     step('smoke test (installed copy)');
     out.smoke = await smokeTest(exe);
@@ -808,36 +1076,42 @@ async function installTestWin(result) {
   }
   if (uninstaller) {
     step('uninstall');
-    spawnSync(join(dir, uninstaller), ['/S'], { stdio: 'inherit', timeout: 300000 });
-    // The NSIS uninstaller re-launches itself from %TEMP% and returns at once; the copy removes the
-    // files first and the uninstall registry key after them. Wait for both (seen on the runner: the
-    // key was still there right after the files had gone).
-    const entryPresent = () => {
-      const r = capture('reg', ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall', '/s', '/f', desktopPkg.productName, '/d']);
-      return r.status === 0 && r.out.includes(desktopPkg.productName);
-    };
-    for (let i = 0; i < 60 && (existsSync(exe) || entryPresent()); i++) await new Promise((r) => setTimeout(r, 1000));
-    out.uninstalled = !existsSync(exe);
-    out.uninstallEntryRemoved = !entryPresent();
-    out.installFolderRemoved = !existsSync(dir);
+    Object.assign(out, await uninstallSilently(dir, uninstaller, exe));
   }
+  // /NOUPDATECHECK: the same silent install with the update check off (the box on the installer's privacy page).
+  const dirOff = mkdtempSync(join(tmpdir(), 'orbitdrop-install-noupdatecheck-'));
+  step(`install test: ${rel(setupPath)} /S /NOUPDATECHECK → ${dirOff}`);
+  const installOff = spawnSync(setupPath, ['/S', '/NOUPDATECHECK', `/D=${dirOff}`], { stdio: 'inherit', windowsVerbatimArguments: true, timeout: 300000 });
+  const exeOff = join(dirOff, `${desktopPkg.productName}.exe`);
+  out.noUpdateCheck = { installExit: installOff.status, installed: existsSync(exeOff), preferences: installedPreferences(dirOff) };
+  const uninstallerOff = existsSync(dirOff) ? readdirSync(dirOff).find((f) => /^Uninstall .*\.exe$/i.test(f)) : undefined;
+  if (uninstallerOff) Object.assign(out.noUpdateCheck, await uninstallSilently(dirOff, uninstallerOff, exeOff));
+
   console.log(`  install test: ${JSON.stringify({ ...out, smoke: out.smoke ? { ok: out.smoke.ok, report: out.smoke.report } : undefined })}`);
+  const preferences = (p, autoCheck) => p !== null && typeof p === 'object' && p.version === 1 && p.updates?.autoCheck === autoCheck;
   if (install.status !== 0 || !out.installed) errors.push(`win: silent per-user install failed (exit ${install.status})`);
   if (out.installed && !out.helper) errors.push('win: installed app has no resources/helper/OrbitDropHelper.exe');
   if (out.installed && !out.licenses) errors.push('win: installed app is missing licence files');
   if (out.perMachineUninstallEntry) errors.push('win: installer registered itself under HKLM (expected per-user HKCU only)');
   if (out.installed && !out.perUserUninstallEntry) errors.push('win: no HKCU uninstall entry after install');
+  if (out.installed && !preferences(out.preferences, true)) errors.push(`win: /S install: ${PREFERENCES_FILE} is ${JSON.stringify(out.preferences)}, expected {"version":1,"updates":{"autoCheck":true}}`);
+  for (const problem of out.fileProblems ?? []) errors.push(`win: installed copy: ${problem}`);
   if (out.smoke && !out.smoke.ok) (out.smoke.implemented ? errors : incomplete).push('win: smoke test of the installed copy did not pass');
   if (uninstaller && (!out.uninstalled || !out.uninstallEntryRemoved)) errors.push('win: silent uninstall left files or registry entries behind');
+  if (uninstaller && !out.preferencesRemoved) errors.push(`win: the uninstaller left ${PREFERENCES_FILE} behind`);
+  if (installOff.status !== 0 || !out.noUpdateCheck.installed) errors.push(`win: silent install with /NOUPDATECHECK failed (exit ${installOff.status})`);
+  else if (!preferences(out.noUpdateCheck.preferences, false)) errors.push(`win: /S /NOUPDATECHECK install: ${PREFERENCES_FILE} is ${JSON.stringify(out.noUpdateCheck.preferences)}, expected {"version":1,"updates":{"autoCheck":false}}`);
+  if (out.noUpdateCheck.installed && (!out.noUpdateCheck.uninstalled || !out.noUpdateCheck.preferencesRemoved)) errors.push('win: uninstalling the /NOUPDATECHECK install left files behind');
   return out;
 }
-if (target === 'win' && opts.installTest && !opts.dir) {
+if (target === 'win' && opts.installTest && !opts.dir && (opts.signpath === null || opts.signpath === 'finish')) {
   for (const result of results) if (result.ok) result.installTest = await installTestWin(result);
 }
 
 // ── 10b. update metadata (latest-mac.yml merged from both arch runs / latest.yml) ──
 let updateInfo = null;
-const builtTargets = results.filter((r) => r.ok && !opts.dir);
+// The SignPath prepare stage throws its installer away and the installer stage's one is not signed yet: the finish stage checks.
+const builtTargets = opts.signpath === 'prepare' || opts.signpath === 'installer' ? [] : results.filter((r) => r.ok && !opts.dir);
 if (builtTargets.length > 0) {
   const file = join(RELEASE, target === 'mac' ? 'latest-mac.yml' : 'latest.yml');
   let info = null;
@@ -862,9 +1136,22 @@ if (opts.requireNotarization && target === 'mac') {
   }
 }
 
+// ── 10c. SignPath: stage the next signing request (only when everything above passed) ──
+if (opts.signpath === 'prepare' || opts.signpath === 'installer') {
+  const result = results.find((r) => r.ok);
+  if (result && errors.length === 0 && incomplete.length === 0) {
+    if (opts.signpath === 'prepare') stageRequest1(result);
+    else stageRequest2(result);
+  } else {
+    errors.push(`SignPath ${opts.signpath} stage: nothing staged for signing because of the problems above`);
+  }
+}
+
 // ── 11. report ───────────────────────────────────────────────────────────────
 mkdirSync(RELEASE, { recursive: true });
-for (const r of results) {
+// The SignPath prepare and installer stages are halfway: the finish stage writes the report of the signed package.
+const writeReports = opts.signpath === null || opts.signpath === 'finish';
+for (const r of writeReports ? results : []) {
   const file = join(RELEASE, `build-report-${r.os}-${r.arch}.json`);
   writeFileSync(file, `${JSON.stringify({ generatedAt: new Date().toISOString(), version: desktopPkg.version, host: `${process.platform}-${process.arch}`, source, ...r, updateInfo }, null, 2)}\n`);
 }
@@ -877,10 +1164,20 @@ for (const r of results) {
   if (r.smoke) console.log(`    smoke: ${r.smoke.ok ? 'OK' : r.smoke.ran ? (r.smoke.implemented ? 'FAILED' : 'not implemented') : `not run (${r.smoke.error})`}${r.smoke.bestEffort ? ' (best effort: Rosetta 2 on this runner)' : ''}${r.smoke.firstAttempt ? ' (second launch)' : ''}`);
   if (r.nativeCheck) console.log(`    native-module check: ${r.nativeCheck.ran ? (r.nativeCheck.ok ? `OK (librsvg ${r.nativeCheck.sharp?.rsvg}, ${r.nativeCheck.koreanFont}, pdf-lib + docx)` : 'FAILED') : `not run (${r.nativeCheck.reason})`}`);
   if (r.dmgNotarization) console.log(`    DMG: ${r.dmgNotarization.ok ? `signed, notarized, stapled (${r.dmgNotarization.spctl})` : r.dmgNotarization.skipped ? `not notarized (${r.dmgNotarization.skipped})` : `FAILED at ${r.dmgNotarization.failedAt ?? '?'}`}`);
-  console.log(`    report: ${rel(join(RELEASE, `build-report-${r.os}-${r.arch}.json`))}`);
+  if (r.signatures) console.log(`    executables: ${r.signatures.files.map((f) => `${f.file} ${f.productVersion} ${f.signature}`).join(', ')}${r.signatures.ok ? ' (as expected)' : ''}`);
+  if (writeReports) console.log(`    report: ${rel(join(RELEASE, `build-report-${r.os}-${r.arch}.json`))}`);
 }
 // GitHub Actions job summary (signing status is part of what reviewers must see).
-if (process.env.GITHUB_STEP_SUMMARY) {
+if (process.env.GITHUB_STEP_SUMMARY && !writeReports) {
+  const staged = opts.signpath === 'prepare' ? 'request-1' : 'request-2';
+  const ok = errors.length === 0 && existsSync(join(SIGNPATH_DIR, staged));
+  const line = `### SignPath ${opts.signpath} stage\n\n${ok ? `Staged \`apps/desktop/release/signpath/${staged}/\` for signing.` : '**Failed**: nothing staged for signing (see the log).'}\n`;
+  try {
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, line);
+  } catch (err) {
+    console.warn(`  ⚠ could not write the job summary: ${err.message}`);
+  }
+} else if (process.env.GITHUB_STEP_SUMMARY) {
   const lines = ['### OrbitDrop packages', '', '| Target | Signing | Notarized (app / DMG) | Smoke test | Native modules | Artifacts |', '|---|---|---|---|---|---|'];
   for (const r of results) {
     const smoke = (!r.smoke ? 'not run' : r.smoke.ok ? 'OK' : r.smoke.ran ? (r.smoke.implemented ? 'FAILED' : 'not implemented') : `not run (${r.smoke.error})`) + (r.smoke?.bestEffort ? ' (best effort: Rosetta 2 on this runner)' : '');
@@ -888,7 +1185,11 @@ if (process.env.GITHUB_STEP_SUMMARY) {
     const nat = !r.nativeCheck ? 'not run' : !r.nativeCheck.ran ? 'skipped' : r.nativeCheck.ok ? `OK (librsvg ${r.nativeCheck.sharp?.rsvg}, ${r.nativeCheck.koreanFont}, pdf-lib + docx)` : 'FAILED';
     const notarized = r.signing.notarize === null ? 'n/a' : `${r.signing.notarize ? 'yes' : 'no'} / ${r.dmgNotarization?.ok ? 'yes' : 'no'}`;
     lines.push(`| ${r.os}-${r.arch} | ${r.signing.mode} | ${notarized} | ${smoke} | ${nat} | ${files} |`);
-    if (r.installTest) lines.push(`| ${r.os}-${r.arch} install test | | | ${r.installTest.smoke?.ok ? 'OK' : 'see log'} | | installed=${r.installTest.installed}, HKCU entry=${r.installTest.perUserUninstallEntry}, uninstalled=${r.installTest.uninstalled} |`);
+    if (r.installTest) {
+      const it = r.installTest;
+      lines.push(`| ${r.os}-${r.arch} install test | | | ${it.smoke?.ok ? 'OK' : 'see log'} | | installed=${it.installed}, HKCU entry=${it.perUserUninstallEntry}, update check /S=${it.preferences?.updates?.autoCheck}, /NOUPDATECHECK=${it.noUpdateCheck?.preferences?.updates?.autoCheck}, uninstalled=${it.uninstalled} |`);
+    }
+    if (r.signatures) lines.push(`| ${r.os}-${r.arch} executables | ${r.signatures.files.map((f) => `\`${f.file}\` ${f.signature}${f.signer ? ` (${f.signer.replace(/\|/g, '/')})` : ''}`).join('<br>')} | | | | ProductName/ProductVersion: ${r.signatures.files.map((f) => `${f.productName} ${f.productVersion}`).join(', ')} |`);
   }
   if (updateInfo) lines.push('', `Update metadata \`${updateInfo.file.split('/').pop()}\`: ${updateInfo.files.map((f) => `\`${f}\``).join(', ')}${updateInfo.problems.length ? ` — **${updateInfo.problems.length} problem(s)**` : ' (checked against the files)'}`);
   try {
