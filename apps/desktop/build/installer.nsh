@@ -32,7 +32,8 @@
 ; ------------------------------------------------------------------------------------------------
 ; Privacy notice and the automatic update check (installer only).
 ;
-; OrbitDrop's only network use is the automatic update check against GitHub (on by default). An
+; OrbitDrop's only automatic network use is the update check against GitHub (on by default); the
+; optional Claude analysis sends a file only when the user turned it on and dropped that file on it. An
 ; interactive install shows a short privacy notice after the folder page, in the installer's
 ; language, with a link to the privacy statement and the box "업데이트 자동 확인 / Check for updates
 ; automatically" (ticked). Unattended installs keep the default; `/NOUPDATECHECK` turns it off:
@@ -57,8 +58,8 @@
   LangString orbitdropPrivacyTitle 1033 "Privacy and updates"
   LangString orbitdropPrivacySubtitle 1042 "OrbitDrop이 인터넷을 쓰는 곳을 확인하세요."
   LangString orbitdropPrivacySubtitle 1033 "When OrbitDrop uses the internet."
-  LangString orbitdropPrivacyText 1042 "OrbitDrop은 파일을 이 컴퓨터에서만 처리합니다. 파일, 파일 이름, 사용 기록은 어디로도 보내지 않습니다.$\r$\n$\r$\n인터넷을 쓰는 곳은 업데이트 자동 확인 하나뿐입니다. 켜 두면 실행 1분 뒤와 그 뒤 6시간마다 GitHub(github.com)에 새 버전이 있는지 묻습니다. 이때 GitHub에는 IP 주소 같은 일반 접속 정보와 이 운영체제용 업데이트 파일 요청만 전달되며, 기기 식별자는 보내지 않습니다. 설치한 뒤에도 설정 › 일반에서 바꿀 수 있습니다."
-  LangString orbitdropPrivacyText 1033 "OrbitDrop processes your files on this computer only. It never sends files, file names or usage data anywhere.$\r$\n$\r$\nIts only network use is the automatic update check. When it is on, OrbitDrop asks GitHub (github.com) for a newer version one minute after it starts and every six hours after that. GitHub then receives only standard connection details such as your IP address and a request for this system's update file, no device ID. You can change this later in Settings › General."
+  LangString orbitdropPrivacyText 1042 "OrbitDrop은 변환과 편집을 이 컴퓨터에서만 처리하며 파일, 파일 이름, 사용 기록을 어디로도 보내지 않습니다. 예외는 직접 켜는 Claude 분석(처음에는 꺼짐)으로, 켜면 거기에 놓은 파일만 내 API 키로 Anthropic에 보냅니다.$\r$\n$\r$\n그 밖에 인터넷을 쓰는 곳은 업데이트 자동 확인뿐입니다. 켜 두면 실행 1분 뒤와 그 뒤 6시간마다 GitHub(github.com)에 새 버전이 있는지 묻습니다. 이때 GitHub에는 IP 주소 같은 일반 접속 정보와 이 운영체제용 업데이트 파일 요청만 전달되며, 기기 식별자는 보내지 않습니다. 설치한 뒤에도 설정 › 일반에서 바꿀 수 있습니다."
+  LangString orbitdropPrivacyText 1033 "OrbitDrop converts and edits your files on this computer only and never sends files, file names or usage data anywhere. The one exception is Claude analysis: off until you turn it on, it sends only the files you drop on it to Anthropic with your own API key.$\r$\n$\r$\nApart from that, the only network use is the automatic update check. When it is on, OrbitDrop asks GitHub (github.com) for a newer version one minute after it starts and every six hours after that. GitHub then receives only standard connection details such as your IP address and a request for this system's update file, no device ID. You can change this later in Settings › General."
   LangString orbitdropPrivacyLink 1042 "개인정보 처리방침 전문 보기"
   LangString orbitdropPrivacyLink 1033 "Read the privacy statement"
   LangString orbitdropPrivacyUrl 1042 "https://keilvher1.github.io/orbitdrop/privacy/"
@@ -123,12 +124,12 @@
         Pop $R0
         Abort
       ${EndIf}
-      ${NSD_CreateLabel} 0 0 100% 84u "$(orbitdropPrivacyText)"
+      ${NSD_CreateLabel} 0 0 100% 98u "$(orbitdropPrivacyText)"
       Pop $R0
-      ${NSD_CreateLink} 0 90u 100% 12u "$(orbitdropPrivacyLink)"
+      ${NSD_CreateLink} 0 102u 100% 12u "$(orbitdropPrivacyLink)"
       Pop $R0
       ${NSD_OnClick} $R0 orbitdropOpenPrivacy
-      ${NSD_CreateCheckbox} 0 110u 100% 14u "$(orbitdropUpdateCheckLabel)"
+      ${NSD_CreateCheckbox} 0 120u 100% 14u "$(orbitdropUpdateCheckLabel)"
       Pop $orbitdropUpdateCheckBox
       ${If} $orbitdropUpdateCheck == "1"
         ${NSD_Check} $orbitdropUpdateCheckBox
