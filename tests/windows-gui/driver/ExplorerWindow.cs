@@ -84,6 +84,8 @@ internal sealed class ExplorerWindow
         {
             Log.Info($"closing explorer window failed: {error.Message}");
         }
+        Thread.Sleep(500);
+        if (Native.IsWindow(Hwnd) && Native.IsWindowVisible(Hwnd)) Native.PostMessageW(Hwnd, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
     }
 
     /// <summary>Every list item (file or folder) currently shown in the items view.</summary>
