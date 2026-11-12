@@ -18,8 +18,11 @@ export const ANALYSIS_MODEL = { id: 'claude-opus-5-5', name: 'Claude Opus 5.5' }
 export const ANALYSIS_LIMITS = {
   /** PDFs with more pages are not sent (ANALYSIS_INPUT_TOO_LARGE). */
   maxPdfPages: 100,
-  /** PDFs larger than this are not sent (ANALYSIS_INPUT_TOO_LARGE). 30 MiB. */
-  maxPdfBytes: 30 * 1024 * 1024,
+  /**
+   * PDFs larger than this are not sent (ANALYSIS_INPUT_TOO_LARGE). 20 MiB: the PDF travels base64-encoded
+   * (4/3 of its size, about 28 MB here) and the API refuses requests over 32 MB only after the upload.
+   */
+  maxPdfBytes: 20 * 1024 * 1024,
   /** Images are sent as a copy that fits in this square (long edge, pixels), never enlarged. */
   maxImageEdge: 1568,
   /** The standing request from Settings (characters). */

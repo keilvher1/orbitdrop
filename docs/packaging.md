@@ -522,7 +522,7 @@ main의 키 확인이 CommonJS 빌드를 `require`), 함께 들어가는 의존�
 **네트워크** — 요청은 `https://api.anthropic.com`으로만 간다. 클라이언트는 기본 URL을 고정하고(`ANTHROPIC_BASE_URL` 무시) 키를 직접
 넘기며(환경 변수·프로필의 다른 자격 증명을 찾지 않음) 로그(`ANTHROPIC_LOG`)와 추적(OpenTelemetry)을 끈다. 작업자는 상속받은 `ANTHROPIC_*`
 변수를 하나도 받지 않는다(`workerEnv`). 보내는 것: 이미지는 방향을 적용한 첫 프레임을 긴 변 1568px 이하로 줄인 사본(JPEG q85, 투명하면
-PNG, 메타데이터 없음), PDF는 파일 그대로(100쪽·30MB 초과는 보내지 않음, 암호 PDF는 `PDF_ENCRYPTED`), 파일 이름, 설정의 추가 요청,
+PNG, 메타데이터 없음), PDF는 파일 그대로(100쪽·20MB 초과는 보내지 않음 — base64로 약 28MB, API 요청 한도 32MB 안, 암호 PDF는 `PDF_ENCRYPTED`), 파일 이름, 설정의 추가 요청,
 보고서 언어(앱 언어). 한 번의 스트리밍 요청(`claude-opus-5-5`, `max_tokens` 16000, effort `medium`, 서버 측 거절 대체
 `fallbacks: "default"`), SDK의 자동 재시도 2회. 설정의 "연결 확인"은 main에서 `models.retrieve`(무료)를 부른다. 요금은 키의 계정에 청구된다.
 `ANALYSIS_*` 오류 코드로 실패를 알린다(429·연결/5xx/529는 작업 창에서 다시 시도 가능).

@@ -32,7 +32,7 @@
   "error.ANALYSIS_KEY_STORAGE_UNAVAILABLE": "이 컴퓨터에서는 운영체제의 보안 저장소로 API 키를 암호화하거나 읽을 수 없습니다. 키를 다시 저장해 보세요.",
   "error.ANALYSIS_AUTH_FAILED": "Anthropic이 API 키를 거부했습니다. 키가 맞는지, 삭제되거나 권한이 바뀌지 않았는지 확인하세요.",
   "error.ANALYSIS_RATE_LIMITED": "요청이 너무 많거나 사용 한도에 도달했습니다. 잠시 후 다시 시도하세요.",
-  "error.ANALYSIS_INPUT_TOO_LARGE": "파일이 너무 커서 Claude로 분석할 수 없습니다. PDF는 100쪽, 30MB까지 보낼 수 있습니다.",
+  "error.ANALYSIS_INPUT_TOO_LARGE": "파일이 너무 커서 Claude로 분석할 수 없습니다. PDF는 100쪽, 20MB까지 보낼 수 있습니다.",
   "error.ANALYSIS_UNAVAILABLE": "Claude API에 연결하지 못했거나 일시적으로 사용할 수 없습니다. 인터넷 연결을 확인하고 다시 시도하세요.",
   "error.ANALYSIS_REFUSED": "Claude가 이 파일의 분석을 거절했습니다.",
   "error.ANALYSIS_FAILED": "Claude 분석에 실패했습니다. 다시 시도해 보고, 계속 실패하면 Anthropic 콘솔에서 계정과 결제 상태를 확인하세요.",

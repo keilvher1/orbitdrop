@@ -483,5 +483,5 @@ clean. No test calls the real API (fake `fetch` / scripted backend). One full E2
 (an unconnected `UDP *:*` socket on an Electron process during PDF → JPG); not reproduced in 24 isolated runs
 and two more full runs. Open: the native helpers must know `tool.analyze` / icon `analyze` before an
 analysis-enabled configure reaches them (parallel branch); the live check with the owner's key; Node's fetch
-in main/worker does not use the system proxy; a PDF near 30 MiB grows past the API's 32 MB request limit when
-base64-encoded (the API's 413 maps to ANALYSIS_INPUT_TOO_LARGE, but only after the upload).
+in main/worker does not use the system proxy. At integration the PDF limit went from 30 MiB to 20 MiB: base64 makes a
+30 MiB PDF about 40 MB, past the API's 32 MB request limit (a 413 only after the upload); 20 MiB is about 28 MB.

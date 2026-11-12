@@ -32,7 +32,7 @@
   "error.ANALYSIS_KEY_STORAGE_UNAVAILABLE": "This computer can't encrypt or read the API key with the operating system's secure storage. Try saving the key again.",
   "error.ANALYSIS_AUTH_FAILED": "Anthropic refused the API key. Check that the key is correct and hasn't been deleted or restricted.",
   "error.ANALYSIS_RATE_LIMITED": "Too many requests, or a usage limit was reached. Try again in a moment.",
-  "error.ANALYSIS_INPUT_TOO_LARGE": "The file is too large for Claude analysis. PDFs can have up to 100 pages and 30 MB.",
+  "error.ANALYSIS_INPUT_TOO_LARGE": "The file is too large for Claude analysis. PDFs can have up to 100 pages and 20 MB.",
   "error.ANALYSIS_UNAVAILABLE": "Couldn't reach the Claude API, or it's temporarily unavailable. Check your internet connection and try again.",
   "error.ANALYSIS_REFUSED": "Claude declined to analyze this file.",
   "error.ANALYSIS_FAILED": "Claude analysis failed. Try again; if it keeps failing, check your account and billing in the Anthropic Console.",
