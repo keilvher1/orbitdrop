@@ -9,7 +9,7 @@
 // appears during a real OS drag with the modifier held, and `configure` is sent
 // with enabled:false unless --enabled is given.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
+import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -194,15 +194,34 @@ const t0 = performance.now();
 }
 
 // ---------------------------------------------------------------- D: CLI modes
+/**
+ * One CLI run, bounded, with stdout/stderr in files. On GitHub's macOS runner (a VM) the helper's
+ * `imageio --probe` exits while its stdout pipe stays open (a process it started keeps the write
+ * end), so waiting for the pipe to close hung this script — a file is complete once the helper exits.
+ */
+function runCli(cliArgs, timeoutMs = 60_000) {
+  const dir = mkdtempSync(join(tmpdir(), 'orbitdrop-helper-cli-'));
+  const out = openSync(join(dir, 'stdout'), 'w');
+  const err = openSync(join(dir, 'stderr'), 'w');
+  try {
+    const r = spawnSync(binary, cliArgs, { stdio: ['ignore', out, err], timeout: timeoutMs, killSignal: 'SIGKILL' });
+    return { status: r.status, error: r.error, stdout: readFileSync(join(dir, 'stdout'), 'utf8'), stderr: readFileSync(join(dir, 'stderr'), 'utf8') };
+  } finally {
+    closeSync(out);
+    closeSync(err);
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 {
-  const version = spawnSync(binary, ['--version'], { encoding: 'utf8', timeout: 60_000, killSignal: 'SIGKILL' });
+  const version = runCli(['--version']);
   check('--version', version.status === 0 && /OrbitDropHelper \d+\.\d+\.\d+/.test(version.stdout), version.stdout.trim());
-  // Bounded: the probe runs an ImageIO encode round trip per format, and on GitHub's macOS runner
-  // (a VM) one of them never returns (the HEVC encoder, most likely). The app bounds it the same
-  // way (processors: 3 s, then HEIC is "not available").
-  const probe = spawnSync(binary, ['imageio', '--probe'], { encoding: 'utf8', timeout: 30_000, killSignal: 'SIGKILL' });
+  // Bounded: the probe runs an ImageIO encode round trip per format, which takes seconds on GitHub's
+  // macOS runner (no HEVC hardware). The app bounds it as well (processors: 3 s, then HEIC is "not
+  // available").
+  const probe = runCli(['imageio', '--probe'], 60_000);
   if (probe.error?.code === 'ETIMEDOUT') {
-    skip('imageio --probe JSON', 'did not finish within 30 s (killed): this Mac\'s ImageIO encoder round trip hangs');
+    skip('imageio --probe JSON', 'did not finish within 60 s (killed): this Mac\'s ImageIO encoder round trip does not finish');
   } else {
     let probed = null;
     try {
@@ -213,7 +232,7 @@ const t0 = performance.now();
   }
   const dir = mkdtempSync(join(tmpdir(), 'orbitdrop-helper-smoke-'));
   const png = join(dir, 'wheel.png');
-  const snap = spawnSync(binary, ['--render-snapshot', png, '--menu', 'pdf', '--mode', 'convert', '--highlight', '1', '--scale', '1'], { encoding: 'utf8', timeout: 60_000, killSignal: 'SIGKILL' });
+  const snap = runCli(['--render-snapshot', png, '--menu', 'pdf', '--mode', 'convert', '--highlight', '1', '--scale', '1']);
   let pngOk = false;
   if (snap.status === 0 && existsSync(png)) {
     const head = readFileSync(png).subarray(0, 24);
