@@ -10,7 +10,7 @@
  * the app is never held back.
  */
 import { readdir } from 'node:fs/promises';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { editorWindowOf, hooks, launchApp, makeJpeg, type Launched } from './support';
 
 test.describe.configure({ mode: 'serial' });
@@ -59,6 +59,19 @@ const inPage = (windowId: number, js: string): Promise<unknown> =>
     return Promise.race([contents.executeJavaScript(args.js).catch(() => undefined), new Promise((resolve) => setTimeout(() => resolve(undefined), 1000))]);
   }, { id: windowId, js });
 
+/**
+ * A click whose effect is closing its own window. On Windows the window (and Playwright's page) can
+ * be gone before the click call returns ("Target page … has been closed"); that is the expected
+ * result, not an error. The callers check from main that the window really closed.
+ */
+async function clickThatClosesThePage(page: Page, target: Locator): Promise<void> {
+  try {
+    await target.click();
+  } catch (error) {
+    if (!page.isClosed() && !/has been closed/.test(String(error))) throw error;
+  }
+}
+
 async function editorRecord(editorId: string) {
   return (await hooks(launched.app).windows()).find((w) => w.context.kind === 'editor' && w.context.editorId === editorId);
 }
@@ -101,7 +114,7 @@ test('unsaved annotations: an OS close asks like ×, once; keep editing keeps th
   expect((await editorRecord(editorId))?.unsaved).toBe(true);
 
   await osClose(windowId);
-  await page.getByRole('alertdialog', { name: TITLE }).getByRole('button', { name: '저장하지 않고 닫기' }).click();
+  await clickThatClosesThePage(page, page.getByRole('alertdialog', { name: TITLE }).getByRole('button', { name: '저장하지 않고 닫기' }));
   await expect.poll(async () => (await editorRecord(editorId)) === undefined).toBe(true);
   expect((await readdir(launched.work)).sort()).toEqual(before); // nothing written
   expect((await hooks(launched.app).jobs()).filter((j) => j.actionId === 'tool.annotate')).toEqual([]);

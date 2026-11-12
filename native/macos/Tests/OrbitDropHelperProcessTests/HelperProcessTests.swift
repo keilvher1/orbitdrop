@@ -236,17 +236,55 @@ final class HelperProcessTests: XCTestCase {
 
   // MARK: CLI modes
 
-  func run(_ arguments: [String]) throws -> (status: Int32, stdout: String) {
+  /// A CLI run that did not finish within its time limit (it was killed).
+  struct CLITimeout: Error, CustomStringConvertible {
+    let arguments: [String]
+    let seconds: TimeInterval
+    var description: String { "OrbitDropHelper \(arguments.joined(separator: " ")) did not finish within \(Int(seconds)) s (killed)" }
+  }
+
+  final class Collected: @unchecked Sendable {
+    var data = Data()
+  }
+
+  /// Runs the helper CLI, bounded: a run that hangs is killed and throws CLITimeout instead of
+  /// stalling the whole test process (on GitHub's macOS runner VMs `imageio --probe` never returned).
+  func run(_ arguments: [String], timeout: TimeInterval = 60) throws -> (status: Int32, stdout: String) {
     let process = Process()
     process.executableURL = Self.helperURL
     process.arguments = arguments
     let out = Pipe()
     process.standardOutput = out
-    process.standardError = Pipe()
+    process.standardError = FileHandle.nullDevice
     try process.run()
-    let data = out.fileHandleForReading.readDataToEndOfFile()
-    process.waitUntilExit()
-    return (process.terminationStatus, String(decoding: data, as: UTF8.self))
+    let collected = Collected()
+    let readDone = DispatchSemaphore(value: 0)
+    DispatchQueue.global().async {
+      collected.data = out.fileHandleForReading.readDataToEndOfFile()
+      readDone.signal()
+    }
+    let deadline = Date().addingTimeInterval(timeout)
+    while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
+    if process.isRunning {
+      kill(process.processIdentifier, SIGKILL)
+      process.waitUntilExit()
+      _ = readDone.wait(timeout: .now() + 5)
+      throw CLITimeout(arguments: arguments, seconds: timeout)
+    }
+    _ = readDone.wait(timeout: .now() + 5)
+    return (process.terminationStatus, String(decoding: collected.data, as: UTF8.self))
+  }
+
+  /// `imageio --probe` runs an ImageIO encode/decode round trip per format. On GitHub's macOS
+  /// runner (a VM) one of them never returns — the HEVC encoder, most likely — so the probe hangs.
+  /// The product bounds it (processors' 3 s probe timeout, then HEIC is "not available"); here the
+  /// tests that need a finished probe are skipped with that reason instead of hanging.
+  func probeOrSkip() throws -> (status: Int32, stdout: String) {
+    do {
+      return try run(["imageio", "--probe"], timeout: 30)
+    } catch let timeout as CLITimeout {
+      throw XCTSkip("\(timeout): this Mac's ImageIO encoder round trip hangs (seen on GitHub's macOS runner VMs)")
+    }
   }
 
   func temporaryDirectory() throws -> URL {
@@ -262,7 +300,7 @@ final class HelperProcessTests: XCTestCase {
   }
 
   func testImageIOHeicEncodeDecodeThroughTheCLI() throws {
-    let probe = try run(["imageio", "--probe"])
+    let probe = try probeOrSkip()
     XCTAssertEqual(probe.status, 0)
     let probed = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(probe.stdout.utf8)) as? [String: [String]])
     guard probed["encode"]?.contains("heic") == true else { throw XCTSkip("no HEVC encoder on this Mac") }
@@ -304,7 +342,7 @@ final class HelperProcessTests: XCTestCase {
   /// 3. --decode writes upright pixels with no orientation tag, 4. --quality takes 0…1.
   func testImageIOContractUsedByProcessors() throws {
     // 1 + 2: probe.
-    let probe = try run(["imageio", "--probe"])
+    let probe = try probeOrSkip()
     XCTAssertEqual(probe.status, 0)
     let lastLine = try XCTUnwrap(probe.stdout.split(separator: "\n").last.map(String.init))
     let probed = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(lastLine.utf8)) as? [String: Any])

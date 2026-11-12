@@ -91,7 +91,9 @@ try {
 }
 
 out.loaded = process.report.getReport().sharedObjects.filter((p) => /sharp-|libvips|skia\./i.test(p));
-const unpacked = path.join(resources, 'app.asar.unpacked').toLowerCase();
+// Windows reports the loaded files as \\?\D:\…; compare without that prefix, with one separator.
+const comparable = (p) => p.replace(/^(\\\\|\/\/)\?(\\|\/)/, '').replace(/\\/g, '/').toLowerCase();
+const unpacked = `${comparable(path.join(resources, 'app.asar.unpacked'))}/`;
 for (const [label, re] of [
   ['sharp', /sharp-[a-z0-9]+-[a-z0-9]+.*\.node$/i],
   ['libvips', /libvips/i],
@@ -99,7 +101,7 @@ for (const [label, re] of [
 ]) {
   const hit = out.loaded.find((p) => re.test(p));
   if (!hit) fail(`${label} native library was not loaded`);
-  else if (!hit.toLowerCase().startsWith(unpacked)) fail(`${label} was loaded from outside the package: ${hit}`);
+  else if (!comparable(hit).startsWith(unpacked)) fail(`${label} was loaded from outside the package: ${hit}`);
 }
 out.ok = out.problems.length === 0;
 console.log(`NATIVE_CHECK ${JSON.stringify(out)}`);

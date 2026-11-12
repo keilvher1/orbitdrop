@@ -76,16 +76,18 @@ jobs:
       - name: Unit and integration tests
         run: pnpm test
 
+      # 167 tests take ~30 s locally and ~2 min on the runner. Bounded: on the runner (a VM) the
+      # ImageIO encoder round trip of `imageio --probe` never returned and the step hung until the job
+      # timeout; the tests that need it now time out and skip with that reason (docs/verification.md).
       - name: Native helper — Swift unit tests
-        # TEMPORARY (ci/windows): bounded and non-blocking while the hang on the runner is investigated.
-        timeout-minutes: 15
-        continue-on-error: true
+        timeout-minutes: 10
         run: swift test --package-path native/macos
 
       # Release build per arch (min macOS 14.0), strip, ad-hoc signature with the hardened
       # runtime, codesign/lipo/vtool checks and the helper's stdio smoke test (x64 via Rosetta 2),
       # staged to apps/desktop/resources/helper/darwin-{arm64,x64}/ (scripts/build-native-mac.mjs).
       - name: Native helper — build, verify and stage (arm64, x64)
+        timeout-minutes: 20
         run: node scripts/build-native.mjs mac --arch all
 
       - name: Build bundles (electron-vite)
@@ -152,8 +154,6 @@ jobs:
         run: pnpm typecheck
 
       - name: Unit and integration tests
-        # TEMPORARY (ci/windows): let the later steps run while the tests are being fixed.
-        continue-on-error: true
         run: pnpm test
 
       # CMake + MSVC (Visual Studio is preinstalled on windows-latest). The script builds and

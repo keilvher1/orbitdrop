@@ -83,7 +83,20 @@ app.whenReady().then(() => {
   const child = utilityProcess.fork(script, [], { stdio: 'pipe', env: process.env, execArgv, serviceName: 'convert-smoke' });
   child.stdout.on('data', (d) => process.stdout.write(d));
   child.stderr.on('data', (d) => process.stderr.write(d));
-  child.on('exit', (code) => app.exit(code ?? 1));
+  // Exit once the child's output has been passed on: on Windows its 'exit' arrives before the last
+  // data on its stdout pipe, and exiting right away lost the CONVERT_SMOKE line (exit 0, no output).
+  let exitCode = null;
+  let openStreams = 2;
+  const finish = () => {
+    if (exitCode !== null && openStreams === 0) process.stdout.write('', () => app.exit(exitCode));
+  };
+  child.stdout.on('end', () => { openStreams -= 1; finish(); });
+  child.stderr.on('end', () => { openStreams -= 1; finish(); });
+  child.on('exit', (code) => {
+    exitCode = code ?? 1;
+    finish();
+    setTimeout(() => app.exit(exitCode), 10000); // the pipes never closed
+  });
 });
 app.on('window-all-closed', () => {});
 `;

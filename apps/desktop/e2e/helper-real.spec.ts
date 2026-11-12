@@ -26,8 +26,13 @@ const helperPath = join(appDir, 'resources', 'helper', `${process.platform}-${pr
 
 test.skip(!existsSync(helperPath), `no helper staged at ${helperPath}`);
 
+/** Running processes of exactly this helper binary. */
 function helperProcessCount(): number {
-  if (process.platform === 'win32') return 0;
+  if (process.platform === 'win32') {
+    const path = helperPath.replace(/'/g, "''");
+    const script = `@(Get-CimInstance Win32_Process -Filter "Name = 'OrbitDropHelper.exe'" | Where-Object { $_.ExecutablePath -eq '${path}' }).Count`;
+    return Number(execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', windowsHide: true }).trim()) || 0;
+  }
   try {
     return execFileSync('pgrep', ['-f', helperPath], { encoding: 'utf8' }).trim().split('\n').filter(Boolean).length;
   } catch {

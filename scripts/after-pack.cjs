@@ -167,7 +167,9 @@ function checkDependencyTree(asarFile, entries) {
   const asar = require('@electron/asar');
   // electron-builder's own semver (always installed with it), not whatever is hoisted to the root.
   const semver = require(require.resolve('semver', { paths: [path.dirname(require.resolve('app-builder-lib/package.json'))] }));
-  const readJson = (rel) => JSON.parse(asar.extractFile(asarFile, rel).toString('utf8'));
+  // Entries are '/'-separated (listAsar); @electron/asar splits the path it is given on path.sep,
+  // so on Windows 'node_modules/@img/colour/package.json' was "not found in this archive".
+  const readJson = (rel) => JSON.parse(asar.extractFile(asarFile, rel.split('/').join(path.sep)).toString('utf8'));
   const roots = new Map(); // package dir ('' = the app) → package.json
   roots.set('', readJson('package.json'));
   for (const e of entries) {

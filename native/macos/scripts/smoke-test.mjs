@@ -41,6 +41,12 @@ function check(name, ok, detail = '') {
   results.push({ name, ok: Boolean(ok), detail });
   if (!jsonSummary) console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`);
 }
+/** A check this machine cannot perform (reported as skipped, with the reason; not a pass). */
+const skipped = [];
+function skip(name, reason) {
+  skipped.push({ name, reason });
+  if (!jsonSummary) console.log(`skip ${name} — ${reason}`);
+}
 
 const HELPER_TYPES = new Set(['ready', 'state', 'drop', 'cancelled', 'pong', 'permissions', 'log', 'error']);
 function validate(line) {
@@ -189,27 +195,46 @@ const t0 = performance.now();
 
 // ---------------------------------------------------------------- D: CLI modes
 {
-  const version = spawnSync(binary, ['--version'], { encoding: 'utf8' });
+  const version = spawnSync(binary, ['--version'], { encoding: 'utf8', timeout: 60_000, killSignal: 'SIGKILL' });
   check('--version', version.status === 0 && /OrbitDropHelper \d+\.\d+\.\d+/.test(version.stdout), version.stdout.trim());
-  const probe = spawnSync(binary, ['imageio', '--probe'], { encoding: 'utf8' });
-  let probed = null;
-  try {
-    probed = JSON.parse(probe.stdout);
-  } catch {}
-  const shapeOk = probed && Array.isArray(probed.decode) && Array.isArray(probed.encode) && Object.keys(probed).length === 2;
-  check('imageio --probe JSON', probe.status === 0 && shapeOk, probe.stdout.trim());
+  // Bounded: the probe runs an ImageIO encode round trip per format, and on GitHub's macOS runner
+  // (a VM) one of them never returns (the HEVC encoder, most likely). The app bounds it the same
+  // way (processors: 3 s, then HEIC is "not available").
+  const probe = spawnSync(binary, ['imageio', '--probe'], { encoding: 'utf8', timeout: 30_000, killSignal: 'SIGKILL' });
+  if (probe.error?.code === 'ETIMEDOUT') {
+    skip('imageio --probe JSON', 'did not finish within 30 s (killed): this Mac\'s ImageIO encoder round trip hangs');
+  } else {
+    let probed = null;
+    try {
+      probed = JSON.parse(probe.stdout);
+    } catch {}
+    const shapeOk = probed && Array.isArray(probed.decode) && Array.isArray(probed.encode) && Object.keys(probed).length === 2;
+    check('imageio --probe JSON', probe.status === 0 && shapeOk, probe.stdout.trim());
+  }
   const dir = mkdtempSync(join(tmpdir(), 'orbitdrop-helper-smoke-'));
   const png = join(dir, 'wheel.png');
-  const snap = spawnSync(binary, ['--render-snapshot', png, '--menu', 'pdf', '--mode', 'convert', '--highlight', '1', '--scale', '1'], { encoding: 'utf8' });
+  const snap = spawnSync(binary, ['--render-snapshot', png, '--menu', 'pdf', '--mode', 'convert', '--highlight', '1', '--scale', '1'], { encoding: 'utf8', timeout: 60_000, killSignal: 'SIGKILL' });
   let pngOk = false;
   if (snap.status === 0 && existsSync(png)) {
     const head = readFileSync(png).subarray(0, 24);
     pngOk = head.toString('latin1', 1, 4) === 'PNG' && head.readUInt32BE(16) === 408 && head.readUInt32BE(20) === 440 && statSync(png).size > 5000;
   }
-  check('--render-snapshot writes a 408×440 PNG (disc + caption strip + shadow margin)', pngOk, snap.stderr.trim());
+  check('--render-snapshot writes a 408×440 PNG (disc + caption strip + shadow margin)', pngOk, snap.error ? String(snap.error.message) : snap.stderr.trim());
 }
 
 const failed = results.filter((r) => !r.ok);
-const summary = { ok: failed.length === 0, binary, schema: schemaMode, checks: results.length, failed: failed.map((f) => f.name), ms: Math.round(performance.now() - t0) };
-console.log(jsonSummary ? JSON.stringify(summary) : `\n${summary.ok ? 'PASS' : 'FAIL'}: ${results.length - failed.length}/${results.length} checks (${schemaMode} validation) in ${summary.ms} ms`);
+const summary = {
+  ok: failed.length === 0,
+  binary,
+  schema: schemaMode,
+  checks: results.length,
+  failed: failed.map((f) => f.name),
+  skipped: skipped.map((s) => `${s.name}: ${s.reason}`),
+  ms: Math.round(performance.now() - t0),
+};
+console.log(
+  jsonSummary
+    ? JSON.stringify(summary)
+    : `\n${summary.ok ? 'PASS' : 'FAIL'}: ${results.length - failed.length}/${results.length} checks (${schemaMode} validation)${skipped.length ? `, ${skipped.length} skipped` : ''} in ${summary.ms} ms`,
+);
 process.exit(summary.ok ? 0 : 1);
