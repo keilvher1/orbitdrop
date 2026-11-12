@@ -1,0 +1,56 @@
+# Publishes the website in site/ to GitHub Pages: https://keilvher1.github.io/orbitdrop/
+# The site is static and its generated assets are committed (site/scripts/build-assets.mjs runs
+# on a developer machine), so this workflow only checks the files and uploads them.
+# Repository Settings › Pages › Build and deployment › Source must be "GitHub Actions".
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time. A newer run waits for the one in progress instead of cancelling it.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Check and deploy site/
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # Links, anchors, page metadata, alt text, allowed external URLs, contrast (Node built-ins only).
+      - name: Check the site
+        run: node site/scripts/check.mjs
+
+      # site/scripts holds the tooling; it is not part of the published site.
+      - name: Stage the published files
+        run: rsync -a --exclude=/scripts/ site/ "$RUNNER_TEMP/site/"
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: ${{ runner.temp }}/site
+
+      - id: deployment
+        uses: actions/deploy-pages@v5
