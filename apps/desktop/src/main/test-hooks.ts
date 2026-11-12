@@ -14,7 +14,7 @@ export interface OrbitTestHooks {
   registerPaths(paths: string[]): Promise<unknown>;
   openPicker(paths: string[], mode?: WheelMode): Promise<unknown>;
   submit(paths: string[], actionId: ActionId, options?: unknown): Promise<unknown>;
-  openWindow(kind: 'jobs' | 'settings' | 'dropzone' | 'about'): Promise<void>;
+  openWindow(kind: 'jobs' | 'settings' | 'dropzone' | 'about' | 'welcome'): Promise<void>;
   waitForJob(jobId: string): Promise<unknown>;
   jobs(): Promise<unknown>;
   capabilities(): Promise<unknown>;
@@ -119,14 +119,19 @@ export function installTestHooks(orbit: OrbitApp): void {
     },
     windows: async () => {
       await started();
+      // A window that is closing can still be listed while its page is already gone (seen on
+      // Windows: getURL() threw "Object has been destroyed"); it is not open any more.
       return (
-        orbit.windows?.list().map((record) => ({
-          kind: record.kind,
-          context: record.context,
-          windowId: record.windowId,
-          url: record.window.webContents.getURL(),
-          unsaved: record.guard.unsaved,
-        })) ?? []
+        orbit.windows
+          ?.list()
+          .filter((record) => !record.window.webContents.isDestroyed())
+          .map((record) => ({
+            kind: record.kind,
+            context: record.context,
+            windowId: record.windowId,
+            url: record.window.webContents.getURL(),
+            unsaved: record.guard.unsaved,
+          })) ?? []
       );
     },
     outputPath: async (outputId) => {

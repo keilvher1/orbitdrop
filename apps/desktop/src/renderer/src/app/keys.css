@@ -1,0 +1,31 @@
+/* Drag keys shown as keyboard keys (keys.tsx). Colours are design tokens. */
+
+.key-combo {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--c-text-muted);
+  white-space: nowrap;
+}
+
+.key-combo kbd {
+  display: inline-block;
+  min-width: 26px;
+  padding: 1px 7px;
+  border: 1px solid var(--c-border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+}
+
+@media (forced-colors: active) {
+  .key-combo kbd {
+    border-color: CanvasText;
+  }
+}

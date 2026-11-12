@@ -29,16 +29,18 @@
 
 | # | 절차 | 기대 결과 |
 |---|---|---|
-| 1 | 설치본을 새로 실행한다(설정 폴더가 없는 상태). | 창 없이 메뉴 막대/알림 영역에 아이콘만 나타난다. 필요한 권한이 있으면 설정 창에 안내가 보이며, 실행만으로 시스템 권한 대화상자를 강제로 띄우지 않는다([permissions.md](permissions.md)). |
+| 1 | 설치본을 새로 실행한다(설정 폴더가 없는 상태). | 메뉴 막대/알림 영역에 아이콘이 나타나고 환영 창이 한 번 열린다(OS 언어: 한국어면 한국어, 그 밖은 영어; 키는 macOS Shift·Option+Shift, Windows Shift·Ctrl+Shift). macOS에서 DMG·다운로드 폴더에서 실행했다면 먼저 응용 프로그램 폴더로 옮길지 한 번 묻는다(이동 / 나중에). "로그인 시 실행"은 꺼져 있다. 환영 창을 닫고 다시 실행하면 열리지 않는다. 필요한 권한이 있으면 설정 창에 안내가 보이며, 실행만으로 시스템 권한 대화상자를 강제로 띄우지 않는다([permissions.md](permissions.md)). |
 | 2 | Finder/탐색기에서 `Page 001.pdf`를 드래그하는 중 **Shift**를 누른다. | 포인터 근처에 휠이 나타난다. 드래그가 끊기지 않고 포커스를 빼앗지 않는다. PDF 메뉴는 위부터 시계방향 DOCX, JPG, PNG, TXT. |
 | 3 | JPG 조각에 놓는다. | 강조가 주황색, 중앙 캡슐에 "JPG". 놓으면 `Page 001.jpg`가 원본 옆에 생기고 `Page 001.pdf`는 그대로 남는다(해시 동일). |
-| 4 | `Page 001.jpg`를 다시 드래그 → **Option+Shift**(Windows: **Alt+Shift**) → CROP에 놓는다 → 1:1로 선택 → Apply. | 편집 창(이미지 자르기)이 드롭 후 열린다. Apply 전에는 파일이 생기지 않는다. `Page 001 Cropped.jpg`가 정사각형으로 생긴다. |
+| 4 | `Page 001.jpg`를 다시 드래그 → **Option+Shift**(Windows: **Ctrl+Shift**) → CROP에 놓는다 → 1:1로 선택 → Apply. | 편집 창(이미지 자르기)이 드롭 후 열린다. Apply 전에는 파일이 생기지 않는다. `Page 001 Cropped.jpg`가 정사각형으로 생긴다. |
 | 5 | `Page 001 Cropped.jpg`를 드래그 → 도구 휠 → ADD BG → 배경·Padding·Corners·Shadow 변경 → Save with Background. | `Page 001 Cropped With Background.png`가 생긴다. 미리보기와 같은 구성(비율·여백·둥근 모서리·잘리지 않은 그림자). |
 | 6 | 폴더를 확인하고 결과 4개를 기본 뷰어로 연다. | 원본 PDF + JPG + 잘린 JPG + 배경 PNG가 모두 존재하고 올바르게 열린다. 원본 해시 변화 없음. |
 | 7 | 보조키 해제(휠 유지), Esc(취소), 휠 밖으로 나갔다 재진입, 텍스트/웹 링크 같은 **비파일** 드래그, 빠른 반복 드롭. | 키를 놓아도 휠 유지, Esc·드래그 종료 시 휠이 사라지고 남는 창이 없다. 비파일 드래그는 휠을 띄우지 않거나 중립 상태 후 거부. 반복 드롭마다 작업이 정확히 1개씩. 휠 밖에 놓으면 원본 앱의 일반 동작(앱 작업 없음). |
 | 8 | 배율·모니터: Windows 100/125/150/200%, macOS Retina/비 Retina, 보조 모니터, 화면 네 모서리 근처. | 휠이 화면 안에 완전히 보이고 포인터 아래 섹터가 정확히 강조된다(경계·중심 dead zone 포함). **사용 가능한 구성만 표에 기록하고 나머지는 미검증으로 남긴다.** |
 | 9 | 권한 거절(macOS 손쉬운 사용/입력 모니터링 거절, 보호 폴더 접근 거절), helper 강제 종료, 네트워크 끊기, Drop Zone/파일 열기 사용. | 권한이 없으면 안내 + 대체 경로 사용 가능. helper가 죽으면 휠이 남지 않고 재시작 또는 안내. 네트워크 없이 모든 기능 동작. Drop Zone으로 같은 변환·편집 가능(이것은 전역 드래그 검증을 대신하지 않는다). |
 | 10 | 창과 수명 주기(2차 점검에서 추가): 주석·가리기에서 도형을 그린 뒤 저장하지 않고 창 닫기 버튼, ⌘W(Windows: Alt+F4)로 닫기 / 실행 중인 앱을 Finder·시작 메뉴에서 다시 열기 / 파일을 Dock 아이콘에 놓거나 "다음으로 열기" / 휠을 띄운 채 화면 잠금, 잠자기 후 깨우기. | 닫기 전에 ×·Esc와 같은 확인 창이 뜨고 "계속 편집"을 고르면 작업이 남는다(앱 종료는 묻지 않음). 다시 열면 설정 창 등 기존 창이 앞으로 온다. 넘긴 파일은 일반 파일 입력과 같은 검증을 거친다. 잠금·잠자기에서 휠이 사라지고 세션이 끝나며, 깨운 뒤 다음 드래그가 정상 동작한다. |
+| 11 | 도움말·진단(2026-11-12 추가): 메뉴 › 도움말의 네 항목 / 정보 창의 진단 정보 복사 → 텍스트 편집기에 붙여 넣기 / 오픈 소스 라이선스 세 버튼 / 설정 › 일반 › 데이터 폴더 열기, 설정 초기화(확인 창에서 취소, 다시 초기화). | 사용법은 환영 창, 웹사이트는 UI 언어의 페이지(ko: `/orbitdrop/`, en: `/orbitdrop/en/`), 문제 신고는 GitHub 새 이슈(제목·본문에 앱 버전·OS 버전·아키텍처만, 파일 이름·경로 없음), 로그 폴더는 Finder/탐색기. 붙여 넣은 진단 정보에 사용자 이름·파일 경로가 없다. 라이선스 파일이 기본 앱으로 열린다. 초기화는 확인 창(OS 대화상자 아님)을 거치고, 언어·작업 기록은 그대로, "로그인 시 실행"은 꺼진다. |
+| 12 | 충돌 처리(2026-11-12 추가): 활동 모니터/작업 관리자에서 열린 창의 렌더러 프로세스("OrbitDrop Helper (Renderer)")를 세 번 끝낸다 / helper(`OrbitDropHelper`)를 10분 안에 여러 번 끝내 포기하게 한다 / 앱 데이터 폴더의 `Crashpad` 확인. | 첫 번째: 창이 다시 열리고 "예기치 않게 종료되어 다시 열었습니다" 안내(편집 창은 사라진 작업 설명), 두 번째: 충돌 화면(창 닫기·로그 폴더 열기), 세 번째: 창이 닫히고 알림. helper 포기 시 알림 1회, 누르면 다시 시작(설정 › 드래그에도 다시 시작 버튼). 덤프는 `Crashpad`에만 있고 네트워크 요청이 없다. |
 
 ### 결과 기록표 — macOS
 
@@ -56,6 +58,8 @@
 | 8 | 미실시 | 구성: Retina ☐ · 비 Retina ☐ · 보조 모니터 ☐ · 화면 가장자리 ☐ |
 | 9 | 미실시 | |
 | 10 | 미실시 | |
+| 11 | 미실시 | |
+| 12 | 미실시 | |
 
 ### 결과 기록표 — Windows
 
@@ -73,6 +77,8 @@
 | 8 | 미실시 | 배율: 100% ☐ · 125% ☐ · 150% ☐ · 200% ☐ · 보조 모니터 ☐ · 음수 좌표 모니터 ☐ |
 | 9 | 미실시 | |
 | 10 | 미실시 | |
+| 11 | 미실시 | |
+| 12 | 미실시 | |
 
 ---
 
@@ -345,6 +351,61 @@ MinGW로 만든 C++ 시험 exe(`libstdc++-6.dll` import → 정책 위반으로 
 이 시험에서 `elevate.exe`가 포함되는 것을 보고 `nsis.packElevateHelper: false`를 추가했다. 교차 빌드에서는
 `${platform}`이 호스트 OS라 darwin 바이너리가 들어갔다 — 그래서 `package.mjs`는 교차 빌드를 거부한다.
 
-이 환경에는 Windows가 없다. `.github/workflows/ci.yml`의 `windows` 작업이 Windows Server(windows-latest)에서
-helper 빌드·테스트, NSIS 패키지, smoke test, 무인 사용자별 설치/HKCU 확인/설치본 smoke/제거를 수행하도록 작성되어 있으나
-**아직 실행 결과가 없다**. 실행 후 결과(작업 요약 표, `build-report-win32-x64.json`)를 여기에 기록한다.
+### CI — GitHub Actions에서 처음 돌린 Windows (2026-11-12)
+
+개발 환경에는 Windows 기기가 없어서, 아래가 OrbitDrop이 **Windows에서 실제로 실행된 첫 기록**이다. 사람이 Explorer에서
+드래그한 검증은 아니다(위 결과 기록표 — Windows는 여전히 미실시).
+
+환경: GitHub Actions `windows-latest` = **Microsoft Windows Server 2025 Datacenter 10.0.26100 (빌드 26100.33674)**, x64, 러너
+이미지 `windows-2025-vs2026` 20261103.298.1, Visual Studio 2026(MSVC 19.51.36260, Windows SDK 10.0.26100), Node 24.22.2,
+pnpm 11.27.1, Electron 44.9.0. 레지스트리 `LongPathsEnabled=1`, 한글 글꼴 Malgun Gothic 설치됨. 작업은 관리자(runneradmin)
+권한으로 돈다. 녹색 실행: https://github.com/keilvher1/orbitdrop/actions/runs/43173791336 (소스 `b8a5386`).
+
+| 단계 | 결과 |
+|---|---|
+| 단위·통합 테스트 (`pnpm test`) | 89 파일 통과·3 건너뜀, 1,079 통과·25 건너뜀 (macOS 러너와 같은 테스트, 건너뜀은 아래 표) |
+| Windows helper (MSVC `/MT`) | 코어 테스트 99개(골든 벡터 포함), OLE 글루 테스트 6개, stdio smoke 47개 확인 모두 통과, Direct2D 휠 스냅숏 생성. DLL 의존성은 시스템 DLL뿐 |
+| E2E (`playwright test`, 빌드된 앱 + 실제 MSVC helper) | 31 통과, 8 건너뜀 |
+| NSIS 패키지 | `OrbitDrop-0.1.0-win-x64-unsigned-setup.exe` 102.3 MB(`win-unpacked` 393.1 MB), sha256 `ced088babaec53e5f75621f6280fdc3565b12af4678af75d35a7aaae3681597b` (미서명). after-pack: 의존성 트리 문제 0, sharp/libvips/canvas는 x64 PE, helper 포함 |
+| 패키지 smoke test (`win-unpacked\OrbitDrop.exe --smoke-test`) | 종료 0, 1.7초, `ok:true` — 엔진 probe(HEIC 없음, 16개 작업 사용 가능), helper `ready`(packaged), PNG→JPG 399 ms·PDF→PNG 516 ms, 숨긴 About 창 렌더링 393 ms |
+| 네이티브 모듈 검사 | librsvg 2.63.2 / libvips 8.18.7, Malgun Gothic 한글 잉크 766 px, 패키지 안의 pdf-lib·docx로 PDF·DOCX 생성, 네이티브 모듈은 `app.asar.unpacked`에서 로드 |
+| 사용자별 무인 설치 → 설치본 smoke → 무인 제거 | `/S /D=<임시 폴더>` 종료 0, 설치본에 helper·라이선스 파일, **HKCU 제거 항목만**(HKLM 없음, 관리자 권한 없음), 설치본 smoke `ok:true`, `Uninstall OrbitDrop.exe /S` 뒤 파일·HKCU 항목·설치 폴더 모두 없음 |
+
+처음 실행에서 드러난 문제와 처리(분류: **제품 버그** / **플랫폼 차이** / **POSIX를 가정한 테스트**):
+
+- **제품 버그 — PDF의 내장되지 않은 한글 글꼴이 빈칸**: PDF.js는 내장되지 않은 글꼴(예: `UniKS-UCS2-H` CMap의 CID 글꼴)을
+  `"g_d0_f1", sans-serif`로 그리는데, @napi-rs/canvas의 일반 글꼴 계열은 Windows에서 Arial 하나라 한글 잉크가 0이었다. 한글이 든
+  글자열만 한글 글꼴(Malgun Gothic, `resolveAnnotationFont`)을 맨 앞에 두고 그린다. 라틴 글자는 그대로.
+- **제품 버그 — 너무 긴 이름이 "파일 없음"**: Windows는 255 UTF-16 단위를 넘는 이름을 ENOENT로 알린다. 입력 검증이 NTFS 한도
+  (이름 255, 경로 32,767 단위)를 직접 확인해 macOS처럼 `PATH_TOO_LONG`. MAX_PATH(260)를 넘는 경로는 계속 동작한다.
+- **제품 버그 — helper MSVC 빌드 실패**: `renderer.cpp`의 변수 이름 `small`(Windows SDK `rpcndr.h`의 `#define small char`).
+- **빌드 도구 버그(Windows 패키징)**: after-pack이 app.asar 항목을 `/`로 넘겨 `@electron/asar`가 찾지 못함, 네이티브 모듈 검사가
+  `\\?\` 접두사 때문에 "패키지 밖에서 로드"로 판정 — 둘 다 고침.
+- **플랫폼 차이 — 산술 부호화 JPEG**: sharp의 Windows libvips는 산술 부호화 디코딩 없이 빌드됐다("arithmetic coding is not
+  implemented"). `IMAGE_CORRUPT`(손상) 대신 `ENGINE_UNAVAILABLE`(이 빌드에서 읽을 수 없음, `detail: jpeg-arithmetic: …`)로 알린다.
+- **POSIX를 가정한 테스트**: 경로 기대값(`join`/`resolve`), `.cmd` 실행(Node는 셸 없이 `.cmd`를 실행하지 않음 — Electron 실행 파일을
+  직접 실행), 읽기 전용 폴더(아래), 긴 경로를 `sharp(path)`로 읽음(libvips는 MAX_PATH 제한 — Node로 읽어 넘김), libvips 캐시가 연
+  파일을 지우려다 EBUSY, utilityProcess의 `exit`가 stdout 마지막 데이터보다 먼저 와서 결과 줄 유실, 닫히는 창의 `getURL()`,
+  MFT에 들어가는 작은 파일(할당 블록 0)이 macOS 흉내 테스트에서 iCloud 자리 표시자로 보임, OLE 테스트의 임시 객체 참조(MSVC에서 드러난 UB),
+  설치 테스트가 레지스트리 키를 파일보다 먼저 확인(NSIS는 파일을 먼저 지움).
+
+Windows 러너에서 측정한 사실: 폴더의 읽기 전용 특성은 쓰기를 막지 않는다. 거부 ACL(`icacls … /deny *S-1-1-0:(WD,AD)`)은
+PowerShell·.NET은 막지만 **Node는 막지 못한다** — libuv가 `FILE_FLAG_BACKUP_SEMANTICS`로 열고 러너 작업 토큰은 백업/복원 권한이
+켜져 있다(일반 사용자 세션에서는 ACL이 적용된다). 다른 프로세스가 삭제 공유 없이(`FileShare.Read`) 연 파일은 이름 변경·교체·삭제가
+EBUSY/EPERM으로 막힌다 — 설정 파일 테스트는 Windows에서 이 방법(동기화 클라이언트·백신이 파일을 잡은 상황)을 쓴다.
+
+### CI에서 건너뛰거나 플랫폼별로 나뉜 테스트
+
+| 테스트 | 대상 | 이유 |
+|---|---|---|
+| `validate.test` 경로 길이: 경로 전체 한도 | Windows에서 더 긴 경로 사용 | macOS PATH_MAX 1,024바이트, Windows(Node는 `\\?\` 경로)는 32,767 단위 — 같은 동작, 다른 한도 |
+| `validate.test` 255단위 한글 이름 + 260자 넘는 폴더, `validate-timeout` UNC·매핑 드라이브 → `NETWORK_PATH_FAILED`, `lifecycle` Windows 명령줄 | Windows만 실행 | Windows 경로 규칙에서만 성립(macOS에서는 절대 경로가 아님) |
+| `hardening-inputs` 산술 부호화 JPEG | Windows: `ENGINE_UNAVAILABLE`·아무것도 쓰지 않음 확인 / 그 밖: 같은 픽셀 확인 | sharp Windows 빌드에 산술 디코딩 없음 |
+| `convert-pdf-image` 내장되지 않은 한글 CID 글꼴 | 한글 글꼴이 있는 곳(macOS·Windows)에서 실행 | 글자는 시스템 글꼴에서 옴 |
+| `lifecycle` 읽기 전용 앱 데이터 폴더 | 거부 ACL이 이 프로세스에 적용될 때만(POSIX 항상, Windows 일반 세션) — **GitHub Windows 러너에서는 건너뜀** | 위 측정: 러너의 Node는 ACL을 무시. "만들 수 없는 폴더" 경우는 모든 OS에서 실행 |
+| `stores` 옮길 수 없는 설정 파일 | Windows: 삭제 공유 없이 열린 파일 / POSIX: 읽기 전용 폴더 | Windows에는 읽기 전용 폴더가 없음 |
+| (기존) 심볼릭 링크·chmod 권한 11건: `validate` 4, `output` 1, `convert-image`·`convert-pdf-image`·`tools-preview`·`hardening-inputs` 각 1, `hardening-pipeline` 2 | Windows에서 건너뜀 | Windows 심볼릭 링크는 개발자 모드·관리자 필요, 폴더 쓰기 금지는 chmod가 아니라 ACL이고 러너의 Node에는 적용되지 않음(위 측정) |
+| (기존) ImageIO helper 9건: `codecs-imageio` 6, `tools-output-format`·`tools-thumbnail` HEIC 각 1, `codecs-bmp` sips 1 | Windows에서 건너뜀 | macOS ImageIO 전용 기능(Windows는 HEIC 미지원으로 표시) |
+| (기존) 실제 볼륨 테스트 4건: `output-fat` 1, `hardening-diskfull` 3 | 모든 OS에서 옵트인 | FAT32·4 MB HFS+ 볼륨을 만들어야 함(`ORBITDROP_FS_TESTS=1`) |
+| (기존) E2E 8건: stub helper 4(`helper-drop`, `lifecycle` 2, `drag-failure`), `lifecycle` 쓸 수 없는 앱 데이터 폴더(chmod), `offline`(lsof), `shell` 멈춘 읽기(FIFO), `close-guard` ⌘W 메뉴 | Windows에서 건너뜀 | stub helper가 셸뱅 스크립트라 Windows에서 실행할 수 없음, chmod·lsof·FIFO는 POSIX 전용, ⌘W 메뉴는 macOS 전용 |
+| Swift `ImageIOTests` 3건(probe 모양, HEIC 왕복, 품질), `HelperProcessTests` imageio 2건, helper smoke `imageio --probe` | ImageIO 왕복이 60초 안에 끝나지 않으면 건너뜀(사유 출력) | macOS 러너(가상 머신, HEVC 하드웨어 없음)에서 probe가 수 초 걸리고, 그 stdout 파이프가 helper 종료 뒤에도 열려 있어 파이프를 끝까지 읽던 테스트가 작업 시간 제한(60분)까지 멈췄다. 이제 CLI 출력은 파일로 받고 모든 실행에 시간 제한이 있다. 제품은 같은 probe를 3초로 제한한다(초과 시 HEIC "사용할 수 없음") |

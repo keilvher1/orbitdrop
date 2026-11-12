@@ -1,11 +1,12 @@
-import { DEFAULT_SETTINGS, type OrbitApi, type Settings, type WindowContext } from '@orbitdrop/contracts';
+import { DEFAULT_SETTINGS, type Locale, type OrbitApi, type Settings, type WindowContext, type WindowNotice } from '@orbitdrop/contracts';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createTranslator } from '../i18n/catalog';
 import { applyAppearance, readMediaFlags, resolveAppearance } from '../theme/appearance';
 import { ensureTokenStyles } from '../theme/tokensCss';
 import { App } from './App';
+import { StartupFailure } from './crash';
 import { EnvProvider } from './env';
+import { reportRendererError } from './reportError';
 
 /**
  * Files dropped anywhere except a real drop target (the Drop Zone) must not
@@ -29,18 +30,6 @@ export function installDropGuard(target: Window = window): () => void {
   };
 }
 
-function FatalError({ message }: { readonly message: string }) {
-  const t = createTranslator('ko');
-  const en = createTranslator('en');
-  return (
-    <div className="view-error" role="alert">
-      <strong>{t('shell.loadFailed')}</strong>
-      <span className="muted">{en('shell.loadFailed')}</span>
-      <code className="muted">{message}</code>
-    </div>
-  );
-}
-
 /** Renderer entry used by main.tsx (real OrbitApi) and the dev harness (mock). */
 export async function bootstrap(container: HTMLElement, orbit: OrbitApi | undefined): Promise<void> {
   ensureTokenStyles();
@@ -50,16 +39,35 @@ export async function bootstrap(container: HTMLElement, orbit: OrbitApi | undefi
   const root = createRoot(container);
 
   if (orbit === undefined) {
-    root.render(<FatalError message="window.orbit is missing (preload not loaded)" />);
+    // No preload, so no main to ask: Korean and English, and the window closes itself.
+    root.render(<StartupFailure message="window.orbit is missing (preload not loaded)" locale={null} onClose={() => window.close()} />);
     return;
   }
 
   let context: WindowContext;
   let settings: Settings;
+  let notice: WindowNotice | null;
   try {
-    [context, settings] = await Promise.all([orbit.getWindowContext(), orbit.getSettings().catch(() => DEFAULT_SETTINGS)]);
+    [context, settings, notice] = await Promise.all([
+      orbit.getWindowContext(),
+      orbit.getSettings().catch(() => DEFAULT_SETTINGS),
+      // Main reloaded this page after a crash: the view says so (App).
+      orbit.getWindowNotice ? orbit.getWindowNotice().catch(() => null) : Promise.resolve(null),
+    ]);
   } catch (error) {
-    root.render(<FatalError message={error instanceof Error ? error.message : String(error)} />);
+    reportRendererError(orbit, 'bootstrap', error);
+    const locale: Locale | null = await orbit.getSettings().then(
+      (current) => current.locale,
+      () => null,
+    );
+    root.render(
+      <StartupFailure
+        message={error instanceof Error ? error.message : String(error)}
+        locale={locale}
+        onClose={() => orbit.closeWindow()}
+        {...(orbit.openLogFolder ? { onOpenLogs: () => void orbit.openLogFolder?.().catch(() => undefined) } : {})}
+      />,
+    );
     return;
   }
 
@@ -69,7 +77,7 @@ export async function bootstrap(container: HTMLElement, orbit: OrbitApi | undefi
   root.render(
     <StrictMode>
       <EnvProvider orbit={orbit} initialSettings={settings}>
-        <App context={context} />
+        <App context={context} notice={notice} />
       </EnvProvider>
     </StrictMode>,
   );

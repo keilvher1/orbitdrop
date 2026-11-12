@@ -243,47 +243,43 @@ final class HelperProcessTests: XCTestCase {
     var description: String { "OrbitDropHelper \(arguments.joined(separator: " ")) did not finish within \(Int(seconds)) s (killed)" }
   }
 
-  final class Collected: @unchecked Sendable {
-    var data = Data()
-  }
-
-  /// Runs the helper CLI, bounded: a run that hangs is killed and throws CLITimeout instead of
-  /// stalling the whole test process (on GitHub's macOS runner VMs `imageio --probe` never returned).
+  /// Runs the helper CLI, bounded, with stdout in a file. Both matter on GitHub's macOS runner (a
+  /// VM): there `imageio --probe` exits (status 0) while its stdout pipe stays open — a process it
+  /// started keeps the pipe's write end — so reading the pipe to its end, as this did before, never
+  /// returned and hung the whole test run. A file is complete once the helper has exited; a run that
+  /// does not exit in time is killed and throws CLITimeout.
   func run(_ arguments: [String], timeout: TimeInterval = 60) throws -> (status: Int32, stdout: String) {
+    let outURL = FileManager.default.temporaryDirectory.appendingPathComponent("orbitdrop-helper-cli-\(UUID().uuidString).out")
+    guard FileManager.default.createFile(atPath: outURL.path, contents: nil) else { throw CocoaError(.fileWriteUnknown) }
+    defer { try? FileManager.default.removeItem(at: outURL) }
+    let out = try FileHandle(forWritingTo: outURL)
+    defer { try? out.close() }
     let process = Process()
     process.executableURL = Self.helperURL
     process.arguments = arguments
-    let out = Pipe()
     process.standardOutput = out
     process.standardError = FileHandle.nullDevice
     try process.run()
-    let collected = Collected()
-    let readDone = DispatchSemaphore(value: 0)
-    DispatchQueue.global().async {
-      collected.data = out.fileHandleForReading.readDataToEndOfFile()
-      readDone.signal()
-    }
     let deadline = Date().addingTimeInterval(timeout)
     while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
     if process.isRunning {
       kill(process.processIdentifier, SIGKILL)
       process.waitUntilExit()
-      _ = readDone.wait(timeout: .now() + 5)
       throw CLITimeout(arguments: arguments, seconds: timeout)
     }
-    _ = readDone.wait(timeout: .now() + 5)
-    return (process.terminationStatus, String(decoding: collected.data, as: UTF8.self))
+    let data = (try? Data(contentsOf: outURL)) ?? Data()
+    return (process.terminationStatus, String(decoding: data, as: UTF8.self))
   }
 
-  /// `imageio --probe` runs an ImageIO encode/decode round trip per format. On GitHub's macOS
-  /// runner (a VM) one of them never returns — the HEVC encoder, most likely — so the probe hangs.
-  /// The product bounds it (processors' 3 s probe timeout, then HEIC is "not available"); here the
-  /// tests that need a finished probe are skipped with that reason instead of hanging.
+  /// `imageio --probe` runs an ImageIO encode/decode round trip per format; on GitHub's macOS runner
+  /// (a VM without HEVC hardware) that takes seconds instead of milliseconds. The product bounds it
+  /// (processors give it 3 s, then HEIC is "not available"); a probe that takes more than 60 s here
+  /// skips the tests that need it, with that reason, instead of hanging them.
   func probeOrSkip() throws -> (status: Int32, stdout: String) {
     do {
-      return try run(["imageio", "--probe"], timeout: 30)
+      return try run(["imageio", "--probe"], timeout: 60)
     } catch let timeout as CLITimeout {
-      throw XCTSkip("\(timeout): this Mac's ImageIO encoder round trip hangs (seen on GitHub's macOS runner VMs)")
+      throw XCTSkip("\(timeout): this Mac's ImageIO encoder round trip does not finish (seen on GitHub's macOS runner VMs)")
     }
   }
 

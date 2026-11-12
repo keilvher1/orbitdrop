@@ -60,7 +60,7 @@ export async function launchApp(options: LaunchOptions = {}): Promise<Launched> 
 type Hooks = {
   registerPaths(paths: string[]): Promise<FileSelection>;
   openPicker(paths: string[], mode?: WheelMode): Promise<FileSelection>;
-  openWindow(kind: 'jobs' | 'settings' | 'dropzone' | 'about'): void;
+  openWindow(kind: 'jobs' | 'settings' | 'dropzone' | 'about' | 'welcome'): void;
   waitForJob(jobId: string): Promise<JobSnapshot>;
   jobs(): JobSnapshot[];
   windows(): { kind: WindowKind; context: WindowContext; windowId: number; url: string; unsaved: boolean }[];
@@ -85,7 +85,7 @@ export function hooks(app: ElectronApplication) {
   return {
     registerPaths: (paths: string[]) => call<FileSelection>('registerPaths', paths),
     openPicker: (paths: string[], mode: WheelMode = 'convert') => call<FileSelection>('openPicker', paths, mode),
-    openWindow: (kind: 'jobs' | 'settings' | 'dropzone' | 'about') => call<void>('openWindow', kind),
+    openWindow: (kind: 'jobs' | 'settings' | 'dropzone' | 'about' | 'welcome') => call<void>('openWindow', kind),
     waitForJob: (jobId: string) => call<JobSnapshot>('waitForJob', jobId),
     jobs: () => call<JobSnapshot[]>('jobs'),
     windows: () => call<Awaited<ReturnType<Hooks['windows']>>>('windows'),

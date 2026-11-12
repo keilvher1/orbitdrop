@@ -51,6 +51,7 @@ pnpm install
 | 아이콘 | `node scripts/gen-icons.mjs [--verify]` |
 | 제3자 라이선스 | `node scripts/licenses.mjs [--check]` → `THIRD_PARTY_LICENSES.md` (오프라인) |
 | 라이선스 원문 스냅숏 갱신 | `node scripts/licenses-fetch.mjs [--refresh]` (네트워크) → `docs/licenses/upstream/`; `--librsvg-crates`(cargo 필요) → `docs/licenses/librsvg-crates.json` ([packaging.md §7](packaging.md#7-제3자-라이선스-목록)) |
+| LGPL·MPL 대응 소스 묶음 | `node scripts/third-party-sources.mjs [--out <dir>]` (네트워크, 캐시 `apps/desktop/release/.third-party-cache/`) → `apps/desktop/release/OrbitDrop-<ver>-third-party-sources.tar.gz`; `--list`: 아카이브를 내려받지 않고 목록만, 맞출 수 없으면 종료 코드 1 ([packaging.md](packaging.md#lgplmpl-소스-제공)) |
 
 모든 스크립트는 Node `.mjs`라 macOS·Windows에서 같은 명령으로 동작한다(POSIX 셸 문법 없음).
 
@@ -71,6 +72,11 @@ pnpm install
 심어(`launchctl setenv` 등) 설정·기록 위치를 옮기거나 트레이를 숨기거나 전역 드래그를 끄지 못하게 하기 위함이다
 (`src/main/launch-options.ts`). 패키지된 앱의 작업자(utilityProcess)는 물려받은 `ORBITDROP_*` 변수를 하나도 받지 않는다
 (`ORBITDROP_PDFJS_DIR` 등은 main이 직접 정한다).
+
+처음 실행 UI: 설정 파일이 없으면 환영 창이 열리고 UI 언어는 OS 언어를 따른다(`src/main/onboarding.ts`, `settings/defaults.ts`).
+개발 실행에서 보려면 빈 폴더를 `ORBITDROP_USER_DATA_DIR`로 준다. 응용 프로그램 폴더 이동 제안은 패키지된 macOS 앱에서만 나온다.
+자동화(`ORBITDROP_E2E=1`, `--smoke-test`)는 둘 다 띄우지 않고 언어도 한국어로 두며, 충돌 보고서(crash reporter)도 켜지 않는다
+(임시 앱 데이터 폴더를 바로 지우기 때문). E2E에서 환영 창은 테스트 훅 `openWindow('welcome')`으로 연다.
 
 helper 탐색 순서: (개발 빌드만) `ORBITDROP_HELPER_PATH` → 패키지: `<resources>/helper/OrbitDropHelper[.exe]` →
 개발: `apps/desktop/resources/helper/<platform>-<arch>/`(`darwin-arm64`, `darwin-x64`, `win32-x64`).

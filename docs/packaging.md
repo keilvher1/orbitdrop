@@ -5,7 +5,8 @@ OrbitDrop은 **electron-builder 26.15.3** 하나로 패키징한다(선택 이�
 구동 스크립트: [`scripts/package.mjs`](../scripts/package.mjs) ·
 훅: [`apps/desktop/build/before-pack.cjs`](../apps/desktop/build/before-pack.cjs)(node_modules 수집 우회),
 [`scripts/after-pack.cjs`](../scripts/after-pack.cjs)(검사) ·
-라이선스: [`scripts/licenses.mjs`](../scripts/licenses.mjs), [`scripts/licenses-fetch.mjs`](../scripts/licenses-fetch.mjs) ·
+라이선스: [`scripts/licenses.mjs`](../scripts/licenses.mjs), [`scripts/licenses-fetch.mjs`](../scripts/licenses-fetch.mjs),
+[`scripts/third-party-sources.mjs`](../scripts/third-party-sources.mjs)(LGPL·MPL 대응 소스 묶음) ·
 CI: [`.github/workflows/ci.yml`](../.github/workflows/ci.yml), [`release.yml`](../.github/workflows/release.yml).
 
 > 원칙: macOS 패키지는 macOS에서, Windows 패키지는 Windows에서만 만든다. 서명 자격 증명이 없으면
@@ -217,7 +218,9 @@ Windows 10/11에 포함되어 있어 허용한다. 훅이 PE import 표를 읽�
 - [ ] macOS: `spctl` accepted(Notarized), `stapler validate` 통과
 - [ ] smoke test와 [verification.md](verification.md)의 수동 GUI 검증 결과 기록(설치본에서 창이 실제로 그려지는지 포함)
 - [ ] `THIRD_PARTY_LICENSES.md`가 최신(`node scripts/licenses.mjs --check`)
-- [ ] LGPL/MPL 구성요소의 소스 제공 방법 결정(아래 "LGPL·MPL 소스 제공 — 결정 필요")
+- [x] LGPL/MPL 구성요소의 소스 제공 방법: 릴리스마다 대응 소스 묶음을 함께 공개(아래 "LGPL·MPL 소스 제공", 2026-11-12 결정)
+- [ ] 패키지와 같은 소스 커밋에서 `node scripts/third-party-sources.mjs`로 만든 `OrbitDrop-<ver>-third-party-sources.tar.gz`를
+  설치 파일과 같은 GitHub 릴리스에 올림
 - [x] OrbitDrop 자체 라이선스: MIT(루트 `LICENSE`, 2026-11-12). 제품명 OrbitDrop, 제품 ID 확정(아래 "제품 ID")
 
 ## 제품 ID
@@ -239,23 +242,50 @@ ID를 바꾸면: Windows에서는 제거 항목 GUID와 설치 정보 키가 달
 설치 폴더 경로를 이어받지 못함). macOS에서는 손쉬운 사용·입력 모니터링 허용과 로그인 항목이 새 ID로 다시 필요하다. 사용자 데이터
 폴더 이름은 제품명(`OrbitDrop`)을 따르므로 ID만 바꾸면 그대로다.
 
-## LGPL·MPL 소스 제공 — 결정 필요
+## LGPL·MPL 소스 제공
 
-설치본에는 동적 라이브러리로 들어가는 **LGPL** 구성요소(libvips와 glib·pango·fribidi·libexif·libheif·librsvg·proxy-libintl이 든
-`libvips-cpp` / `libvips-42.dll`, Electron의 FFmpeg `libffmpeg.dylib` / `ffmpeg.dll`)와 **MPL** 구성요소(libvips 안의 cairo
-MPL-1.1, @napi-rs/canvas·librsvg에 정적 링크된 MPL-2.0 크레이트 cssparser·selectors 등)가 있다. 모두 수정하지 않고 업스트림 배포본
-그대로 쓰며, 라이선스 원문과 업스트림 소스 위치는 `THIRD_PARTY_LICENSES.md`에 있다. 그러나 LGPL(GPL-3.0 §6 / LGPL-2.1 §6)은 바이너리를
-배포하는 쪽이 **대응 소스를 제공하거나 받을 수 있게 할 책임**을 지게 하고, 업스트림 서버가 사라져도 그 책임은 남는다. 공개 배포 전에
-프로젝트 소유자가 다음 중 하나를 고른다(이 저장소는 아직 정하지 않았다):
+**결정(2026-11-12): 릴리스마다 대응 소스를 함께 공개한다.** 설치본에는 **LGPL** 구성요소(libvips와, 그 안에 정적으로 든
+glib·pango·fribidi·libexif·libheif·librsvg·proxy-libintl — macOS `libvips-cpp.<ver>.dylib`, Windows `libvips-42.dll`·`libvips-cpp-<ver>.dll`;
+Electron의 FFmpeg `libffmpeg.dylib` / `ffmpeg.dll`)와 **MPL** 구성요소(libvips 안의 cairo MPL-1.1, librsvg·@napi-rs/canvas에 정적 링크된
+MPL-2.0 크레이트 cssparser·cssparser-color·cssparser-macros·dtoa-short·selectors)가 있다. 모두 업스트림 배포본을 수정하지 않고 쓴다.
+LGPL(LGPL-2.1 §6 / GPL-3.0 §6)은 바이너리를 배포하는 쪽에 대응 소스를 제공할 책임을 지우고, 이 책임은 업스트림 서버가 사라져도 남으므로
+업스트림 링크만으로 두지 않는다.
 
-1. **릴리스와 함께 소스 보관** — 각 릴리스마다 정확한 버전의 소스 묶음(sharp-libvips 태그의 빌드 스크립트와 각 라이브러리 tarball,
-   librsvg의 crate 소스, Chromium FFmpeg 리비전, MPL 구성요소)을 같은 배포 위치에 올린다. 가장 확실하지만 보관 용량과 수고가 든다.
-2. **서면 제공(written offer)** — 최소 3년 동안 요청하면 소스를 실비로 제공한다고 고지에 적는다(LGPL-2.1 §6(c), GPL-3.0 §6(b)).
-   요청 창구와 보관 책임이 남는다.
-3. **업스트림 링크만** — 현재 `THIRD_PARTY_LICENSES.md`의 상태. 업스트림이 계속 제공하는 동안만 유효하고, 법적 위험을 소유자가 진다.
-
-어느 쪽이든 사용자가 수정한 libvips/FFmpeg로 교체할 수 있어야 한다(동적 링크라 가능; macOS에서는 교체 후 ad-hoc 재서명).
-MPL은 수정하지 않는 한 "소스 위치 고지"로 충족된다(위 1·2에 함께 포함하면 간단하다).
+* **배포 위치**: 각 GitHub 릴리스(https://github.com/keilvher1/orbitdrop/releases)에 설치 파일과 함께 자산
+  **`OrbitDrop-<ver>-third-party-sources.tar.gz`** 를 올린다. 설치본에 든 `THIRD_PARTY_LICENSES.md` 머리말이 이 위치와, 그곳에서 받을 수
+  없을 때의 서면 제공(written offer, 릴리스 후 3년, 요청 창구 https://github.com/keilvher1/orbitdrop/issues)을 알린다(§7).
+* **교체**: libvips와 FFmpeg는 동적 링크된 별도 파일이므로 사용자가 수정한, 인터페이스가 호환되는 빌드로 바꿀 수 있다 — macOS
+  `Contents/Resources/app.asar.unpacked/node_modules/@img/sharp-libvips-darwin-<arch>/lib/`와
+  `Contents/Frameworks/Electron Framework.framework/Libraries/libffmpeg.dylib`, Windows 설치 폴더의
+  `resources\app.asar.unpacked\node_modules\@img\sharp-win32-x64\lib\`와 `ffmpeg.dll`. macOS에서는 교체 후 서명이 깨지므로
+  `codesign --force --deep --sign - OrbitDrop.app`으로 ad-hoc 재서명해 실행한다. 이 방법은 묶음의 `MANIFEST.md`에도 적힌다.
+* **만들기**: `node scripts/third-party-sources.mjs`(기본 `apps/desktop/release/`, `--out <dir>`). `--list`는 원본 아카이브를 내려받지
+  않고 목록만 출력한다(CI 확인용; 태그의 빌드 스크립트·DEPS·체크섬 파일 같은 작은 메타데이터만 읽음). 정확한 버전으로 맞출 수 없는
+  구성요소가 있거나 내려받은 파일이 공개된 SHA-256과 다르면 종료 코드 1이고 묶음을 쓰지 않는다. 내려받기는 Node `fetch`만 쓰고, 임시
+  폴더에 받아 검증한 뒤 `apps/desktop/release/.third-party-cache/`(gitignore)에 보관한다 — 다시 실행하면 몇 초면 끝난다. 받은 것은
+  실행하거나 디스크에 풀지 않는다(라이선스 파일과 빌드 설정만 메모리에서 읽음). `GITHUB_TOKEN`이 있으면 api.github.com 요청(릴리스 자산
+  digest)에만 쓴다. 0.1.0 실측: 구성요소 18개, 원본 27개, 묶음 116.2 MB, 첫 실행 약 40초.
+* **내용**: (1) libvips 8.18.7과 LGPL/MPL 라이브러리 8개의 업스트림 tarball, sharp-libvips `build/posix.sh`가 받아 적용하는 패치(glib,
+  librsvg, libvips), 빌드 스크립트 — sharp-libvips v1.3.4(macOS), libvips/build-win64-mxe v8.18.7과 그 MXE 커밋(Windows `libvips-42.dll`),
+  sharp 0.35.5와 `@img/sharp-libvips-dev` 1.3.4(Windows `libvips-cpp-<ver>.dll`은 sharp의 `src/binding.gyp`가 빌드); (2) Chromium FFmpeg
+  (Electron 44.9.0의 Chromium 152.0.7977.167 `DEPS`가 고정한 리비전)과 Electron v44.9.0 소스(FFmpeg 패치 `patches/ffmpeg/`, GN 인자
+  `ffmpeg_branding = "Chrome"`·`is_component_ffmpeg = true`); (3) static.crates.io의 MPL-2.0 `.crate`; (4) `MANIFEST.md`(구성요소, 버전,
+  라이선스, 업스트림 URL, SHA-256, 검증 근거, 들어 있는 패키지·아키텍처), `SHA256SUMS`, 라이선스 원문.
+* **무엇이 들어가는지는 계산한다**: 대상(`electron-builder.yml`) → 대상별 sharp 패키지의 `versions.json`과 canvas SBOM(이 OS에 설치되지
+  않은 대상은 `pnpm-lock.yaml`의 integrity로 확인한 npm tarball) → 그 sharp-libvips 태그의 `build/posix.sh`가 받는 URL·패치와 `build/win.sh`가
+  받는 build-win64-mxe 릴리스 → Electron `DEPS` → Chromium `DEPS`의 FFmpeg 리비전. 라이선스는 sharp-libvips 표·`licenses-sources.mjs`, SBOM,
+  `docs/licenses/upstream`에서 온다. 손으로 적은 것은 Rust target triple, Electron 런타임 안 FFmpeg 경로, build-win64-mxe가 켜는 플러그인 목록뿐이다.
+* **검증**: 공개된 SHA-256(GNOME·cairo `.sha256sum`, GitHub 릴리스 자산 digest, crates.io 인덱스, librsvg `Cargo.lock`, canvas SBOM, npm
+  integrity)과 모두 같아야 하고, LGPL/MPL tarball은 Windows 빌드(MXE 패키지 정의)가 고정한 SHA-256과도 같아야 한다(두 OS가 같은 원본을
+  씀). `@img/sharp-win32-x64`의 `libvips-42.dll`은 build-win64-mxe 릴리스 zip 안의 것과 바이트 단위로 같아야 하고, 쓰인 FFmpeg 설정
+  (`chromium/config/Chrome/{mac,win}/<arch>/config.h`)은 GPL·version3·nonfree가 꺼져 있어야 한다. 공개된 해시가 없는 파일(GitHub 태그
+  아카이브, googlesource 아카이브, 패치)은 내려받은 해시를 `MANIFEST.md`에 기록한다. googlesource는 아카이브를 요청마다 새로 만들어
+  바이트가 달라질 수 있으므로 릴리스에 올린 묶음의 해시가 기준이다.
+* **묶음에 없는 것**: Electron Framework에 정적으로 든 나머지 Chromium의 LGPL/MPL 코드(Blink의 WebKit 유래 부분, hunspell, url_parse 등).
+  대응 소스는 Chromium 152.0.7977.167 태그와 Electron 패치(묶음의 Electron 소스)인데 수 GB라 미러하지 않고 서면 제공으로 덮는다. libvips에
+  정적으로 든 허용형 라이브러리(aom, harfbuzz, libpng 등)는 `MANIFEST.md`에 버전과 원본 URL만 적는다(소스 제공 의무 없음).
+* **sharp·@napi-rs/canvas·Electron을 올리면**: §7 순서로 라이선스 스냅숏을 먼저 갱신하고(`librsvg-crates.json` 포함) 이 스크립트를 다시
+  실행한다. 빌드 방식이 바뀌어 맞출 수 없는 구성요소가 생기면 스크립트가 실패하므로 그때 스크립트를 고친다.
 
 ## 7. 제3자 라이선스 목록
 
@@ -283,6 +313,8 @@ sharp·canvas·docx·pdf.js를 올리면 `licenses.mjs --check`가 "run node scr
 * 출력은 macOS와 Windows에서 같다. 각 체크아웃에는 자기 OS의 네이티브 패키지만 설치되므로, 대상별 패키지의 라이선스는
   스크립트의 고정 표(설치된 패키지와 대조)로, libvips 구성요소 표와 canvas SBOM은 darwin 패키지에서 갱신해 커밋하는
   `docs/licenses/native-components.json`으로 만든다(Windows 배포본의 versions.json·SBOM이 같은 내용임을 1.3.4 / 1.0.11에서 확인).
+* 머리말의 "Source code of LGPL and MPL components" 절이 대응 소스의 위치(릴리스 자산 `OrbitDrop-<ver>-third-party-sources.tar.gz`)와
+  서면 제공(3년, GitHub issues)을 알린다(위 "LGPL·MPL 소스 제공").
 * 같은 원문(공백 무시)은 한 번만 싣고 이후에는 "same text as …"로 가리킨다. 패키지와 저장소 어디에도 원문이 없는 구성요소(block,
   objc_id, objc-foundation — MIT, selectors — MPL-2.0)는 메타데이터의 라이선스·저자와 표준 원문으로 표시한다.
 * 새 런타임 의존성을 추가하면 다시 생성해 커밋한다. `package.mjs`는 패키징할 때마다 재생성하고, 앱에 `Resources/THIRD_PARTY_LICENSES.md`로 넣는다.

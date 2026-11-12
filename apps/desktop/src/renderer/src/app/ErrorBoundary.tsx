@@ -2,6 +2,8 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 
 interface Props {
   readonly fallback: (error: Error) => ReactNode;
+  /** Also told about the crash (App sends it to main.log through reportRendererError). */
+  readonly onError?: (error: Error, info: ErrorInfo) => void;
   readonly children: ReactNode;
 }
 
@@ -20,6 +22,11 @@ export class ErrorBoundary extends Component<Props, State> {
   override componentDidCatch(error: Error, info: ErrorInfo): void {
     // No document content here: component stack + message only.
     console.error('[renderer] view crashed', error.message, info.componentStack);
+    try {
+      this.props.onError?.(error, info);
+    } catch {
+      // reporting must never break the fallback
+    }
   }
 
   override render(): ReactNode {

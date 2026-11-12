@@ -5,29 +5,47 @@ import XCTest
 
 @testable import OrbitDropHelperKit
 
-/// ImageIOTool.probe() runs an encode/decode round trip per format. On GitHub's macOS runner (a
-/// VM) one of them never returns — the HEVC encoder, most likely — and an in-process hang would
-/// stall every later test. So the probe runs once on its own thread with a deadline; when it does
-/// not finish, the tests that need it are skipped with that reason (the product bounds the same
-/// probe: processors give `imageio --probe` 3 s, then HEIC is "not available").
+/// ImageIOTool.probe() runs an encode/decode round trip per format; on GitHub's macOS runner (a VM
+/// without HEVC hardware) that takes seconds, and a probe that never returned would stall every
+/// later test. So it runs once on its own thread with a deadline, while this (main) thread keeps
+/// its run loop going — the encoders may hand work to the main queue: with the main thread blocked
+/// in a semaphore wait the probe missed a 30 s deadline on the runner, where the same probe in the
+/// helper CLI finished in seconds. When it does not finish, the tests that need it are skipped
+/// with that reason (the product bounds the same probe: `imageio --probe` gets 3 s, then HEIC is
+/// "not available").
 enum BoundedProbe {
-  static let seconds: Double = 30
+  static let seconds: Double = 60
+
+  final class Box: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: ImageIOTool.Probe?
+    private var done = false
+
+    func finish(_ probe: ImageIOTool.Probe) {
+      lock.lock()
+      value = probe
+      done = true
+      lock.unlock()
+    }
+
+    var result: (done: Bool, probe: ImageIOTool.Probe?) {
+      lock.lock()
+      defer { lock.unlock() }
+      return (done, value)
+    }
+  }
+
   static let result: ImageIOTool.Probe? = {
-    final class Box: @unchecked Sendable {
-      var probe: ImageIOTool.Probe?
-    }
     let box = Box()
-    let done = DispatchSemaphore(value: 0)
-    Thread.detachNewThread {
-      box.probe = ImageIOTool.probe()
-      done.signal()
-    }
-    return done.wait(timeout: .now() + seconds) == .success ? box.probe : nil
+    Thread.detachNewThread { box.finish(ImageIOTool.probe()) }
+    let deadline = Date().addingTimeInterval(seconds)
+    while !box.result.done && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
+    return box.result.probe
   }()
 
   static func probeOrSkip() throws -> ImageIOTool.Probe {
     guard let probe = result else {
-      throw XCTSkip("ImageIOTool.probe() did not finish within \(Int(seconds)) s: this Mac's ImageIO encoder round trip hangs (seen on GitHub's macOS runner VMs)")
+      throw XCTSkip("ImageIOTool.probe() did not finish within \(Int(seconds)) s: this Mac's ImageIO encoder round trip does not finish (seen on GitHub's macOS runner VMs)")
     }
     return probe
   }

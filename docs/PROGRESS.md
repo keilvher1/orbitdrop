@@ -308,3 +308,45 @@ PC (the helper is compile- and host-tested only); signing/notarization
 credentials; a GitHub remote and the first CI run; product id, licence and
 the LGPL review of bundled libvips. The VMs od-sonoma and od-tahoe (~27 GB
 each in ~/.tart) are stopped, not deleted.
+
+## Stage 8 — public release (2026-11-12, in progress)
+
+The owner asked to finish the product as a service and decided:
+- public direct download: GitHub Releases of github.com/keilvher1/orbitdrop
+  (public, MIT) and a website at https://keilvher1.github.io/orbitdrop/ (GitHub Pages);
+- name OrbitDrop, product id `io.github.keilvher1.orbitdrop` (helper
+  `io.github.keilvher1.orbitdrop.helper`), never to change again;
+- free (no accounts, no payments);
+- Windows verified through GitHub Actions (no local Windows VM);
+- macOS signed with the owner's Developer ID and notarized with an App Store
+  Connect API key; a Windows code-signing certificate later (Azure Artifact
+  Signing is closed to individuals outside the US/Canada — options: an
+  individual-validated certificate with cloud signing, or SignPath Foundation's
+  free signing for OSS).
+
+Done so far:
+- Repo published (6d75758): MIT `LICENSE`, final product id, neutral wording
+  for the reference app; Issues and Pages (workflow) enabled.
+- Signing chain proven locally on main@6d75758: Developer ID signature with
+  timestamp and hardened runtime on the app and the helper, notarization
+  accepted for arm64 and x64, stapled; a quarantined copy taken out of the DMG
+  is "accepted, source=Notarized Developer ID" and `syspolicy_check
+  distribution` passes. The DMG file itself is still unsigned (being added).
+- macOS release packages are signed locally (the Developer ID key never leaves
+  the owner's keychain); CI builds Windows and the draft release.
+- LGPL/MPL corresponding sources: `scripts/third-party-sources.mjs` builds
+  `OrbitDrop-<version>-third-party-sources.tar.gz` (18 components, 27 archives,
+  116 MB for 0.1.0) for every release, plus a three-year written offer in
+  THIRD_PARTY_LICENSES.md (393234a).
+- First run, Help, diagnostics, crash handling (7769f4c): welcome window,
+  first-run language from the OS, Windows tools default Ctrl+Shift, Help menu
+  (website, issue form, log folder), "copy diagnostics", local-only crash
+  dumps, translated crash dialogs and screens, About licences/privacy, data
+  folder and settings reset, move to /Applications. vitest 1179 passed /
+  4 skipped, typecheck clean.
+
+In progress (background agents): auto-update (electron-updater, GitHub
+provider) and the release pipeline; the website; CI green on Windows and
+macOS (first-ever Windows run: 9 failing test files, MSVC helper build fixed,
+native-windows green on ci/windows); an automated real-Explorer drag test on
+GitHub's Windows runner.

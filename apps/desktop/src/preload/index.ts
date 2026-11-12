@@ -86,6 +86,14 @@ const api: OrbitApi = {
     if (typeof listener !== 'function') throw new TypeError('listener must be a function');
     return subscribe(IPC_CHANNELS.windowCloseRequested, () => listener());
   },
+  getWindowNotice: () => invoke(IPC_CHANNELS.windowNotice),
+  reportRendererError: (report) => ipcRenderer.send(IPC_CHANNELS.rendererError, report),
+  copyDiagnostics: () => invoke(IPC_CHANNELS.diagnosticsCopy),
+  openLogFolder: () => invoke(IPC_CHANNELS.logFolderOpen),
+  openDataFolder: () => invoke(IPC_CHANNELS.dataFolderOpen),
+  resetSettings: () => invoke(IPC_CHANNELS.settingsReset),
+  openLicense: (which) => invoke(IPC_CHANNELS.licenseOpen, { which }),
+  restartHelper: () => invoke(IPC_CHANNELS.helperRestart),
 };
 
 contextBridge.exposeInMainWorld('orbit', api);

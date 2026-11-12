@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import './setup';
-import { DEFAULT_SETTINGS, DEFAULT_WHEEL_GEOMETRY, WHEEL_DIAMETER_RANGE, isAllowedExternalUrl, type HelperStatus, type ModifierKey, type Settings } from '@orbitdrop/contracts';
+import { DEFAULT_SETTINGS, DEFAULT_WHEEL_GEOMETRY, WHEEL_DIAMETER_RANGE, defaultSettingsFor, isAllowedExternalUrl, type HelperStatus, type ModifierKey, type Settings } from '@orbitdrop/contracts';
 import { innerRadius, sectorOuterRadius } from '@orbitdrop/core';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -341,11 +341,24 @@ describe('SettingsView helper status', () => {
 });
 
 describe('SettingsView platform notes for modifier keys', () => {
+  it('Windows: the default tools combo is Ctrl+Shift, which the page accepts without a warning', async () => {
+    const orbit = createFakeOrbit({ platform: 'win32' });
+    renderWithEnv(<SettingsView />, { orbit, settings: defaultSettingsFor('win32') });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: '드래그' }));
+    const tools = screen.getByRole('group', { name: '도구 메뉴 키' });
+    expect(within(tools).getByRole('button', { name: 'Ctrl' }).getAttribute('aria-pressed')).toBe('true');
+    expect(within(tools).getByRole('button', { name: 'Shift' }).getAttribute('aria-pressed')).toBe('true');
+    expect(within(tools).getByRole('button', { name: 'Alt' }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.queryByText(/Alt\+Shift는 입력 언어 전환 단축키와 겹칩니다/)).toBeNull();
+    expect(screen.queryByText('Windows 키를 떼면 시작 메뉴가 열릴 수 있습니다.')).toBeNull();
+  });
+
   it('Windows: explains the Alt+Shift and Windows-key collisions and warns on the combos that have them', async () => {
     const { user } = setup({ platform: 'win32' });
     await user.click(screen.getByRole('tab', { name: '드래그' }));
     expect(screen.getByText(/Windows에서는 Alt\+Shift가 입력 언어 전환 단축키로도 쓰이고/)).toBeTruthy();
-    // The default tools combo is Alt+Shift.
+    // A tools combo of Alt+Shift (kept from an earlier setting, or chosen again) warns.
     const tools = screen.getByRole('group', { name: '도구 메뉴 키' });
     const altShift = screen.getByText(/Alt\+Shift는 입력 언어 전환 단축키와 겹칩니다/);
     expect(tools.getAttribute('aria-describedby')?.split(' ')).toContain(altShift.id);

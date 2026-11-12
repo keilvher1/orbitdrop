@@ -40,8 +40,23 @@
 앞의 세 장은 실제 Electron 앱 창, 마지막은 macOS helper의 휠 렌더링 스냅샷입니다(실제 Finder 드래그 검증 기록이 아님).
 
 번들 엔진이 실제로 지원하지 않는 메뉴는 사유와 함께 비활성화됩니다. 확장자만 바꾸는 "변환"은 없습니다.
-기본 조작: 드래그 중 **Shift** = 변환 휠, **Option+Shift**(macOS) / **Alt+Shift**(Windows) = 도구 휠(설정에서 변경 가능).
+기본 조작: 드래그 중 **Shift** = 변환 휠, **Option+Shift**(macOS) / **Ctrl+Shift**(Windows) = 도구 휠(설정에서 변경 가능).
+Windows에서 Alt+Shift는 입력 언어 전환 단축키와 겹쳐 기본값으로 쓰지 않습니다([ADR-12](docs/decisions.md#adr-12-windows-도구-휠-기본-조합-ctrlshift)).
 관찰된 사실과 제품 결정의 구분: [docs/requirements.md](docs/requirements.md).
+
+## 처음 실행 · 도움말 · 개인정보
+
+* **처음 실행**: 설정 파일이 아직 없으면 환영 창이 한 번 열립니다. 지금 설정된 키를 이 OS의 키 이름(macOS는 Option, Windows는
+  Alt·Ctrl)으로 보여 주고, 앱이 있는 곳(메뉴 막대 / 알림 영역 — Windows 11은 새 아이콘을 ^ 안에 숨길 수 있음), Drop Zone 열기,
+  "로그인 시 실행" 스위치(직접 켜기 전에는 꺼짐)를 안내합니다. 메뉴의 도움말 › 사용법으로 다시 열 수 있습니다. UI 언어는 OS 언어를
+  따릅니다(한국어 → 한국어, 그 밖 → 영어). 이미 있는 설정 파일의 언어는 바꾸지 않습니다. macOS에서 디스크 이미지나 다운로드 폴더에서
+  실행하면 응용 프로그램 폴더로 옮길지 한 번 묻습니다(이동 / 나중에).
+* **도움말**(메뉴 막대 / 알림 영역 메뉴): 사용법 · OrbitDrop 웹사이트 · 문제 신고(GitHub 새 이슈, 앱 버전·OS 버전·아키텍처만 미리
+  채우고 파일 이름·경로는 넣지 않음) · 로그 폴더 열기. 정보 창의 **진단 정보 복사**는 버전·빌드·OS·아키텍처·드래그 도우미 상태·엔진
+  요약과 경로를 다시 가린 최근 로그 200줄을 클립보드에 복사합니다. 설정 › 일반에는 데이터 폴더 열기와 설정 초기화가 있습니다.
+* **개인정보**: 파일은 이 컴퓨터 밖으로 나가지 않습니다. 계정과 텔레메트리가 없습니다. 업데이트 확인은 켠 경우에만 GitHub에 앱 버전만
+  보냅니다. 충돌 보고서(crash dump)는 앱 데이터 폴더의 `Crashpad`에만 저장되고 업로드하지 않습니다. 작업 기록(`history.json`)은 최근
+  파일 이름을 이 컴퓨터에만 보관하며 작업 창의 "끝난 작업 지우기"로 지울 수 있습니다.
 
 ## 요구 사항
 
@@ -59,13 +74,14 @@
 **macOS (14 이상)**
 
 * 설치: Apple 실리콘 Mac은 `…-mac-arm64-…`, Intel Mac은 `…-mac-x64-…` DMG를 씁니다. DMG를 열어 `OrbitDrop.app`을 `Applications`로
-  끌어 놓고 실행합니다. 창 없이 메뉴 막대에 아이콘이 나타납니다(Dock 아이콘 없음). Apple 실리콘에서 x64를 실행하면 Rosetta 2로
+  끌어 놓고 실행합니다. 메뉴 막대에 아이콘이 나타나고(Dock 아이콘 없음) 처음 한 번은 환영 창이 열립니다. Apple 실리콘에서 x64를 실행하면 Rosetta 2로
   동작하지만 첫 실행이 느리고, OrbitDrop이 arm64 설치본을 쓰라고 알려 줍니다.
 * 제거: 메뉴 막대 아이콘 → 종료 → `/Applications/OrbitDrop.app`을 휴지통으로. 설정에서 "로그인 시 실행"을 켰다면 먼저 끄거나
   시스템 설정 › 일반 › 로그인 항목에서 지웁니다. 손쉬운 사용·입력 모니터링을 허용했다면 시스템 설정 › 개인정보 보호 및 보안의
   해당 목록에서 OrbitDrop을 지웁니다.
 * 사용자 데이터(앱을 지워도 남음, 필요하면 직접 삭제): `~/Library/Application Support/OrbitDrop`(설정 `settings.json`, 작업 기록
-  `history.json`, `logs/main.log`, 캐시), `~/Library/Preferences/io.github.keilvher1.orbitdrop.plist`.
+  `history.json`, `logs/main.log`, 충돌 보고서 `Crashpad`, 캐시), `~/Library/Preferences/io.github.keilvher1.orbitdrop.plist`.
+  설정 › 일반 › 데이터 폴더 열기로 이 폴더를 열 수 있습니다.
 
 **Windows (11 x64)**
 
@@ -73,7 +89,7 @@
   `%LOCALAPPDATA%\Programs\OrbitDrop`(변경 가능 — OrbitDrop 전용 폴더를 고릅니다), 시작 메뉴·바탕 화면 바로가기가 생깁니다.
 * 제거: 설정 › 앱 › 설치된 앱 › OrbitDrop › 제거(또는 설치 폴더의 `Uninstall OrbitDrop.exe`). 설치 폴더 전체, 바로가기, 제거 항목,
   "로그인 시 실행" 시작 항목을 지웁니다.
-* 사용자 데이터 `%APPDATA%\OrbitDrop`(설정, 작업 기록, 로그, 캐시)은 남깁니다. 함께 지우려면 폴더를 직접 지우거나
+* 사용자 데이터 `%APPDATA%\OrbitDrop`(설정, 작업 기록, 로그, 충돌 보고서 `Crashpad`, 캐시)은 남깁니다. 함께 지우려면 폴더를 직접 지우거나
   `"%LOCALAPPDATA%\Programs\OrbitDrop\Uninstall OrbitDrop.exe" --delete-app-data`로 제거합니다.
 
 변환·편집 결과 파일은 원본 옆에 저장되므로 앱 제거와 무관하게 남습니다.
@@ -121,11 +137,12 @@ docs/                요구사항 · 결정(ADR) · 개발 · 지원표 · 검�
 
 ## 라이선스
 
-* OrbitDrop 자체 코드의 라이선스는 **아직 정해지지 않았습니다**(프로젝트 소유자 결정 사항). 정해지기 전에는 별도 허가 없이
-  재배포할 수 없습니다.
+* OrbitDrop 자체 코드: **MIT 라이선스**([LICENSE](LICENSE), © 2026 OrbitDrop contributors).
+* 앱의 정보 창 › 오픈 소스 라이선스에서 함께 배포되는 `THIRD_PARTY_LICENSES.md`와 Electron·Chromium 라이선스 파일을 기본 앱으로 열 수 있습니다.
 * 함께 배포되는 제3자 구성요소와 라이선스 원문: [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
   (`node scripts/licenses.mjs`로 생성, 설치본에도 포함; npm 패키지에 원문이 없는 libvips 구성요소·Rust 크레이트·컴파일되어 들어간
   패키지의 원문은 `docs/licenses/upstream/` 스냅숏). libvips와 일부 라이브러리, Electron에 든 FFmpeg는 **LGPL**이며 교체 가능한
-  동적 라이브러리로 포함됩니다. 공개 배포 전에 LGPL·MPL 소스 제공 방법을 정해야 합니다([docs/packaging.md](docs/packaging.md#lgplmpl-소스-제공--결정-필요)).
+  동적 라이브러리로 포함됩니다. LGPL·MPL 구성요소의 대응 소스는 릴리스마다 `OrbitDrop-<버전>-third-party-sources.tar.gz`로 함께
+  올립니다(`node scripts/third-party-sources.mjs`, [docs/packaging.md](docs/packaging.md#lgplmpl-소스-제공)).
   Electron/Chromium 고지는 `LICENSES.chromium.html`로 함께 배포됩니다.
 * 앱 아이콘(`apps/desktop/build/icon.svg`)은 이 프로젝트의 자체 디자인입니다.

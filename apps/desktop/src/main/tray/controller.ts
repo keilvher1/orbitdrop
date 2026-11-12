@@ -38,6 +38,8 @@ export interface TrayControllerDeps {
   readonly state: () => TrayState;
   readonly actions: TrayActions;
   readonly t: Translate;
+  /** Tooltip text (e.g. naming the drag keys); defaults to tray.tooltip. */
+  readonly tooltip?: () => string;
   readonly log?: Logger;
 }
 
@@ -80,7 +82,7 @@ export class TrayController {
     if (!this.tray || this.tray.isDestroyed()) return;
     try {
       const template = buildTrayTemplate(this.deps.state(), this.deps.actions, this.deps.t);
-      this.tray.setToolTip(this.deps.t('tray.tooltip'));
+      this.tray.setToolTip(this.deps.tooltip?.() ?? this.deps.t('tray.tooltip'));
       this.tray.setContextMenu(Menu.buildFromTemplate(template));
       this.lastLabels = template.filter((item) => item.type !== 'separator').map((item) => String(item.label));
     } catch (error) {

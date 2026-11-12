@@ -93,6 +93,12 @@ export const CANVAS_NATIVE_SOURCES = {
   wuffs: { license: 'Apache-2.0', files: { LICENSE: [`${GH}/google/wuffs-mirror-release-c/{v}/LICENSE`] } },
   zlib: { license: 'Zlib', files: { LICENSE: ['https://chromium.googlesource.com/chromium/src/third_party/zlib/+/{v}/LICENSE?format=TEXT'] } },
 };
+// Corresponding sources of the LGPL/MPL components: built by scripts/third-party-sources.mjs and
+// attached to every GitHub release; THIRD_PARTY_LICENSES.md (scripts/licenses.mjs) points to them.
+export const RELEASES_URL = 'https://github.com/keilvher1/orbitdrop/releases';
+export const ISSUES_URL = 'https://github.com/keilvher1/orbitdrop/issues';
+/** Release asset name of the sources archive, from apps/desktop/package.json. */
+export const sourcesArchiveName = (desktopPkg) => `${desktopPkg.productName ?? 'OrbitDrop'}-${desktopPkg.version}-third-party-sources.tar.gz`;
 export const isCommit = (v) => /^[0-9a-f]{40}$/.test(String(v));
 export const expandUrl = (template, version, extra = {}) =>
   template

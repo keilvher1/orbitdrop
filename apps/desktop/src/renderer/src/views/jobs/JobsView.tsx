@@ -18,6 +18,7 @@ import { FolderOpen, ListX, RotateCw, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useEnv } from '../../app/env';
 import { asErrorInfo } from '../../app/errors';
+import { comboLabel } from '../../app/keys';
 import { useEscapeKey } from '../../app/useEscapeKey';
 import { ActionIcon } from '../../components/ActionIcon';
 import { Notice, Spinner } from '../../components/Notice';
@@ -91,7 +92,7 @@ export function finishedSince(previous: ReadonlyMap<string, JobSnapshot['state']
  * vanished (a cancelled job's × — its card moves to "Recent").
  */
 export function JobsView() {
-  const { orbit, t, platform } = useEnv();
+  const { orbit, t, platform, settings } = useEnv();
   const [jobs, setJobs] = useState<readonly JobSnapshot[] | null>(null);
   const [loadError, setLoadError] = useState<OrbitErrorInfo | null>(null);
   const [clearing, setClearing] = useState(false);
@@ -231,7 +232,12 @@ export function JobsView() {
         <p className="jobs-empty-title" tabIndex={-1}>
           {t('jobs.empty')}
         </p>
-        <p className="jobs-empty-hint">{platform === 'darwin' ? t('jobs.emptyHint') : t('jobs.emptyHintPc')}</p>
+        <p className="jobs-empty-hint">
+          {t(platform === 'darwin' ? 'jobs.emptyHint' : 'jobs.emptyHintPc', {
+            convert: comboLabel(t, settings.globalDrag.convertModifiers, platform),
+            tools: comboLabel(t, settings.globalDrag.toolsModifiers, platform),
+          })}
+        </p>
       </div>
     );
   } else {

@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type ElectronApplication } from '@playwright/test';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-import { DEFAULT_SETTINGS, type FileSelection, type OrbitApi } from '@orbitdrop/contracts';
+import { defaultSettingsFor, type FileSelection, type OrbitApi } from '@orbitdrop/contracts';
 import { appDir, hooks, launchApp, makeJpeg, makePdf, windowOf } from './support';
 
 declare global {
@@ -140,7 +140,9 @@ test('corrupt settings and history are kept aside, the defaults apply and the us
     expect(historyBackup).toBeDefined();
     expect(await readFile(join(userData, settingsBackup!), 'utf8')).toBe('{ "locale": "en", broken');
     expect(await readFile(join(userData, historyBackup!), 'utf8')).toBe('[[[');
-    expect(JSON.parse(await readFile(join(userData, 'settings.json'), 'utf8'))).toEqual(DEFAULT_SETTINGS);
+    // This platform's defaults (Windows: Ctrl+Shift for the tools wheel); an existing user gets no welcome window.
+    const defaults = defaultSettingsFor(process.platform);
+    expect(JSON.parse(await readFile(join(userData, 'settings.json'), 'utf8'))).toEqual({ ...defaults, onboarding: { ...defaults.onboarding, welcomeDone: true } });
 
     await hooks(launched.app).openWindow('settings');
     const settings = await windowOf(launched.app, 'settings');

@@ -68,6 +68,21 @@ export const IPC_CHANNELS = {
    * the window asks the user exactly like its own × (onCloseRequested).
    */
   windowCloseRequested: 'orbit:window:close-requested',
+  // ------------------------------------------- first run, help, diagnostics, crash handling (renderer → main)
+  /** Why main reloaded this window's page (it had crashed), or null. */
+  windowNotice: 'orbit:window:notice',
+  /** Fire-and-forget: a view crashed (ErrorBoundary) — logged in main.log, redacted and size-capped. */
+  rendererError: 'orbit:renderer:error',
+  /** Copy diagnostics (versions, OS, helper, capabilities, redacted log tail) to the clipboard. */
+  diagnosticsCopy: 'orbit:diagnostics:copy',
+  logFolderOpen: 'orbit:logs:open',
+  dataFolderOpen: 'orbit:data:open',
+  /** Settings back to the defaults for this computer (Settings › General, after an in-app confirmation). */
+  settingsReset: 'orbit:settings:reset',
+  /** Open a shipped licence file with the OS default app. */
+  licenseOpen: 'orbit:license:open',
+  /** Settings › Drag: restart the drag helper after it gave up. */
+  helperRestart: 'orbit:helper:restart',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -75,14 +90,30 @@ export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
 /** Custom protocol main registers for editor previews: orbit-preview://p/<token> */
 export const PREVIEW_PROTOCOL = 'orbit-preview';
 
-/** URLs the renderer may ask main to open externally. Anything else is refused. */
+/** OrbitDrop's web pages (Help menu): the website in Korean and English, and a new GitHub issue. */
+export const ORBITDROP_WEBSITE = { ko: 'https://keilvher1.github.io/orbitdrop/', en: 'https://keilvher1.github.io/orbitdrop/en/' } as const;
+export const ORBITDROP_NEW_ISSUE = 'https://github.com/keilvher1/orbitdrop/issues/new';
+
+/**
+ * The https pages that may be opened, exactly: origin + path, a query string
+ * only where `query` is set (the issue form's prefilled title/body), never a
+ * fragment, user info or port.
+ */
+export const ALLOWED_WEB_PAGES: readonly { readonly origin: string; readonly path: string; readonly query?: true }[] = [
+  { origin: 'https://keilvher1.github.io', path: '/orbitdrop/' },
+  { origin: 'https://keilvher1.github.io', path: '/orbitdrop/en/' },
+  { origin: 'https://github.com', path: '/keilvher1/orbitdrop/issues/new', query: true },
+];
+
+/** URLs the renderer may ask main to open externally. Anything else is refused. https: ALLOWED_WEB_PAGES only. */
 export const ALLOWED_EXTERNAL_URL_PREFIXES: readonly string[] = [
-  'https://github.com/',
+  ORBITDROP_WEBSITE.ko,
+  ORBITDROP_NEW_ISSUE,
   'x-apple.systempreferences:com.apple.preference.security?',
   'ms-settings:',
 ];
 
-export type WindowKind = 'picker' | 'editor' | 'jobs' | 'settings' | 'dropzone' | 'about';
+export type WindowKind = 'picker' | 'editor' | 'jobs' | 'settings' | 'dropzone' | 'about' | 'welcome';
 
 export type WindowContext =
   | { readonly kind: 'picker'; readonly selectionId: string; readonly initialMode: WheelMode }
@@ -90,7 +121,8 @@ export type WindowContext =
   | { readonly kind: 'jobs' }
   | { readonly kind: 'settings' }
   | { readonly kind: 'dropzone' }
-  | { readonly kind: 'about' };
+  | { readonly kind: 'about' }
+  | { readonly kind: 'welcome' };
 
 export interface AppInfo {
   readonly name: string;
@@ -210,7 +242,7 @@ export const RegisterPathsRequestSchema = z.strictObject({
   source: z.enum(['dropZone']),
 });
 
-export const WindowOpenRequestSchema = z.strictObject({ kind: z.enum(['jobs', 'settings', 'dropzone', 'about']) });
+export const WindowOpenRequestSchema = z.strictObject({ kind: z.enum(['jobs', 'settings', 'dropzone', 'about', 'welcome']) });
 export const WindowResizeRequestSchema = z.strictObject({
   width: z.number().int().min(200).max(4000),
   height: z.number().int().min(120).max(4000),
@@ -220,8 +252,59 @@ export const ExternalOpenRequestSchema = z.strictObject({ url: z.string().max(20
 /** Added by the hardening pass: setCloseGuard payload. */
 export const WindowCloseGuardRequestSchema = z.strictObject({ guard: z.boolean() });
 
+/** An https URL that is exactly one of ALLOWED_WEB_PAGES. */
+export function isAllowedWebPage(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'https:' || parsed.username !== '' || parsed.password !== '' || parsed.port !== '' || parsed.hash !== '' || url.includes('#')) return false;
+  return ALLOWED_WEB_PAGES.some((page) => parsed.origin === page.origin && parsed.pathname === page.path && (page.query === true || parsed.search === ''));
+}
+
 export function isAllowedExternalUrl(url: string): boolean {
+  if (/^https?:/i.test(url)) return isAllowedWebPage(url);
   return ALLOWED_EXTERNAL_URL_PREFIXES.some((prefix) => url.startsWith(prefix));
+}
+
+// ------------------------------------- first run, help, diagnostics, crash handling (optional for older callers)
+
+/**
+ * getWindowNotice: main reloaded this window because its page crashed.
+ * 'recovered': the first crash — the view is shown again; 'failed': it
+ * crashed again — the window shows only a crash screen (a third crash closes
+ * it). `unsavedLost`: the window had reported unsaved work (Annotate shapes,
+ * Redact regions) when it crashed.
+ */
+export interface WindowNotice {
+  readonly kind: 'recovered' | 'failed';
+  readonly unsavedLost: boolean;
+}
+
+/** reportRendererError payload (validated and size-capped in main; logged path-redacted). */
+export const RendererErrorReportSchema = z.strictObject({
+  /** 'boundary': a view's ErrorBoundary caught it; 'bootstrap': the window could not start its view. */
+  source: z.enum(['boundary', 'bootstrap']),
+  name: z.string().max(200).optional(),
+  message: z.string().max(4000),
+  stack: z.string().max(16_000).optional(),
+  componentStack: z.string().max(16_000).optional(),
+});
+export type RendererErrorReport = z.infer<typeof RendererErrorReportSchema>;
+
+/** Largest strings the renderer sends in a report (it trims before sending; main validates). */
+export const RENDERER_ERROR_LIMITS = { name: 200, message: 4000, stack: 16_000, componentStack: 16_000 } as const;
+
+export const LICENSE_FILES = ['thirdParty', 'electron', 'chromium'] as const;
+/** thirdParty: THIRD_PARTY_LICENSES.md; electron: Electron's MIT licence; chromium: LICENSES.chromium.html. */
+export type LicenseFile = (typeof LICENSE_FILES)[number];
+export const LicenseOpenRequestSchema = z.strictObject({ which: z.enum(LICENSE_FILES) });
+
+export interface DiagnosticsResult {
+  /** Lines of main.log included (path-redacted). */
+  readonly logLines: number;
 }
 
 // ------------------------------------------------- polish pass additions (all optional for older callers)
@@ -381,4 +464,21 @@ export interface OrbitApi {
   setCloseGuard?(guard: boolean): void;
   /** An OS-level close was held back (see setCloseGuard): ask the user like the window's own × does. */
   onCloseRequested?(listener: () => void): () => void;
+
+  // ------------------------------------- first run / help / diagnostics additions (optional for older implementations)
+  /** Why main reloaded this window (its page had crashed), or null. */
+  getWindowNotice?(): Promise<WindowNotice | null>;
+  /** A view crashed: main logs it (redacted, size-capped). Fire-and-forget. */
+  reportRendererError?(report: RendererErrorReport): void;
+  /** Main copies diagnostics to the clipboard; nothing about them reaches the page. */
+  copyDiagnostics?(): Promise<DiagnosticsResult>;
+  openLogFolder?(): Promise<void>;
+  /** The app data folder (settings, history, logs). */
+  openDataFolder?(): Promise<void>;
+  /** Every setting back to the defaults for this computer; job history and outputs stay. */
+  resetSettings?(): Promise<Settings>;
+  /** Opens a licence file shipped with the app in the OS default app. */
+  openLicense?(which: LicenseFile): Promise<void>;
+  /** Restart the drag helper after it gave up ('crashed'). */
+  restartHelper?(): Promise<void>;
 }

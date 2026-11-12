@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS, IPC_CHANNELS, OrbitError, applySettingsPatch } from '@orbitdrop/contracts';
 import { EVENT_CHANNELS, registerOrbitIpc, type OrbitIpcServices } from '../../src/main/ipc/channels';
 import { IpcRouter, resolveSender, type FrameLike, type IpcEventLike, type IpcMainLike, type SenderLike } from '../../src/main/ipc/router';
+import { registerSupportIpc, type SupportIpcServices } from '../../src/main/ipc/support';
 
 type Listener = (event: never, ...args: unknown[]) => unknown;
 
@@ -97,12 +98,27 @@ function services(): OrbitIpcServices<Rec> & Record<string, ReturnType<typeof vi
   } as unknown as OrbitIpcServices<Rec> & Record<string, ReturnType<typeof vi.fn>>;
 }
 
+function supportServices(): SupportIpcServices<Rec> & Record<string, ReturnType<typeof vi.fn>> {
+  return {
+    windowNotice: vi.fn(() => ({ kind: 'recovered', unsavedLost: true })),
+    rendererError: vi.fn(),
+    copyDiagnostics: vi.fn(async () => ({ logLines: 3 })),
+    openLogFolder: vi.fn(async () => undefined),
+    openDataFolder: vi.fn(async () => undefined),
+    resetSettings: vi.fn(async () => DEFAULT_SETTINGS),
+    openLicense: vi.fn(async () => undefined),
+    restartHelper: vi.fn(async () => undefined),
+  } as unknown as SupportIpcServices<Rec> & Record<string, ReturnType<typeof vi.fn>>;
+}
+
 function setup() {
   const ipc = new FakeIpcMain();
   const s = services();
+  const support = supportServices();
   const router = new IpcRouter<Rec>(ipc, guard);
   registerOrbitIpc(router, s);
-  return { ipc, s, router };
+  registerSupportIpc(router, support);
+  return { ipc, s, support, router };
 }
 
 describe('resolveSender', () => {
@@ -238,6 +254,52 @@ describe('IPC channels', () => {
     ipc.send(IPC_CHANNELS.windowCloseGuard, fromForeign, { guard: true });
     ipc.send(IPC_CHANNELS.windowCloseGuard, fromSubframe, { guard: true });
     expect(s.setCloseGuard).toHaveBeenCalledTimes(2);
+  });
+
+  it('first run / help / diagnostics channels: validated payloads, the sender record, nothing from foreign senders', async () => {
+    const { ipc, support } = setup();
+    expect(await ipc.invoke(IPC_CHANNELS.windowNotice, fromOurs)).toEqual({ kind: 'recovered', unsavedLost: true });
+    expect(support.windowNotice).toHaveBeenCalledWith({ windowId: 1 });
+    expect(await ipc.invoke(IPC_CHANNELS.diagnosticsCopy, fromOurs)).toEqual({ logLines: 3 });
+    await ipc.invoke(IPC_CHANNELS.logFolderOpen, fromOurs);
+    await ipc.invoke(IPC_CHANNELS.dataFolderOpen, fromOurs);
+    await ipc.invoke(IPC_CHANNELS.settingsReset, fromOurs);
+    await ipc.invoke(IPC_CHANNELS.helperRestart, fromOurs);
+    await ipc.invoke(IPC_CHANNELS.licenseOpen, fromOurs, { which: 'chromium' });
+    expect(support.openLicense).toHaveBeenCalledWith('chromium');
+    for (const service of ['copyDiagnostics', 'openLogFolder', 'openDataFolder', 'resetSettings', 'restartHelper']) expect(support[service], service).toHaveBeenCalledTimes(1);
+
+    // Licence files are named, never given as paths.
+    for (const payload of [{ which: '/etc/passwd' }, { which: 'electron', path: '/x' }, 'electron', undefined]) {
+      await expect(ipc.invoke(IPC_CHANNELS.licenseOpen, fromOurs, payload)).rejects.toThrow('INVALID_OPTIONS: Invalid request');
+    }
+    expect(support.openLicense).toHaveBeenCalledTimes(1);
+    for (const channel of [IPC_CHANNELS.diagnosticsCopy, IPC_CHANNELS.settingsReset, IPC_CHANNELS.logFolderOpen, IPC_CHANNELS.windowNotice]) {
+      await expect(ipc.invoke(channel, fromForeign), channel).rejects.toThrow('INTERNAL: Untrusted sender');
+      await expect(ipc.invoke(channel, fromSubframe), channel).rejects.toThrow(/^INTERNAL/);
+    }
+    expect(support.resetSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('renderer error reports: a size-capped, strict payload from a trusted main frame; anything else is dropped', () => {
+    const { ipc, support } = setup();
+    const report = { source: 'boundary', name: 'TypeError', message: 'x is undefined', stack: 'TypeError: x\n    at View (file:///app/out/renderer/assets/index.js:1:2)', componentStack: '\n    at View' };
+    ipc.send(IPC_CHANNELS.rendererError, fromOurs, report);
+    expect(support.rendererError).toHaveBeenCalledWith(report, { windowId: 1 });
+    for (const payload of [
+      { ...report, message: 'm'.repeat(4001) },
+      { ...report, stack: 's'.repeat(16_001) },
+      { ...report, source: 'main' },
+      { ...report, path: '/Users/me/a.png' },
+      { source: 'boundary' },
+      'boom',
+      undefined,
+    ]) {
+      ipc.send(IPC_CHANNELS.rendererError, fromOurs, payload);
+    }
+    ipc.send(IPC_CHANNELS.rendererError, fromForeign, report);
+    ipc.send(IPC_CHANNELS.rendererError, fromSubframe, report);
+    expect(support.rendererError).toHaveBeenCalledTimes(1);
   });
 
   it('dispose removes every channel', () => {

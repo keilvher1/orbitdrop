@@ -39,8 +39,9 @@ OrbitDrop은 참고 영상(다른 Mac 앱의 작업 흐름, 약 21.93초)을 **�
 
 ### 기본 조작 (설정에서 변경 가능)
 
-* 드래그 중 **Shift** → 변환 휠, **Option+Shift**(macOS) / **Alt+Shift**(Windows) → 도구 휠
+* 드래그 중 **Shift** → 변환 휠, **Option+Shift**(macOS) / **Ctrl+Shift**(Windows) → 도구 휠
   (`settings.globalDrag.convertModifiers` / `toolsModifiers`). 단일 보조키를 `globalShortcut`에 등록하지 않는다.
+  Windows 기본값이 Alt+Shift가 아닌 이유(입력 언어 전환 단축키): [decisions.md ADR-12](decisions.md#adr-12-windows-도구-휠-기본-조합-ctrlshift).
 * 키를 놓아도 활성 휠은 드롭 또는 취소까지 유지된다. 휠 중심은 활성화 위치 근처에 고정되고 화면 안으로 옮겨진다.
 * 중심은 실행되지 않는 dead zone. 유효 섹터에서 정식 Drop이 일어날 때만 작업이 확정된다
   (보조키 해제·hover·외부 mouse-up은 작업을 실행하지 않는다).

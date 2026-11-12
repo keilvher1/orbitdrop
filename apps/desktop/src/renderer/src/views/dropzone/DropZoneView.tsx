@@ -2,6 +2,7 @@ import { type FileSelection, type OrbitErrorInfo } from '@orbitdrop/contracts';
 import { ArrowDownToLine, ChevronLeft, FolderOpen } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
 import { useEnv } from '../../app/env';
+import { comboLabel } from '../../app/keys';
 import { useEscapeKey } from '../../app/useEscapeKey';
 import { useWindowFit } from '../../app/useWindowFit';
 import { Notice, Spinner } from '../../components/Notice';
@@ -33,7 +34,7 @@ export function hasFiles(event: DragEvent): boolean {
  * validated in main) → inline wheel → submitAction.
  */
 export function DropZoneView() {
-  const { orbit, t, settings } = useEnv();
+  const { orbit, t, settings, platform } = useEnv();
   const [state, setState] = useState<DropState>({ kind: 'idle' });
   const [status, setStatus] = useState<Status>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -179,6 +180,11 @@ export function DropZoneView() {
               <FolderOpen size={15} aria-hidden="true" />
               {t('dropzone.open')}
             </button>
+            {settings.globalDrag.enabled ? (
+              <p className="dropzone-keys-hint">
+                {t(platform === 'darwin' ? 'help.keysHint.dropzone' : 'help.keysHint.dropzonePc', { convert: comboLabel(t, settings.globalDrag.convertModifiers, platform) })}
+              </p>
+            ) : null}
             <StatusLine
               status={status}
               onShowJobs={() => void orbit.openWindow('jobs')}
