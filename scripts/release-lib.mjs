@@ -189,7 +189,12 @@ export function findRelease({ tag, run, repo = REPO }) {
  * The draft release for `tag`: created when missing. A release that is already published is
  * refused — its assets are what users download and what updates point to.
  */
-export function ensureDraftRelease({ tag, title, notes, prerelease = false, run, repo = REPO, workDir }) {
+/** Blocks for `ms` (the release scripts run gh synchronously). */
+function sleepSync(ms) {
+  if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+export function ensureDraftRelease({ tag, title, notes, prerelease = false, run, repo = REPO, workDir, findAttempts = 6, findDelayMs = 2500 }) {
   let release = findRelease({ tag, run, repo });
   if (!release) {
     const notesFile = join(workDir, 'release-notes.md');
@@ -198,8 +203,13 @@ export function ensureDraftRelease({ tag, title, notes, prerelease = false, run,
     const args = ['release', 'create', tag, '--repo', repo, '--draft', '--verify-tag', '--title', title, '--notes-file', notesFile];
     if (prerelease) args.push('--prerelease');
     const created = run('gh', args);
-    // Another job may have created it at the same moment: look again either way.
-    release = findRelease({ tag, run, repo });
+    // Another job may have created it at the same moment: look again either way. The release list
+    // can lag behind a create by a few seconds (seen on v1.0.0: the draft existed, the list did not
+    // show it yet), so look a few times before giving up.
+    for (let attempt = 0; attempt < findAttempts && !release; attempt++) {
+      if (attempt > 0) sleepSync(findDelayMs);
+      release = findRelease({ tag, run, repo });
+    }
     if (!release) throw new Error(`could not create the draft release for ${tag}: ${`${created.stderr || created.stdout}`.trim()}`);
   }
   if (!release.draft) throw new Error(`the release for ${tag} is already published; its assets are not replaced (make a new version instead — docs/RELEASING.md)`);

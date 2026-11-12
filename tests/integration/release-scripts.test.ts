@@ -239,6 +239,34 @@ function githubRunner(releases: GitHubRelease[], extra: Record<string, Handler> 
 }
 
 describe('draft releases', () => {
+  it('waits for a just-created draft to show up in the release list (GitHub lists it a few seconds later)', () => {
+    const releases: GitHubRelease[] = [];
+    let created: GitHubRelease | null = null;
+    let listsAfterCreate = 0;
+    const fake = fakeRunner({
+      // The list lags: the first two looks after the create still miss the new draft (seen on v1.0.0).
+      'gh api': () => {
+        if (created) listsAfterCreate += 1;
+        if (created && listsAfterCreate > 2 && !releases.includes(created)) releases.push(created);
+        return { stdout: JSON.stringify(releases) };
+      },
+      'gh release': (args) => {
+        // A draft's URL is not under its tag until it is published.
+        if (args[1] === 'create') created = { tag_name: args[2]!, draft: true, assets: [], html_url: 'https://github.com/keilvher1/orbitdrop/releases/tag/untagged-754651ed24b8c5c44ad2' };
+        return { stdout: 'https://github.com/keilvher1/orbitdrop/releases/tag/untagged-754651ed24b8c5c44ad2' };
+      },
+    });
+    const draft = ensureDraftRelease({ tag: 'v1.0.0', title: 'OrbitDrop 1.0.0', notes: 'n', run: fake.run, workDir: tempDir(), findDelayMs: 0 });
+    expect(draft).toMatchObject({ tag_name: 'v1.0.0', draft: true });
+    expect(fake.calls.filter((c) => c.args[1] === 'create')).toHaveLength(1);
+    expect(listsAfterCreate).toBe(3);
+
+    // Never listed at all: a clear error after the retries, and still only one create.
+    const never = fakeRunner({ 'gh api': () => ({ stdout: '[]' }), 'gh release': () => ({ stdout: 'https://github.com/keilvher1/orbitdrop/releases/tag/untagged-1' }) });
+    expect(() => ensureDraftRelease({ tag: 'v1.0.1', title: 't', notes: 'n', run: never.run, workDir: tempDir(), findAttempts: 3, findDelayMs: 0 })).toThrow(/could not create the draft release for v1\.0\.1/);
+    expect(never.calls.filter((c) => c.args[1] === 'create')).toHaveLength(1);
+  });
+
   it('creates the draft when it is missing, reuses a draft, and never touches a published release', () => {
     const releases: GitHubRelease[] = [];
     const fake = githubRunner(releases);
