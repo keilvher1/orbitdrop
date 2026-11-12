@@ -110,6 +110,9 @@ function main(argv) {
   }
   const result = setVersion(arg);
   console.log(`version set to ${arg}:`, result);
+  // THIRD_PARTY_LICENSES.md names the app version (heading, sources archive, written offer); CI's
+  // `licenses.mjs --check` fails until it is regenerated.
+  console.log('next: node scripts/licenses.mjs  (THIRD_PARTY_LICENSES.md names the version), then the checks in docs/RELEASING.md');
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main(process.argv.slice(2));

@@ -49,8 +49,10 @@ OrbitDrop은 GitHub 저장소 [keilvher1/orbitdrop](https://github.com/keilvher1
    `0.2.0-beta.1` 같은 프리릴리스 버전은 GitHub에서 pre-release로 공개하며, 정식 버전 설치본은 프리릴리스를 받지 않는다.
    프리릴리스 이름은 `-alpha.N`/`-beta.N`만 쓴다: 그런 설치본은 더 새 프리릴리스와 정식 버전으로 넘어가지만, 다른 이름(`-rc.N` 등)은
    electron-updater가 별도 채널로 다뤄 같은 이름의 프리릴리스만 따라가고 정식 버전으로는 넘어가지 않는다.
-2. 변경 내용을 문서(PROGRESS.md 등)에 적고 커밋한다.
-3. 검사: `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test`, `node scripts/licenses.mjs --check`,
+2. `node scripts/licenses.mjs`로 `THIRD_PARTY_LICENSES.md`를 다시 만든다. 이 파일은 머리말과 소스 제공 약속에 앱 버전을 적으므로,
+   버전만 올리고 두면 CI의 `licenses.mjs --check`가 실패한다(1.1.0 첫 태그가 이것으로 Windows 빌드에서 멈췄다).
+3. 변경 내용을 문서(PROGRESS.md 등)에 적고 커밋한다.
+4. 검사(버전을 올린 **뒤에**): `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test`, `node scripts/licenses.mjs --check`,
    그리고 Mac에서 Playwright E2E와 `electron-verify`(창이 열리므로 사람이 있는 데스크톱에서).
 
 ## 2. 태그
