@@ -584,48 +584,49 @@ kbd {
     stroke: var(--w-active-text);
   }
 
-  .wheel-art .w-drag {
-    transition: opacity 90ms var(--ease);
-  }
-
+  /* The real pointer takes over from the drawn one. */
   .wheel-art:hover .w-drag {
     opacity: 0;
   }
-}
 
-/* :has() rules stay separate: a browser without :has() drops only these. */
-.wheel-art:has(.w-sector:hover) .is-active:not(:hover) .w-shape {
-  fill: var(--w-sector);
-}
+  /* :has() rules stay separate: a browser without :has() drops only these. */
+  .wheel-art:has(.w-sector:hover) .is-active:not(:hover) .w-shape {
+    fill: var(--w-sector);
+  }
 
-.wheel-art:has(.w-sector:hover) .is-active:not(:hover) .w-label {
-  fill: var(--w-text);
-}
+  .wheel-art:has(.w-sector:hover) .is-active:not(:hover) .w-label {
+    fill: var(--w-text);
+  }
 
-.wheel-art:has(.w-sector:hover) .is-active:not(:hover) .w-icon {
-  color: var(--w-icon);
-  stroke: var(--w-icon);
-}
+  .wheel-art:has(.w-sector:hover) .is-active:not(:hover) .w-icon {
+    color: var(--w-icon);
+    stroke: var(--w-icon);
+  }
 
-.wheel-art:has(.w-sector:hover) .w-cap.is-default {
-  visibility: hidden;
-}
+  .wheel-art:has(.w-sector:hover) .w-cap.is-default {
+    visibility: hidden;
+  }
 
-.wheel-art:has(.s0:hover) .w-cap.c0,
-.wheel-art:has(.s1:hover) .w-cap.c1,
-.wheel-art:has(.s2:hover) .w-cap.c2,
-.wheel-art:has(.s3:hover) .w-cap.c3,
-.wheel-art:has(.s4:hover) .w-cap.c4,
-.wheel-art:has(.s5:hover) .w-cap.c5,
-.wheel-art:has(.s6:hover) .w-cap.c6,
-.wheel-art:has(.s7:hover) .w-cap.c7,
-.wheel-art:has(.s8:hover) .w-cap.c8 {
-  visibility: visible;
+  .wheel-art:has(.s0:hover) .w-cap.c0,
+  .wheel-art:has(.s1:hover) .w-cap.c1,
+  .wheel-art:has(.s2:hover) .w-cap.c2,
+  .wheel-art:has(.s3:hover) .w-cap.c3,
+  .wheel-art:has(.s4:hover) .w-cap.c4,
+  .wheel-art:has(.s5:hover) .w-cap.c5,
+  .wheel-art:has(.s6:hover) .w-cap.c6,
+  .wheel-art:has(.s7:hover) .w-cap.c7,
+  .wheel-art:has(.s8:hover) .w-cap.c8 {
+    visibility: visible;
+  }
 }
 
 @media (prefers-reduced-motion: no-preference) {
   .wheel-art .w-shape {
     transition: fill 80ms var(--ease);
+  }
+
+  .wheel-art .w-drag {
+    transition: opacity 90ms var(--ease);
   }
 
   .wheel-art {
@@ -1083,6 +1084,7 @@ kbd {
 }
 
 .dl-intro .section-head {
+  min-width: 0;
   margin-bottom: 0;
 }
 

@@ -265,11 +265,12 @@ function heroOverlay(id) {
   ].join('');
 }
 
+/** aria-label rather than <title>: a <title> would show as a tooltip over the whole wheel while hovering sectors. */
 function wheelSvg({ id, viewBox, title, desc, body }) {
   return (
-    `<svg class="wheel-art" id="${id}" viewBox="${viewBox}" role="img" aria-labelledby="${id}-title ${id}-desc" focusable="false" ` +
+    `<svg class="wheel-art" id="${id}" viewBox="${viewBox}" role="img" aria-label="${escapeXml(title)}" aria-describedby="${id}-desc" focusable="false" ` +
     `font-family="${escapeXml(SVG_FONT)}" font-weight="700">` +
-    `<title id="${id}-title">${escapeXml(title)}</title><desc id="${id}-desc">${escapeXml(desc)}</desc>${body}</svg>`
+    `<desc id="${id}-desc">${escapeXml(desc)}</desc>${body}</svg>`
   );
 }
 
