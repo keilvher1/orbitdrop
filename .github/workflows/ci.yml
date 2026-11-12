@@ -19,7 +19,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # TEMPORARY (ci/windows): every manual run gets its own group, so a new run does not cancel one
+  # that is still running.
+  group: ci-${{ github.workflow }}-${{ github.ref }}${{ github.event_name == 'workflow_dispatch' && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 env:

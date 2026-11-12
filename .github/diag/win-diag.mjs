@@ -117,6 +117,47 @@ try {
   ]) {
     console.log(css.padEnd(42), 'hangul', String(ink(css, '한글')).padStart(4), 'latin', String(ink(css, 'Ab')).padStart(4), 'missing', String(ink(css, '\u{10FFFD}')).padStart(4));
   }
+  section('electron stdout: main process and utilityProcess, piped');
+  {
+    const electronExe = createRequire(join(root, 'package.json'))('electron');
+    const app = join(base, 'stdout-app');
+    mkdirSync(app);
+    writeFileSync(join(app, 'package.json'), JSON.stringify({ name: 'stdout-probe', version: '0.0.0', main: 'main.cjs' }));
+    writeFileSync(
+      join(app, 'main.cjs'),
+      `const { app, utilityProcess } = require('electron');
+const path = require('node:path');
+process.stdout.write('MAIN-STDOUT-WRITE\\n');
+console.log('MAIN-CONSOLE-LOG');
+try { require('node:fs').writeSync(1, 'MAIN-FD1-WRITESYNC\\n'); } catch (e) { process.stderr.write('fd1 ' + e.message + '\\n'); }
+process.stderr.write('MAIN-STDERR\\n');
+app.whenReady().then(() => {
+  const child = utilityProcess.fork(path.join(__dirname, 'child.cjs'), [], { stdio: 'pipe' });
+  child.stdout.on('data', (d) => process.stdout.write('FWD-STDOUT:' + d));
+  child.stderr.on('data', (d) => process.stdout.write('FWD-STDERR:' + d));
+  child.on('message', (m) => process.stdout.write('FWD-MESSAGE:' + m + '\\n'));
+  child.on('exit', (code) => { process.stdout.write('CHILD-EXIT ' + code + '\\n'); setTimeout(() => app.exit(code), 300); });
+});
+app.on('window-all-closed', () => {});
+`,
+    );
+    writeFileSync(
+      join(app, 'child.cjs'),
+      `process.stdout.write('CHILD-STDOUT-WRITE\\n');
+console.log('CHILD-CONSOLE-LOG');
+process.stderr.write('CHILD-STDERR\\n');
+process.parentPort.postMessage('CHILD-POSTMESSAGE');
+setTimeout(() => process.exit(0), 300);
+`,
+    );
+    const env = { ...process.env };
+    delete env.ELECTRON_RUN_AS_NODE;
+    const r = spawnSync(electronExe, [app], { encoding: 'utf8', timeout: 60_000, env });
+    console.log('exit', r.status, r.signal, r.error ? String(r.error) : '');
+    console.log('stdout:', JSON.stringify(r.stdout));
+    console.log('stderr:', JSON.stringify((r.stderr ?? '').slice(0, 1500)));
+  }
+
   section('electron smoke (utility mode)');
   const { runConvertSmoke } = await import(pathToFileURL(join(root, 'tests', 'integration', 'convert-electron-smoke.mjs')).href);
   const smoke = await runConvertSmoke(['utility'], { timeoutMs: 120_000 });
