@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as napiCanvas from '@napi-rs/canvas';
 import type * as PdfJs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { OrbitError } from '@orbitdrop/contracts';
+import { resolveAnnotationFont } from '../tools/fonts';
 
 /**
  * PDF.js (legacy build, for Node/Electron) + @napi-rs/canvas, configured so it
@@ -137,12 +138,64 @@ interface CanvasAndContext {
   context: NapiContext | null;
 }
 
-function makeCanvasFactory(canvas: NapiCanvasModule) {
+// ---------------------------------------------------------------- text in fonts the PDF does not embed
+
+/**
+ * PDF.js draws text in a font the PDF does not embed (e.g. a CID font with a predefined CMap
+ * such as UniKS-UCS2-H) with fillText in the family list `"g_d0_f1", sans-serif`: the loaded
+ * name, which the canvas does not know, then the generic family. @napi-rs/canvas falls back
+ * per glyph only along that list. Its generic family has Hangul on macOS (Apple SD Gothic
+ * Neo), but not on Windows, where Korean text in such PDFs came out blank. So the Hangul font
+ * the processors use for annotations (Malgun Gothic on Windows; see resolveAnnotationFont) is
+ * appended to every font PDF.js sets: Latin text keeps the generic face, Hangul the generic
+ * face cannot draw comes from that font. Embedded fonts are drawn as paths and are unaffected.
+ */
+async function textFallbackFamily(): Promise<string | null> {
+  try {
+    const { family } = await resolveAnnotationFont();
+    return family === null ? null : `"${family.replace(/"/g, '')}"`;
+  } catch {
+    return null;
+  }
+}
+
+/** A CSS font shorthand with `fallback` appended to its family list (once). */
+export function withFallbackFamily(font: string, fallback: string | null): string {
+  if (fallback === null || font.trim() === '' || font.includes(fallback)) return font;
+  return `${font}, ${fallback}`;
+}
+
+/** Make `context.font = …` (as PDF.js sets it) append `fallback` to the family list. */
+function installTextFallback(context: NapiContext, fallback: string | null): NapiContext {
+  if (fallback === null) return context;
+  let proto: object | null = Object.getPrototypeOf(context) as object | null;
+  let descriptor: PropertyDescriptor | undefined;
+  while (proto !== null && descriptor === undefined) {
+    descriptor = Object.getOwnPropertyDescriptor(proto, 'font');
+    proto = Object.getPrototypeOf(proto) as object | null;
+  }
+  const { get, set } = descriptor ?? {};
+  if (typeof get !== 'function' || typeof set !== 'function') return context;
+  Object.defineProperty(context, 'font', {
+    configurable: true,
+    enumerable: true,
+    get(this: NapiContext): unknown {
+      return get.call(this);
+    },
+    set(this: NapiContext, value: unknown): void {
+      set.call(this, withFallbackFamily(String(value), fallback));
+    },
+  });
+  return context;
+}
+
+function makeCanvasFactory(canvas: NapiCanvasModule, textFallback: string | null) {
   return class NapiCanvasFactory {
     create(width: number, height: number): CanvasAndContext {
       if (width <= 0 || height <= 0) throw new Error('Invalid canvas size');
       const c = canvas.createCanvas(width, height);
-      return { canvas: c, context: c.getContext('2d') };
+      // Text in transparency groups, patterns and soft masks is drawn on these canvases.
+      return { canvas: c, context: installTextFallback(c.getContext('2d'), textFallback) };
     }
 
     reset(target: CanvasAndContext, width: number, height: number): void {
@@ -281,9 +334,10 @@ export async function openPdf(bytes: Uint8Array, engine?: PdfEngine, options: { 
   const e = engine ?? (await loadPdfEngine());
   const data = ownedBytes(bytes);
   const { assets } = e;
+  const textFallback = await textFallbackFamily();
   const params = {
     data,
-    CanvasFactory: makeCanvasFactory(e.canvas),
+    CanvasFactory: makeCanvasFactory(e.canvas, textFallback),
     FilterFactory: NoopFilterFactory,
     BinaryDataFactory: LocalBinaryDataFactory,
     cMapUrl: assets.cMapUrl,
@@ -347,8 +401,10 @@ export async function renderPage(engine: PdfEngine, page: PdfPage, scale: number
   const viewport = page.getViewport({ scale });
   const width = Math.max(1, Math.round(viewport.width));
   const height = Math.max(1, Math.round(viewport.height));
+  const textFallback = await textFallbackFamily();
+  signal?.throwIfAborted();
   const canvas: NapiCanvas = engine.canvas.createCanvas(width, height);
-  const context = canvas.getContext('2d', { alpha: false });
+  const context = installTextFallback(canvas.getContext('2d', { alpha: false }), textFallback);
   context.fillStyle = background;
   context.fillRect(0, 0, width, height);
   const task = page.render({

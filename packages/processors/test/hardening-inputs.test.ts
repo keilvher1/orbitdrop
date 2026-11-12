@@ -244,7 +244,28 @@ describe('inputs beyond the happy path (hardening)', () => {
     const restart = staticFixture('jpeg-restart.jpg');
     if (!sourcePath || !arithmetic || !restart) throw new Error('static JPEG fixtures missing (node tests/fixtures/static/make-static-fixtures.mjs jpegs)');
     const reference = await rgbOf(sourcePath);
-    for (const path of [arithmetic, restart]) {
+    // sharp's Windows libvips is built without arithmetic decoding: there every path must say so
+    // (ENGINE_UNAVAILABLE, not "damaged") and write nothing. Elsewhere it decodes like any JPEG.
+    const decodesArithmetic = process.platform !== 'win32';
+    if (!decodesArithmetic) {
+      const sub = join(dir, 'arithmetic');
+      await mkdir(sub);
+      const input = await inputOf(arithmetic, 'jpeg');
+      for (const [actionId, options] of [
+        ['convert.png', {}],
+        ['tool.crop', { rect: { x: 0, y: 0, width: 48, height: 32 }, outputFormat: 'png' }],
+        ['convert.pdf', {}],
+      ] as const) {
+        const failure = await run(actionId, [input], options, { outputDir: sub }).then(
+          () => null,
+          (error: unknown) => error as { code?: string; detail?: string },
+        );
+        expect(failure, actionId).toMatchObject({ code: 'ENGINE_UNAVAILABLE', detail: expect.stringMatching(/^jpeg-arithmetic: /) });
+      }
+      expect(await errorCode(preview('source', input, {}, 64))).toBe('ENGINE_UNAVAILABLE');
+      expect(await readdir(sub)).toEqual([]);
+    }
+    for (const path of decodesArithmetic ? [arithmetic, restart] : [restart]) {
       const input = await inputOf(path, 'jpeg');
       const png = await run('convert.png', [input], {}, { outputDir: dir });
       expect(maxDiff(await rgbOf(png.outputs[0]!.path), reference), path).toBe(0);
@@ -260,6 +281,13 @@ describe('inputs beyond the happy path (hardening)', () => {
     const sos = (b: Buffer) => b.subarray(b.indexOf(Buffer.from([0xff, 0xda])));
     expect(sos(out).equals(sos(original))).toBe(true);
     expect(maxDiff(await rgbOf(out), reference)).toBe(0);
+  });
+
+  it('a libjpeg built without arithmetic decoding (sharp on Windows) is ENGINE_UNAVAILABLE, not a damaged image', async () => {
+    const { mapSharpError } = await import('../src/common/io');
+    const windows = mapSharpError(new Error('VipsJpeg: Sorry, arithmetic coding is not implemented\njpegload_buffer: load error\nvips2png: unable to write to target target'));
+    expect(windows).toMatchObject({ code: 'ENGINE_UNAVAILABLE', detail: expect.stringMatching(/^jpeg-arithmetic: VipsJpeg: Sorry/) });
+    expect(mapSharpError(new Error('VipsJpeg: Premature end of JPEG file'))).toMatchObject({ code: 'IMAGE_CORRUPT' });
   });
 
   it('dimension bombs (headers claiming 60000×60000) fail fast with IMAGE_TOO_LARGE before decoding', async () => {

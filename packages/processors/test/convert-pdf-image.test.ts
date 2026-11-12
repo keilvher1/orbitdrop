@@ -6,7 +6,10 @@ import { OrbitError, type JobProgress } from '@orbitdrop/contracts';
 import { runConvert } from '../src/convert';
 import { OutputLedger } from '../src/convert/common';
 import { fitScale } from '../src/convert/pdf-to-image';
+import { detectKoreanFont } from '../src/tools';
 import { inputFor, listFiles, makeCtx, makeFixtureDir, makeJob, sha256, staticFixture, tempFilesIn, type FixtureDir } from './helpers/convert-fixtures';
+
+const koreanFont = await detectKoreanFont();
 
 async function pixels(path: string) {
   const { data, info } = await sharp(path).removeAlpha().raw().toBuffer({ resolveWithObject: true });
@@ -232,7 +235,9 @@ describe('PDF → JPEG/PNG (P0-A)', () => {
     }
   });
 
-  it.skipIf(process.platform !== 'darwin')('renders a non-embedded Korean CID font with the system fallback font', async () => {
+  // The glyphs come from a system font (PDF.js has no CJK font data): macOS Apple SD Gothic Neo,
+  // Windows Malgun Gothic (appended to PDF.js' font list by the engine). Only where one exists.
+  it.runIf(koreanFont !== null)('renders a non-embedded Korean CID font with the system fallback font', async () => {
     const result = await runConvert(makeJob('convert.png', [await fx.input('korean-cmap.pdf')], { dpi: 150 }), makeCtx().ctx);
     expect((await pixels(result.outputs[0]!.path)).dark).toBeGreaterThan(300);
   });

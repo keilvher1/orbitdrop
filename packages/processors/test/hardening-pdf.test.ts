@@ -5,7 +5,7 @@ import { createCanvas } from '@napi-rs/canvas';
 import { PDFDocument, PDFName, PDFNumber, StandardFonts, degrees, rgb } from 'pdf-lib';
 import sharp from 'sharp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { pdfResourceLoads } from '../src/pdf/engine';
+import { pdfResourceLoads, withFallbackFamily } from '../src/pdf/engine';
 import { extractPageText, linesToParagraphs, type TextLine } from '../src/pdf/text';
 import { detectKoreanFont } from '../src/tools';
 import { docxParagraphs, makeFixtureDir, readZip, staticFixture } from './helpers/convert-fixtures';
@@ -247,6 +247,13 @@ describe('PDF inputs (hardening)', () => {
     } finally {
       await fixtures.cleanup();
     }
+  });
+
+  it('fonts PDF.js sets get the Hangul fallback family appended once (Windows: the generic family has no Hangul)', () => {
+    const font = 'normal normal 24px "g_d0_f1", sans-serif';
+    expect(withFallbackFamily(font, '"Malgun Gothic"')).toBe('normal normal 24px "g_d0_f1", sans-serif, "Malgun Gothic"');
+    expect(withFallbackFamily(withFallbackFamily(font, '"Malgun Gothic"'), '"Malgun Gothic"')).toBe('normal normal 24px "g_d0_f1", sans-serif, "Malgun Gothic"');
+    expect(withFallbackFamily(font, null)).toBe(font);
   });
 
   it('text layout survives pages with hundreds of thousands of lines (no call-stack overflow)', async () => {
