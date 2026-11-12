@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://api.github.com; base-uri 'none'; form-action 'none'">
+<title>OrbitDrop — 끌다가 Shift, 놓으면 변환되는 파일 도구</title>
+<meta name="description" content="Finder나 파일 탐색기에서 파일을 끌다가 Shift를 누르면 포인터 옆에 원형 휠이 나타납니다. 형식 위에 놓으면 원본 옆에 결과가 저장됩니다. 무료 오픈 소스(MIT), 모든 처리는 내 컴퓨터에서.">
+<link rel="canonical" href="https://keilvher1.github.io/orbitdrop/">
+<link rel="alternate" hreflang="ko" href="https://keilvher1.github.io/orbitdrop/">
+<link rel="alternate" hreflang="en" href="https://keilvher1.github.io/orbitdrop/en/">
+<link rel="alternate" hreflang="x-default" href="https://keilvher1.github.io/orbitdrop/">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#FFF6EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#221A15" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="assets/icons/favicon-16.png">
+<link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+<link rel="stylesheet" href="assets/site.css">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="OrbitDrop">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:locale:alternate" content="en_US">
+<meta property="og:title" content="OrbitDrop — 끌다가 Shift, 놓으면 변환">
+<meta property="og:description" content="파일을 끌다가 Shift를 누르면 포인터 옆에 원형 휠이 나타납니다. 형식 위에 놓으면 원본 옆에 결과가 생깁니다. 무료, 오픈 소스, 모든 처리는 내 컴퓨터에서.">
+<meta property="og:url" content="https://keilvher1.github.io/orbitdrop/">
+<meta property="og:image" content="https://keilvher1.github.io/orbitdrop/assets/og-ko.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="OrbitDrop 아이콘과 '파일을 끌다가 Shift, 원하는 형식에 놓으세요.' 문구, 그리고 PNG 칸이 강조된 변환 휠">
+<meta name="twitter:card" content="summary_large_image">
+<script src="assets/download.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">본문으로 건너뛰기</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="assets/icons/icon-64.png" width="32" height="32" alt="" aria-hidden="true"><span>OrbitDrop</span></a>
+    <nav class="site-nav" aria-label="주 메뉴">
+      <ul>
+        <li class="nav-section"><a href="#how">사용법</a></li>
+        <li class="nav-section"><a href="#formats">변환</a></li>
+        <li class="nav-section"><a href="#tools">도구</a></li>
+        <li class="nav-section"><a href="#privacy">개인정보</a></li>
+        <li class="nav-section"><a href="#faq">FAQ</a></li>
+        <li><a class="nav-lang" href="en/" hreflang="en" lang="en">English</a></li>
+        <li><a class="nav-download" href="#download">다운로드</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero" aria-labelledby="hero-title">
+  <div class="wrap">
+    <div class="hero-copy">
+      <p class="eyebrow">무료 오픈 소스 데스크톱 앱 · macOS · Windows(베타)</p>
+      <h1 id="hero-title">파일을 끌다가 Shift, <span class="accent">원하는 형식에 놓으세요.</span></h1>
+      <p class="hero-lead">OrbitDrop은 Finder나 파일 탐색기에서 파일을 드래그하는 동안 <kbd>Shift</kbd>를 누르면 포인터 옆에 원형 휠을 띄웁니다. 형식이나 도구 위에 놓으면 <strong>결과 파일이 원본 옆에</strong> 생기고, 원본은 그대로 남습니다.</p>
+      <div class="btn-row">
+        <a class="btn btn-primary" href="#download">다운로드</a>
+        <a class="btn btn-secondary" href="https://github.com/keilvher1/orbitdrop">GitHub에서 소스 보기</a>
+      </div>
+      <ul class="facts" aria-label="한눈에 보기">
+        <li>계정·업로드·원격 분석 없음</li>
+        <li>macOS 14 이상</li>
+        <li>Windows 11 x64 (베타)</li>
+        <li>MIT 라이선스</li>
+      </ul>
+    </div>
+    <figure class="hero-figure">
+      <div class="hero-art"><!-- build:wheel-hero --><svg class="wheel-art" id="hero-wheel" viewBox="-258 -206 516 436" role="img" aria-label="OrbitDrop 변환 휠" aria-describedby="hero-wheel-desc" focusable="false" font-family="&#39;Apple SD Gothic Neo&#39;, &#39;Helvetica Neue&#39;, &#39;Segoe UI&#39;, &#39;Malgun Gothic&#39;, &#39;Noto Sans KR&#39;, sans-serif" font-weight="700"><desc id="hero-wheel-desc">JPG 파일을 끌며 Shift를 누르면 포인터 옆에 나타나는 원형 메뉴입니다. 맨 위에서 시계 방향으로 PNG, WEBP, HEIC, TIFF, AVIF, BMP, PDF, DOCX 칸이 있고, 포인터가 올라간 PNG 칸이 주황색으로 강조되어 있으며 가운데 캡슐에 PNG가 표시됩니다.</desc><defs><filter id="hero-wheel-shadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB"><feDropShadow class="w-shadow" dx="0" dy="10" stdDeviation="11" flood-color="#7A2E00" flood-opacity="0.251"/></filter></defs><circle class="w-disc" r="179.25" fill="rgba(255, 243, 230, 0.722)" stroke="rgba(255, 255, 255, 0.851)" stroke-width="1.5" filter="url(#hero-wheel-shadow)"/><g class="w-sector s0 is-active" data-action="convert.png"><path class="w-hit" d="M -24.8 -59.87 L -68.88 -166.3 A 180 180 0 0 1 68.88 -166.3 L 24.8 -59.87 A 64.8 64.8 0 0 0 -24.8 -59.87 Z" fill="transparent"/><path class="w-shape" d="M -26.674 -72.235 L -57.341 -146.274 A 14 14 0 0 1 -48.342 -165.067 A 172 172 0 0 1 48.342 -165.067 A 14 14 0 0 1 57.341 -146.274 L 26.674 -72.235 A 14 14 0 0 1 11.298 -63.807 A 64.8 64.8 0 0 0 -11.298 -63.807 A 14 14 0 0 1 -26.674 -72.235 Z" fill="#D4441C"/><g transform="translate(0 -118.4)"><text class="w-label" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#FFFFFF">PNG</text></g></g><g class="w-sector s1" data-action="convert.webp"><path class="w-hit" d="M 24.8 -59.87 L 68.88 -166.3 A 180 180 0 0 1 166.3 -68.88 L 59.87 -24.8 A 64.8 64.8 0 0 0 24.8 -59.87 Z" fill="transparent"/><path class="w-shape" d="M 32.217 -69.939 L 62.885 -143.978 A 14 14 0 0 1 82.537 -150.903 A 172 172 0 0 1 150.903 -82.537 A 14 14 0 0 1 143.978 -62.885 L 69.939 -32.217 A 14 14 0 0 1 53.108 -37.129 A 64.8 64.8 0 0 0 37.129 -53.108 A 14 14 0 0 1 32.217 -69.939 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(83.72 -83.72)"><text class="w-label" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">WEBP</text></g></g><g class="w-sector s2" data-action="convert.heic"><path class="w-hit" d="M 59.87 -24.8 L 166.3 -68.88 A 180 180 0 0 1 166.3 68.88 L 59.87 24.8 A 64.8 64.8 0 0 0 59.87 -24.8 Z" fill="transparent"/><path class="w-shape" d="M 72.235 -26.674 L 146.274 -57.341 A 14 14 0 0 1 165.067 -48.342 A 172 172 0 0 1 165.067 48.342 A 14 14 0 0 1 146.274 57.341 L 72.235 26.674 A 14 14 0 0 1 63.807 11.298 A 64.8 64.8 0 0 0 63.807 -11.298 A 14 14 0 0 1 72.235 -26.674 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(118.4 0)"><text class="w-label" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">HEIC</text></g></g><g class="w-sector s3" data-action="convert.tiff"><path class="w-hit" d="M 59.87 24.8 L 166.3 68.88 A 180 180 0 0 1 68.88 166.3 L 24.8 59.87 A 64.8 64.8 0 0 0 59.87 24.8 Z" fill="transparent"/><path class="w-shape" d="M 69.939 32.217 L 143.978 62.885 A 14 14 0 0 1 150.903 82.537 A 172 172 0 0 1 82.537 150.903 A 14 14 0 0 1 62.885 143.978 L 32.217 69.939 A 14 14 0 0 1 37.129 53.108 A 64.8 64.8 0 0 0 53.108 37.129 A 14 14 0 0 1 69.939 32.217 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(83.72 83.72)"><text class="w-label" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">TIFF</text></g></g><g class="w-sector s4" data-action="convert.avif"><path class="w-hit" d="M 24.8 59.87 L 68.88 166.3 A 180 180 0 0 1 -68.88 166.3 L -24.8 59.87 A 64.8 64.8 0 0 0 24.8 59.87 Z" fill="transparent"/><path class="w-shape" d="M 26.674 72.235 L 57.341 146.274 A 14 14 0 0 1 48.342 165.067 A 172 172 0 0 1 -48.342 165.067 A 14 14 0 0 1 -57.341 146.274 L -26.674 72.235 A 14 14 0 0 1 -11.298 63.807 A 64.8 64.8 0 0 0 11.298 63.807 A 14 14 0 0 1 26.674 72.235 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(0 118.4)"><text class="w-label" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">AVIF</text></g></g><g class="w-sector s5" data-action="convert.bmp"><path class="w-hit" d="M -24.8 59.87 L -68.88 166.3 A 180 180 0 0 1 -166.3 68.88 L -59.87 24.8 A 64.8 64.8 0 0 0 -24.8 59.87 Z" fill="transparent"/><path class="w-shape" d="M -32.217 69.939 L -62.885 143.978 A 14 14 0 0 1 -82.537 150.903 A 172 172 0 0 1 -150.903 82.537 A 14 14 0 0 1 -143.978 62.885 L -69.939 32.217 A 14 14 0 0 1 -53.108 37.129 A 64.8 64.8 0 0 0 -37.129 53.108 A 14 14 0 0 1 -32.217 69.939 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(-83.72 83.72)"><text class="w-label" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">BMP</text></g></g><g class="w-sector s6" data-action="convert.pdf"><path class="w-hit" d="M -59.87 24.8 L -166.3 68.88 A 180 180 0 0 1 -166.3 -68.88 L -59.87 -24.8 A 64.8 64.8 0 0 0 -59.87 24.8 Z" fill="transparent"/><path class="w-shape" d="M -72.235 26.674 L -146.274 57.341 A 14 14 0 0 1 -165.067 48.342 A 172 172 0 0 1 -165.067 -48.342 A 14 14 0 0 1 -146.274 -57.341 L -72.235 -26.674 A 14 14 0 0 1 -63.807 -11.298 A 64.8 64.8 0 0 0 -63.807 11.298 A 14 14 0 0 1 -72.235 26.674 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(-118.4 0)"><text class="w-label" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">PDF</text></g></g><g class="w-sector s7" data-action="convert.docx"><path class="w-hit" d="M -59.87 -24.8 L -166.3 -68.88 A 180 180 0 0 1 -68.88 -166.3 L -24.8 -59.87 A 64.8 64.8 0 0 0 -59.87 -24.8 Z" fill="transparent"/><path class="w-shape" d="M -69.939 -32.217 L -143.978 -62.885 A 14 14 0 0 1 -150.903 -82.537 A 172 172 0 0 1 -82.537 -150.903 A 14 14 0 0 1 -62.885 -143.978 L -32.217 -69.939 A 14 14 0 0 1 -37.129 -53.108 A 64.8 64.8 0 0 0 -53.108 -37.129 A 14 14 0 0 1 -69.939 -32.217 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(-83.72 -83.72)"><text class="w-label" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">DOCX</text></g></g><g class="w-cap c0 is-default"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">PNG</text><rect class="w-capsule" x="-28" y="186" width="56" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">PNG</text></g><g class="w-cap c1" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">WEBP</text><rect class="w-capsule" x="-30.68" y="186" width="61.36" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">WEBP</text></g><g class="w-cap c2" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">HEIC</text><rect class="w-capsule" x="-30.68" y="186" width="61.36" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">HEIC</text></g><g class="w-cap c3" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">TIFF</text><rect class="w-capsule" x="-30.68" y="186" width="61.36" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">TIFF</text></g><g class="w-cap c4" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">AVIF</text><rect class="w-capsule" x="-30.68" y="186" width="61.36" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">AVIF</text></g><g class="w-cap c5" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">BMP</text><rect class="w-capsule" x="-28" y="186" width="56" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">BMP</text></g><g class="w-cap c6" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">PDF</text><rect class="w-capsule" x="-28" y="186" width="56" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">PDF</text></g><g class="w-cap c7" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">DOCX</text><rect class="w-capsule" x="-30.68" y="186" width="61.36" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">DOCX</text></g><g class="w-drag" aria-hidden="true"><defs><linearGradient id="hero-wheel-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3B4C8C"/><stop offset="0.62" stop-color="#E08A62"/><stop offset="1" stop-color="#F3B47E"/></linearGradient><filter id="hero-wheel-lift" x="-30%" y="-30%" width="160%" height="170%" color-interpolation-filters="sRGB"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#2B1D14" flood-opacity="0.3"/></filter></defs><g transform="translate(62 -160)" filter="url(#hero-wheel-lift)"><rect x="-29" y="-23" width="58" height="46" rx="5" fill="#FFFFFF"/><rect x="-26" y="-20" width="52" height="40" rx="2.5" fill="url(#hero-wheel-sky)"/><circle cx="9" cy="-3" r="7.5" fill="#FDEBD2"/><path d="M-26 9 C-15 -1 -3 -1 7 7 C13 11 20 11 26 5 L26 20 L-26 20 Z" fill="#3E3452"/><rect class="w-file-name" x="-31" y="27" width="62" height="18" rx="5" fill="#1E5FD6"/><text x="0" y="36" dy="0.35em" text-anchor="middle" font-size="11.5" font-weight="600" fill="#FFFFFF">photo.jpg</text></g><path class="w-pointer" transform="translate(44 -152) scale(1.15)" d="M0 0 L0 16.6 L3.9 13 L6.5 19 L9.2 17.9 L6.7 12 L12 12 Z" fill="#111111" stroke="#FFFFFF" stroke-width="1.3" stroke-linejoin="round"/></g><g class="w-key" transform="translate(-200 172)" aria-hidden="true"><rect class="w-key-base" x="-52" y="-22" width="104" height="48" rx="11" fill="#E9D3C1"/><rect class="w-key-top" x="-52" y="-26" width="104" height="47" rx="11" fill="#FFFFFF" stroke="#EBD7C6"/><text class="w-key-text" x="0" y="-2.5" dy="0.35em" text-anchor="middle" font-size="18" font-weight="700" fill="#2B1D14">⇧ Shift</text></g></svg><!-- /build:wheel-hero --></div>
+      <figcaption>JPG 파일을 끌며 <kbd>Shift</kbd>를 누른 모습입니다. 앱과 같은 휠 기하·색상 값으로 그린 그림입니다.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="how" class="section section-alt" aria-labelledby="how-title">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">사용법</p>
+      <h2 id="how-title">세 단계면 됩니다</h2>
+      <p class="lead">따로 창을 열지 않아도 됩니다. 평소처럼 파일을 끌다가 키 하나만 더 누르세요.</p>
+    </div>
+    <ol class="steps">
+      <li class="card">
+        <span class="step-num" aria-hidden="true">1</span>
+        <h3>파일을 드래그합니다</h3>
+        <p>Finder나 파일 탐색기에서 평소처럼 PDF나 이미지를 끌기 시작합니다. 여러 파일을 한꺼번에 끌어도 됩니다(일부 도구는 한 번에 한 파일).</p>
+      </li>
+      <li class="card">
+        <span class="step-num" aria-hidden="true">2</span>
+        <h3><kbd>Shift</kbd>를 누릅니다</h3>
+        <p>포인터 옆에 변환 휠이 나타납니다. macOS에서는 <kbd>Option</kbd>+<kbd>Shift</kbd>를 누르면 도구 휠이 열립니다. 도구 메뉴 단축키는 설정에서 바꿀 수 있습니다. 키를 떼도 휠은 놓거나 취소할 때까지 남아 있습니다.</p>
+      </li>
+      <li class="card">
+        <span class="step-num" aria-hidden="true">3</span>
+        <h3>원하는 칸에 놓습니다</h3>
+        <p>결과 파일이 원본과 같은 폴더에 생깁니다. 원본은 옮기거나 덮어쓰거나 지우지 않습니다. 휠 가운데에 놓으면 아무 일도 일어나지 않습니다.</p>
+      </li>
+    </ol>
+    <div class="note">
+      <p class="note-title">드래그가 불편하다면</p>
+      <p>메뉴 막대(Windows는 알림 영역)의 OrbitDrop 아이콘에서 <strong>파일 열기…</strong>를 고르거나, 작은 <strong>Drop Zone</strong> 창에 파일을 놓아도 같은 휠을 쓸 수 있습니다. 이때는 방향키와 <kbd>Enter</kbd>로도 고를 수 있습니다.</p>
+    </div>
+  </div>
+</section>
+
+<section id="formats" class="section" aria-labelledby="formats-title">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">변환</p>
+      <h2 id="formats-title">무엇을 바꿀 수 있나요</h2>
+      <p class="lead">휠에는 지금 끌고 있는 파일에 실제로 쓸 수 있는 형식만 나타납니다. 확장자만 바꾸는 가짜 변환은 하지 않습니다.</p>
+    </div>
+    <div class="table-wrap">
+      <table class="formats">
+        <caption>macOS 기준입니다. Windows 판(베타)과의 차이는 표 아래에 적었습니다.</caption>
+        <thead>
+          <tr><th scope="col">원본</th><th scope="col">결과</th><th scope="col">참고</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">PDF</th><td class="to">JPG, PNG</td><td>쪽마다 한 장(<code>report-p001.jpg</code> …), 300 또는 150 DPI</td></tr>
+          <tr><th scope="row">PDF</th><td class="to">TXT</td><td>글자가 들어 있는 PDF만. 스캔한 PDF의 글자 인식(OCR)은 하지 않습니다.</td></tr>
+          <tr><th scope="row">PDF</th><td class="to">DOCX</td><td>텍스트 중심. 원래 배치를 그대로 옮기지는 않습니다.</td></tr>
+          <tr><th scope="row">JPG, PNG, WebP</th><td class="to">서로 변환</td><td>사진 방향(EXIF)을 반영합니다. JPG로 바꿀 때 투명한 부분은 배경색으로 채웁니다.</td></tr>
+          <tr><th scope="row">이미지</th><td class="to">TIFF, AVIF, BMP</td><td>BMP는 원본으로도 읽습니다.</td></tr>
+          <tr><th scope="row">이미지</th><td class="to">HEIC</td><td>macOS만. HEIC 원본도 읽습니다.</td></tr>
+          <tr><th scope="row">이미지 여러 장</th><td class="to">PDF</td><td>순서, 용지, 여백을 정해 한 파일로 묶습니다.</td></tr>
+          <tr><th scope="row">이미지</th><td class="to">DOCX</td><td>그림으로 넣습니다(OCR 없음).</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="fine">Windows 판은 같은 변환 엔진을 쓰지만 실제 PC에서는 아직 확인하지 않았습니다(베타). HEIC는 Windows에서 지원하지 않습니다. 번들 엔진이 처리할 수 없는 칸은 휠에서 이유와 함께 비활성화됩니다. 글자 인식(OCR), 동영상·음성 변환, AI, 클라우드 기능은 없습니다.</p>
+  </div>
+</section>
+
+<section id="tools" class="section section-alt" aria-labelledby="tools-title">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">도구</p>
+      <h2 id="tools-title">이미지 도구 휠</h2>
+      <p class="lead">macOS에서는 이미지를 끌며 <kbd>Option</kbd>+<kbd>Shift</kbd>를 누르면 도구 휠이 열립니다. 도구 메뉴 단축키는 설정에서 바꿀 수 있습니다. 도구를 고르면 작은 편집 창이 열립니다.</p>
+    </div>
+    <div class="tools-layout">
+      <figure class="tools-figure">
+        <div class="hero-art"><!-- build:wheel-tools --><svg class="wheel-art" id="tools-wheel" viewBox="-196 -196 392 428" role="img" aria-label="OrbitDrop 도구 휠" aria-describedby="tools-wheel-desc" focusable="false" font-family="&#39;Apple SD Gothic Neo&#39;, &#39;Helvetica Neue&#39;, &#39;Segoe UI&#39;, &#39;Malgun Gothic&#39;, &#39;Noto Sans KR&#39;, sans-serif" font-weight="700"><desc id="tools-wheel-desc">이미지를 끌며 Option+Shift를 누르면 나타나는 도구 메뉴입니다. 맨 위에서 시계 방향으로 압축, 메타데이터, 편집, 주석, 배경 추가, 자르기, 가리기 칸이 있고, 자르기 칸이 주황색으로 강조되어 있습니다.</desc><defs><filter id="tools-wheel-shadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB"><feDropShadow class="w-shadow" dx="0" dy="10" stdDeviation="11" flood-color="#7A2E00" flood-opacity="0.251"/></filter></defs><circle class="w-disc" r="179.25" fill="rgba(255, 243, 230, 0.722)" stroke="rgba(255, 255, 255, 0.851)" stroke-width="1.5" filter="url(#tools-wheel-shadow)"/><g class="w-sector s0" data-action="tool.compress"><path class="w-hit" d="M -28.12 -58.38 L -78.1 -162.17 A 180 180 0 0 1 78.1 -162.17 L 28.12 -58.38 A 64.8 64.8 0 0 0 -28.12 -58.38 Z" fill="transparent"/><path class="w-shape" d="M -30.682 -70.626 L -65.453 -142.828 A 14 14 0 0 1 -57.521 -162.097 A 172 172 0 0 1 57.521 -162.097 A 14 14 0 0 1 65.453 -142.828 L 30.682 -70.626 A 14 14 0 0 1 14.858 -63.074 A 64.8 64.8 0 0 0 -14.858 -63.074 A 14 14 0 0 1 -30.682 -70.626 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(0 -118.4)"><g class="w-icon" transform="translate(-10 -23) scale(0.83)" fill="none" stroke="#4A3426" color="#4A3426" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 10 7-7"/><path d="M20 10h-6V4"/><path d="m3 21 7-7"/><path d="M4 14h6v6"/></g><text class="w-label" x="0" y="10" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">압축</text></g></g><g class="w-sector s1" data-action="tool.metadata"><path class="w-hit" d="M 28.12 -58.38 L 78.1 -162.17 A 180 180 0 0 1 175.49 -40.05 L 63.18 -14.42 A 64.8 64.8 0 0 0 28.12 -58.38 Z" fill="transparent"/><path class="w-shape" d="M 36.088 -68.023 L 70.859 -140.225 A 14 14 0 0 1 90.868 -146.037 A 172 172 0 0 1 162.596 -56.094 A 14 14 0 0 1 152.477 -37.879 L 74.348 -20.047 A 14 14 0 0 1 58.577 -27.709 A 64.8 64.8 0 0 0 40.049 -50.942 A 14 14 0 0 1 36.088 -68.023 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(92.57 -73.82)"><g class="w-icon" transform="translate(-10 -23) scale(0.83)" fill="none" stroke="#4A3426" color="#4A3426" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></g><text class="w-label" x="0" y="10" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">메타데이터</text></g></g><g class="w-sector s2" data-action="tool.edit"><path class="w-hit" d="M 63.18 -14.42 L 175.49 -40.05 A 180 180 0 0 1 140.73 112.23 L 50.66 40.4 A 64.8 64.8 0 0 0 63.18 -14.42 Z" fill="transparent"/><path class="w-shape" d="M 75.683 -14.197 L 153.812 -32.029 A 14 14 0 0 1 170.832 -20.009 A 172 172 0 0 1 145.233 92.149 A 14 14 0 0 1 124.683 95.594 L 62.028 45.629 A 14 14 0 0 1 58.186 28.521 A 64.8 64.8 0 0 0 64.798 -0.451 A 14 14 0 0 1 75.683 -14.197 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(115.43 26.35)"><g class="w-icon" transform="translate(-10 -23) scale(0.83)" fill="none" stroke="#4A3426" color="#4A3426" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></g><text class="w-label" x="0" y="10" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">편집</text></g></g><g class="w-sector s3" data-action="tool.annotate"><path class="w-hit" d="M 50.66 40.4 L 140.73 112.23 A 180 180 0 0 1 0 180 L 0 64.8 A 64.8 64.8 0 0 0 50.66 40.4 Z" fill="transparent"/><path class="w-shape" d="M 58.287 50.32 L 120.942 100.285 A 14 14 0 0 1 122.156 121.087 A 172 172 0 0 1 18.506 171.002 A 14 14 0 0 1 3 157.083 L 3 76.944 A 14 14 0 0 1 13.98 63.274 A 64.8 64.8 0 0 0 40.753 50.381 A 14 14 0 0 1 58.287 50.32 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(51.37 106.67)"><g class="w-icon" transform="translate(-10 -23) scale(0.83)" fill="none" stroke="#4A3426" color="#4A3426" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></g><text class="w-label" x="0" y="10" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">주석</text></g></g><g class="w-sector s4" data-action="tool.addBackground"><path class="w-hit" d="M 0 64.8 L 0 180 A 180 180 0 0 1 -140.73 112.23 L -50.66 40.4 A 64.8 64.8 0 0 0 0 64.8 Z" fill="transparent"/><path class="w-shape" d="M -3 76.944 L -3 157.083 A 14 14 0 0 1 -18.506 171.002 A 172 172 0 0 1 -122.156 121.087 A 14 14 0 0 1 -120.942 100.285 L -58.287 50.32 A 14 14 0 0 1 -40.753 50.381 A 64.8 64.8 0 0 0 -13.98 63.274 A 14 14 0 0 1 -3 76.944 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(-51.37 106.67)"><g class="w-icon" transform="translate(-10 -23) scale(0.83)" fill="none" stroke="#4A3426" color="#4A3426" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></g><text class="w-label" x="0" y="10" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">배경 추가</text></g></g><g class="w-sector s5 is-active" data-action="tool.crop"><path class="w-hit" d="M -50.66 40.4 L -140.73 112.23 A 180 180 0 0 1 -175.49 -40.05 L -63.18 -14.42 A 64.8 64.8 0 0 0 -50.66 40.4 Z" fill="transparent"/><path class="w-shape" d="M -62.028 45.629 L -124.683 95.594 A 14 14 0 0 1 -145.233 92.149 A 172 172 0 0 1 -170.832 -20.009 A 14 14 0 0 1 -153.812 -32.029 L -75.683 -14.197 A 14 14 0 0 1 -64.798 -0.451 A 64.8 64.8 0 0 0 -58.186 28.521 A 14 14 0 0 1 -62.028 45.629 Z" fill="#D4441C"/><g transform="translate(-115.43 26.35)"><g class="w-icon" transform="translate(-10 -23) scale(0.83)" fill="none" stroke="#FFFFFF" color="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></g><text class="w-label" x="0" y="10" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#FFFFFF">자르기</text></g></g><g class="w-sector s6" data-action="tool.redact"><path class="w-hit" d="M -63.18 -14.42 L -175.49 -40.05 A 180 180 0 0 1 -78.1 -162.17 L -28.12 -58.38 A 64.8 64.8 0 0 0 -63.18 -14.42 Z" fill="transparent"/><path class="w-shape" d="M -74.348 -20.047 L -152.477 -37.879 A 14 14 0 0 1 -162.596 -56.094 A 172 172 0 0 1 -90.868 -146.037 A 14 14 0 0 1 -70.859 -140.225 L -36.088 -68.023 A 14 14 0 0 1 -40.049 -50.942 A 64.8 64.8 0 0 0 -58.577 -27.709 A 14 14 0 0 1 -74.348 -20.047 Z" fill="rgba(252, 228, 204, 0.949)"/><g transform="translate(-92.57 -73.82)"><g class="w-icon" transform="translate(-10 -23) scale(0.83)" fill="none" stroke="#4A3426" color="#4A3426" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></g><text class="w-label" x="0" y="10" dy="0.35em" text-anchor="middle" font-size="15" letter-spacing="0.4" fill="#3B2A1E">가리기</text></g></g><g class="w-cap c0" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">압축</text><rect class="w-capsule" x="-28" y="186" width="56" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">압축</text></g><g class="w-cap c1" visibility="hidden"><rect class="w-capsule" x="-53.2" y="-23" width="106.4" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">메타데이터</text><rect class="w-capsule" x="-44.85" y="186" width="89.7" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">메타데이터</text></g><g class="w-cap c2" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">편집</text><rect class="w-capsule" x="-28" y="186" width="56" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">편집</text></g><g class="w-cap c3" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">주석</text><rect class="w-capsule" x="-28" y="186" width="56" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">주석</text></g><g class="w-cap c4" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">배경 추가</text><rect class="w-capsule" x="-40.43" y="186" width="80.86" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">배경 추가</text></g><g class="w-cap c5 is-default"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">자르기</text><rect class="w-capsule" x="-32.11" y="186" width="64.22" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">자르기</text></g><g class="w-cap c6" visibility="hidden"><rect class="w-capsule" x="-52" y="-23" width="104" height="46" rx="23" fill="rgba(247, 185, 138, 0.949)"/><text class="w-capsule-text" x="0" y="0" dy="0.35em" text-anchor="middle" font-size="16" fill="#3B2A1E">가리기</text><rect class="w-capsule" x="-32.11" y="186" width="64.22" height="26" rx="13" fill="rgba(247, 185, 138, 0.949)"/><text class="w-caption-text" x="0" y="199" dy="0.35em" text-anchor="middle" font-size="13" fill="#3B2A1E">가리기</text></g></svg><!-- /build:wheel-tools --></div>
+        <figcaption class="figure-note">결과는 <code>photo Cropped.jpg</code>처럼 원본 이름 뒤에 작업 이름을 붙여 원본 옆에 저장합니다.</figcaption>
+      </figure>
+      <ul class="tool-list">
+        <li><span class="tool-icon-box"><!-- build:icon:crop --><svg class="tool-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg><!-- /build:icon:crop --></span><div><h3>자르기</h3><p>자유, 1:1, 16:9, 9:16, 4:3, 3:4 비율이나 픽셀 크기로 자릅니다.</p></div></li>
+        <li><span class="tool-icon-box"><!-- build:icon:background --><svg class="tool-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg><!-- /build:icon:background --></span><div><h3>배경 추가</h3><p>프리셋·단색·이미지 배경에 여백, 둥근 모서리, 그림자를 더합니다. 미리 보기가 결과와 같습니다.</p></div></li>
+        <li><span class="tool-icon-box"><!-- build:icon:compress --><svg class="tool-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 10 7-7"/><path d="M20 10h-6V4"/><path d="m3 21 7-7"/><path d="M4 14h6v6"/></svg><!-- /build:icon:compress --></span><div><h3>압축</h3><p>형식과 긴 변 크기를 고르면 저장하기 전에 예상 크기를 보여 줍니다.</p></div></li>
+        <li><span class="tool-icon-box"><!-- build:icon:metadata --><svg class="tool-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg><!-- /build:icon:metadata --></span><div><h3>메타데이터</h3><p>카메라 정보와 위치(GPS)를 보여 주고, 메타데이터를 지운 사본을 만듭니다.</p></div></li>
+        <li><span class="tool-icon-box"><!-- build:icon:edit --><svg class="tool-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></svg><!-- /build:icon:edit --></span><div><h3>편집</h3><p>회전, 반전, 밝기, 대비, 채도를 조정합니다.</p></div></li>
+        <li><span class="tool-icon-box"><!-- build:icon:annotate --><svg class="tool-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg><!-- /build:icon:annotate --></span><div><h3>주석</h3><p>한글 텍스트, 화살표, 사각형을 그립니다. 실행 취소와 다시 실행을 지원합니다.</p></div></li>
+        <li><span class="tool-icon-box"><!-- build:icon:redact --><svg class="tool-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg><!-- /build:icon:redact --></span><div><h3>가리기</h3><p>단색이나 모자이크로 가립니다. 결과에는 원본 썸네일과 메타데이터를 남기지 않습니다.</p></div></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="screens" class="section" aria-labelledby="screens-title">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">실제 화면</p>
+      <h2 id="screens-title">macOS에서 찍은 화면</h2>
+      <p class="lead">위의 휠 그림과 달리 아래는 모두 앱의 실제 화면입니다. 휠 두 장과 결과 화면은 macOS 14 가상 머신의 Finder에서 직접 드래그해 찍었습니다.</p>
+    </div>
+    <ul class="shots">
+      <li>
+        <figure>
+          <div class="shot-frame"><picture><source type="image/webp" srcset="assets/shots/finder-convert-wheel.webp"><img src="assets/shots/finder-convert-wheel.png" width="500" height="450" loading="lazy" decoding="async" alt="바탕화면 위에 열린 변환 휠. 가운데에 끌고 있는 Page 001.pdf 아이콘이 있고, 둘레에 DOCX, JPG, PNG, TXT 칸이 있습니다."></picture></div>
+          <figcaption><strong>PDF를 끌며 Shift</strong>PDF에는 DOCX, JPG, PNG, TXT가 나타납니다.</figcaption>
+        </figure>
+      </li>
+      <li>
+        <figure>
+          <div class="shot-frame"><picture><source type="image/webp" srcset="assets/shots/finder-tools-wheel.webp"><img src="assets/shots/finder-tools-wheel.png" width="500" height="450" loading="lazy" decoding="async" alt="도구 휠. 끌고 있는 Page 001.jpg가 주황색으로 강조된 자르기 칸 위에 있고, 가운데 캡슐에 자르기가 표시됩니다."></picture></div>
+          <figcaption><strong>Option+Shift로 도구 휠</strong>자르기 위에 놓으면 자르기 편집 창이 열립니다.</figcaption>
+        </figure>
+      </li>
+      <li>
+        <figure>
+          <div class="shot-frame"><picture><source type="image/webp" srcset="assets/shots/crop-editor.webp"><img src="assets/shots/crop-editor.png" width="760" height="1016" loading="lazy" decoding="async" alt="이미지 자르기 창. 문서 이미지 위에 1:1 자르기 영역이 있고, 아래에 비율 버튼과 W 2550, H 2550 입력란, 적용 버튼이 있습니다."></picture></div>
+          <figcaption><strong>자르기</strong>비율을 고르거나 픽셀 크기를 직접 입력합니다.</figcaption>
+        </figure>
+      </li>
+      <li>
+        <figure>
+          <div class="shot-frame"><picture><source type="image/webp" srcset="assets/shots/add-background-editor.webp"><img src="assets/shots/add-background-editor.png" width="760" height="1174" loading="lazy" decoding="async" alt="배경 추가 창. 분홍·보라 그라데이션 배경 위에 둥근 모서리의 문서 이미지가 있고, 배경 견본, 여백·모서리·그림자 슬라이더, 16:9 비율과 PNG 저장 형식이 선택되어 있습니다."></picture></div>
+          <figcaption><strong>배경 추가</strong>배경, 여백, 모서리, 그림자, 비율을 정합니다.</figcaption>
+        </figure>
+      </li>
+      <li>
+        <figure>
+          <div class="shot-frame"><picture><source type="image/webp" srcset="assets/shots/results-next-to-original.webp"><img src="assets/shots/results-next-to-original.png" width="510" height="775" loading="lazy" decoding="async" alt="바탕화면에 Page 001.pdf와 함께 Page 001.jpg, Page 001 Cropped.jpg, Page 001 Cropped With Background.png가 있고, 위에 '완료: 배경 추가' 알림이 떠 있습니다."></picture></div>
+          <figcaption><strong>결과는 원본 옆에</strong>PDF → JPG → 자르기 → 배경 추가. 원본 PDF는 그대로입니다.</figcaption>
+        </figure>
+      </li>
+      <li>
+        <figure>
+          <div class="shot-frame"><picture><source type="image/webp" srcset="assets/shots/drop-zone.webp"><img src="assets/shots/drop-zone.png" width="400" height="570" loading="lazy" decoding="async" alt="Drop Zone 창. report.pdf · 1.3 KB 아래에 DOCX, JPG, PNG, TXT 휠과 변환·도구 전환 버튼이 있습니다."></picture></div>
+          <figcaption><strong>Drop Zone</strong>드래그 대신 파일을 놓거나 골라서 쓰는 작은 창입니다.</figcaption>
+        </figure>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<section id="privacy" class="section section-alt" aria-labelledby="privacy-title">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">개인정보</p>
+      <h2 id="privacy-title">파일은 내 컴퓨터를 떠나지 않습니다</h2>
+      <p class="lead">OrbitDrop은 모든 변환과 편집을 내 컴퓨터에서 처리합니다.</p>
+    </div>
+    <ul class="promise-grid">
+      <li class="card"><h3>업로드 없음</h3><p>파일 내용과 이름을 어디에도 보내지 않습니다. 인터넷에 연결되어 있지 않아도 모든 변환과 편집이 됩니다.</p></li>
+      <li class="card"><h3>계정 없음</h3><p>가입도 로그인도 없습니다.</p></li>
+      <li class="card"><h3>원격 분석 없음</h3><p>사용 통계나 충돌 보고서를 보내지 않습니다. 설정, 작업 기록, 로그는 내 컴퓨터에만 저장됩니다.</p></li>
+      <li class="card"><h3>업데이트 확인만 온라인</h3><p>네트워크를 쓰는 곳은 선택 사항인 업데이트 확인 하나뿐입니다. 이때 GitHub은 앱 버전과 IP 주소 같은 일반적인 접속 정보를 받습니다.</p></li>
+    </ul>
+    <a class="more-link" href="privacy/">개인정보 처리방침 전문 보기</a>
+  </div>
+</section>
+
+<section id="requirements" class="section" aria-labelledby="requirements-title">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">시스템 요구 사항</p>
+      <h2 id="requirements-title">지원하는 컴퓨터</h2>
+    </div>
+    <div class="req-grid">
+      <div class="card">
+        <div class="title-row"><h3>macOS</h3></div>
+        <ul>
+          <li>macOS 14 Sonoma 이상</li>
+          <li>Apple silicon(arm64)용과 Intel(x64)용 설치 파일이 따로 있습니다.</li>
+          <li>macOS 14와 macOS 26 가상 머신(Apple silicon)의 실제 Finder에서 드래그부터 변환·편집까지 확인했습니다. 실물 Mac에서 사람이 확인한 기록은 아직 없습니다.</li>
+          <li>Intel용은 Apple silicon의 Rosetta 2에서만 확인했고, Intel Mac에서는 아직 확인하지 않았습니다.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="title-row"><h3>Windows</h3><span class="badge badge-beta">베타</span></div>
+        <ul>
+          <li>Windows 11 x64</li>
+          <li>현재 사용자용으로 설치하도록 만들어져 관리자 권한을 요구하지 않습니다.</li>
+          <li>아직 실제 Windows PC에서 실행해 보지 않았습니다. 설치 프로그램도 전역 드래그도 확인 전입니다. <a href="#faq-windows">왜 베타인가요?</a></li>
+          <li>Windows on ARM과 Linux는 지원하지 않습니다.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="download" class="section section-alt" aria-labelledby="download-title">
+  <div class="wrap">
+    <div class="dl-intro">
+      <img class="app-icon" src="assets/icons/app-icon-256.png" width="112" height="112" alt="OrbitDrop 앱 아이콘: 네 칸 원형 휠에 파일이 내려앉는 모양">
+      <div class="section-head">
+        <p class="eyebrow">다운로드</p>
+        <h2 id="download-title">OrbitDrop 받기</h2>
+        <p class="lead">무료입니다. 설치 파일은 GitHub Releases에서 받습니다.</p>
+      </div>
+    </div>
+    <p class="dl-status" data-role="status" data-state="soon" role="status">곧 공개됩니다. 공개 소식과 설치 파일은 <a href="https://github.com/keilvher1/orbitdrop/releases">GitHub Releases</a>에서 확인하세요.</p>
+    <p class="dl-hint" data-role="hint" hidden></p>
+    <div class="dl-grid">
+      <article class="dl-card card" data-asset="mac-arm64" data-platform="mac" aria-labelledby="dl-mac-arm64">
+        <div class="title-row"><h3 id="dl-mac-arm64">macOS <span class="dl-arch">Apple silicon</span></h3><span class="badge badge-match" data-role="match" hidden></span></div>
+        <p class="dl-desc">M1 이후의 Apple 칩을 쓰는 Mac · macOS 14 이상</p>
+        <p class="dl-meta" data-role="meta">곧 공개됩니다</p>
+        <a class="btn btn-secondary" data-role="link" href="https://github.com/keilvher1/orbitdrop/releases">GitHub Releases 열기</a>
+        <p class="dl-digest" data-role="digest" hidden></p>
+      </article>
+      <article class="dl-card card" data-asset="mac-x64" data-platform="mac" aria-labelledby="dl-mac-x64">
+        <div class="title-row"><h3 id="dl-mac-x64">macOS <span class="dl-arch">Intel</span></h3><span class="badge badge-match" data-role="match" hidden></span></div>
+        <p class="dl-desc">Intel 프로세서를 쓰는 Mac · macOS 14 이상</p>
+        <p class="dl-meta" data-role="meta">곧 공개됩니다</p>
+        <a class="btn btn-secondary" data-role="link" href="https://github.com/keilvher1/orbitdrop/releases">GitHub Releases 열기</a>
+        <p class="dl-digest" data-role="digest" hidden></p>
+      </article>
+      <article class="dl-card card" data-asset="win-x64" data-platform="windows" aria-labelledby="dl-win-x64">
+        <div class="title-row"><h3 id="dl-win-x64">Windows <span class="dl-arch">11 · x64</span></h3><span class="badge badge-beta">베타</span><span class="badge badge-match" data-role="match" hidden></span></div>
+        <p class="dl-desc">현재 사용자용 설치 · 관리자 권한 불필요</p>
+        <p class="dl-meta" data-role="meta">곧 공개됩니다</p>
+        <a class="btn btn-secondary" data-role="link" href="https://github.com/keilvher1/orbitdrop/releases">GitHub Releases 열기</a>
+        <p class="dl-note" data-role="note" hidden></p>
+        <p class="dl-digest" data-role="digest" hidden></p>
+      </article>
+    </div>
+    <p class="dl-which"><strong>Apple silicon인지 Intel인지 모르겠다면</strong> Apple 메뉴 › 이 Mac에 관하여를 여세요. ‘칩’ 항목에 Apple M1 같은 이름이 있으면 Apple silicon, ‘프로세서’ 항목에 Intel이 있으면 Intel입니다.</p>
+    <div class="verify card">
+      <h3>내려받은 파일 확인하기 (SHA-256)</h3>
+      <p>릴리스에 <code>SHA256SUMS.txt</code>가 있으면, 아래 명령으로 계산한 값을 그 파일에서 같은 파일 이름 줄의 값과 비교해 파일이 중간에 바뀌지 않았는지 확인할 수 있습니다. 두 값이 같아야 합니다.</p>
+      <div class="verify-steps">
+        <div>
+          <h4>macOS — 터미널</h4>
+          <pre><code>shasum -a 256 ~/Downloads/OrbitDrop-*-mac-*.dmg</code></pre>
+        </div>
+        <div>
+          <h4>Windows — PowerShell</h4>
+          <pre><code>Get-FileHash "$env:USERPROFILE\Downloads\OrbitDrop-*-setup.exe" -Algorithm SHA256</code></pre>
+        </div>
+      </div>
+      <p data-role="sums">릴리스에 <code>SHA256SUMS.txt</code>가 있으면 여기에 링크가 나타납니다. <a href="https://github.com/keilvher1/orbitdrop/releases">GitHub Releases</a>에서도 볼 수 있습니다.</p>
+    </div>
+  </div>
+</section>
+
+<section id="faq" class="section" aria-labelledby="faq-title">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">FAQ</p>
+      <h2 id="faq-title">자주 묻는 질문</h2>
+    </div>
+    <div class="faq">
+      <details id="faq-permissions">
+        <summary>macOS에서 어떤 권한을 허용해야 하나요?</summary>
+        <div class="answer">
+          <p>허용해야 하는 권한은 없습니다. OrbitDrop의 전역 드래그는 손쉬운 사용(Accessibility)이나 입력 모니터링 권한 없이 동작하도록 만들어졌고, 실행할 때 권한 대화상자를 띄우지 않습니다. 전체 디스크 접근 권한도 요구하지 않습니다.</p>
+          <ul>
+            <li><strong>알림</strong> — 드래그로 시작한 작업이 처음 끝날 때 macOS가 알림을 허용할지 묻습니다. 허용하지 않아도 변환은 됩니다.</li>
+            <li><strong>입력 모니터링</strong> — 이미 허용해 둔 경우에만 포인터가 휠 밖에 있을 때도 <kbd>Esc</kbd>로 휠을 닫을 수 있습니다. 허용하지 않았다면 <kbd>Esc</kbd>는 포인터가 휠 위에 있을 때만 동작하고, 휠 밖에서는 평소처럼 드래그를 끝내면 휠이 닫힙니다. OrbitDrop이 이 권한을 요청하지는 않습니다.</li>
+            <li><strong>보호된 위치</strong> — iCloud Drive나 외장·네트워크 볼륨처럼 macOS가 보호하는 위치에서는 macOS가 접근 허용을 물을 수 있습니다. 거절하면 그 위치의 작업만 실패하고, 다른 저장 위치를 고를 수 있습니다.</li>
+          </ul>
+          <p>Windows에는 이런 권한 대화상자가 없습니다. 다만 OrbitDrop과 탐색기 중 한쪽만 관리자 권한으로 실행하면 드래그를 받을 수 없으니 둘 다 일반 권한으로 실행하세요.</p>
+        </div>
+      </details>
+      <details id="faq-first-launch">
+        <summary>처음 실행하면 어떻게 되나요?</summary>
+        <div class="answer">
+          <p>macOS에서는 DMG를 열어 OrbitDrop을 응용 프로그램 폴더로 끌어 놓은 뒤 실행합니다. Windows 설치 프로그램은 현재 사용자용으로 설치하도록(기본 위치 <code>%LOCALAPPDATA%\Programs\OrbitDrop</code>) 만들어져 관리자 권한을 묻지 않습니다. 다만 Windows에서는 아직 실행해 보지 않았습니다(베타).</p>
+          <p>실행해도 창은 열리지 않습니다. 메뉴 막대(Windows는 작업 표시줄의 알림 영역)에 OrbitDrop 아이콘이 나타나면 준비된 것입니다. 바로 파일을 끌며 <kbd>Shift</kbd>를 눌러 보세요. 설정은 아이콘 메뉴의 <strong>설정…</strong>에 있고, ‘로그인할 때 OrbitDrop 실행’은 처음에 꺼져 있습니다.</p>
+          <p>Apple silicon Mac에서 Intel용을 실행하면 Rosetta 2가 번역하느라 첫 실행이 오래 걸리고(가상 머신에서 약 1분 40초), Apple silicon용을 설치하라는 알림이 뜹니다.</p>
+        </div>
+      </details>
+      <details id="faq-icon">
+        <summary>아이콘이 어디에 있나요?</summary>
+        <div class="answer">
+          <p><strong>macOS</strong> — 화면 위쪽 메뉴 막대의 오른쪽에 있습니다. Dock에는 나타나지 않습니다. 메뉴 막대가 붐벼 아이콘이 가려졌다면 응용 프로그램 폴더에서 OrbitDrop을 한 번 더 여세요. 실행 중인 OrbitDrop이 Drop Zone 창을 띄웁니다.</p>
+          <p><strong>Windows</strong> — 작업 표시줄 오른쪽 알림 영역에 있습니다. 보이지 않으면 위쪽 화살표(숨겨진 아이콘 표시)를 눌러 보세요. OrbitDrop을 한 번 더 실행해도 Drop Zone 창이 열립니다.</p>
+        </div>
+      </details>
+      <details id="faq-uninstall">
+        <summary>앱을 지우려면 어떻게 하나요? 데이터는 어디에 남나요?</summary>
+        <div class="answer">
+          <h3>macOS</h3>
+          <ol>
+            <li>메뉴 막대 아이콘에서 <strong>종료</strong>를 고릅니다.</li>
+            <li>응용 프로그램 폴더의 OrbitDrop을 휴지통으로 옮깁니다.</li>
+            <li>‘로그인할 때 OrbitDrop 실행’을 켰다면 시스템 설정 › 일반 › 로그인 항목에서도 지웁니다. 손쉬운 사용이나 입력 모니터링 목록에 직접 넣었다면 시스템 설정 › 개인정보 보호 및 보안에서 지웁니다.</li>
+          </ol>
+          <p>설정(<code>settings.json</code>), 작업 기록(<code>history.json</code>), 로그(<code>logs/main.log</code>), 캐시는 앱을 지워도 남습니다. 필요하면 직접 지우세요: <code>~/Library/Application Support/OrbitDrop</code>, <code>~/Library/Preferences/io.github.keilvher1.orbitdrop.plist</code></p>
+          <h3>Windows</h3>
+          <p>설정 › 앱 › 설치된 앱 › OrbitDrop › 제거(또는 설치 폴더의 <code>Uninstall OrbitDrop.exe</code>). 제거 프로그램은 설치 폴더, 바로 가기, 제거 항목, 로그인할 때 실행하는 시작 항목을 지웁니다.</p>
+          <p>사용자 데이터 <code>%APPDATA%\OrbitDrop</code>(설정, 작업 기록, 로그, 캐시)은 남습니다. 함께 지우려면 그 폴더를 직접 지우거나 다음 명령으로 제거하세요(기본 설치 위치 기준).</p>
+          <pre><code>"%LOCALAPPDATA%\Programs\OrbitDrop\Uninstall OrbitDrop.exe" --delete-app-data</code></pre>
+          <p>변환·편집 결과 파일은 원본 옆에 저장되므로 앱을 지워도 그대로 남습니다.</p>
+        </div>
+      </details>
+      <details id="faq-windows">
+        <summary>Windows 판은 왜 베타인가요?</summary>
+        <div class="answer">
+          <p>Windows 판은 아직 실제 Windows에서 실행해 보지 않았기 때문입니다. 설치 프로그램 설정과 Windows용 드래그 도우미 코드는 있지만, 도우미는 macOS에서 교차 컴파일해 공통 부분만 자동 테스트했고, 설치 프로그램은 Windows에서 아직 만들어 보지 않았습니다. 그래서 탐색기에서 파일을 끌며 휠을 띄우는 전역 드래그도 실제 PC에서 확인하지 못했습니다. macOS 판은 macOS 14와 macOS 26 가상 머신의 실제 Finder에서 드래그부터 변환·편집까지 확인했습니다.</p>
+          <ul>
+            <li>OrbitDrop과 탐색기 중 한쪽만 관리자 권한으로 실행하면 드래그를 받을 수 없습니다.</li>
+            <li>HEIC 변환은 Windows에서 지원하지 않습니다.</li>
+            <li>도구 메뉴 단축키는 설정에서 바꿀 수 있습니다.</li>
+            <li>드래그가 안 되면 아이콘 메뉴의 <strong>파일 열기…</strong>나 Drop Zone으로 같은 기능을 쓸 수 있습니다.</li>
+          </ul>
+          <p>문제를 발견하면 <a href="https://github.com/keilvher1/orbitdrop/issues">GitHub 이슈</a>로 알려 주세요.</p>
+        </div>
+      </details>
+      <details id="faq-output">
+        <summary>결과 파일은 어디에 어떤 이름으로 저장되나요?</summary>
+        <div class="answer">
+          <p>원본과 같은 폴더에 저장됩니다. 예를 들어 <code>Page 001.pdf</code>는 <code>Page 001.jpg</code>가 되고, 여러 쪽짜리 PDF는 <code>report-p001.jpg</code>, <code>report-p002.jpg</code>…가 됩니다. 도구 결과는 <code>photo Cropped.jpg</code>, <code>photo Cropped With Background.png</code>처럼 작업 이름이 붙습니다.</p>
+          <p>같은 이름의 파일이 있으면 덮어쓰지 않고 <code>photo (2).jpg</code>처럼 새 이름을 씁니다. 원본 폴더에 쓸 수 없으면 저장할 폴더를 묻습니다. 설정에서 저장 위치를 ‘매번 묻기’로 바꿀 수도 있습니다.</p>
+        </div>
+      </details>
+      <details id="faq-no-wheel">
+        <summary>휠이 나타나지 않아요.</summary>
+        <div class="answer">
+          <ul>
+            <li>메뉴 막대(알림 영역) 아이콘의 메뉴에서 전역 드래그 상태를 확인하세요. 꺼져 있으면 <strong>전역 드래그 사용</strong>을 켭니다.</li>
+            <li>폴더, 글자 조각, 아직 내려받지 않은 클라우드 파일은 처리할 수 없으며, 휠 아래에 그 이유가 표시됩니다.</li>
+            <li>도구 휠과 변환 휠의 키 조합은 설정에서 확인하고 바꿀 수 있습니다.</li>
+            <li>그동안에도 아이콘 메뉴의 <strong>파일 열기…</strong>나 <strong>Drop Zone 열기</strong>로 같은 휠을 쓸 수 있습니다.</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div>
+      <p class="footer-brand"><img src="assets/icons/icon-64.png" width="28" height="28" alt="" aria-hidden="true">OrbitDrop</p>
+      <p>내 컴퓨터에서 동작하는 파일 변환·편집 데스크톱 앱. 무료, MIT 라이선스.</p>
+      <p>휠의 도구 아이콘은 <a href="assets/licenses/lucide.txt">Lucide</a>(ISC 라이선스)입니다.</p>
+    </div>
+    <nav aria-label="사이트 정보">
+      <ul class="footer-links">
+        <li><a href="https://github.com/keilvher1/orbitdrop">GitHub</a></li>
+        <li><a href="https://github.com/keilvher1/orbitdrop/blob/main/LICENSE">라이선스(MIT)</a></li>
+        <li><a href="https://github.com/keilvher1/orbitdrop/blob/main/THIRD_PARTY_LICENSES.md">제3자 라이선스</a></li>
+        <li><a href="privacy/">개인정보 처리방침</a></li>
+        <li><a href="en/" hreflang="en" lang="en">English</a></li>
+      </ul>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>

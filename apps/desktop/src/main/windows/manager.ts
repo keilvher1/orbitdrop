@@ -1,7 +1,8 @@
 import { fileURLToPath } from 'node:url';
 import { BrowserWindow, app, screen, type WebContents } from 'electron';
-import { IPC_CHANNELS, type Point, type WheelMode, type WindowContext, type WindowKind } from '@orbitdrop/contracts';
+import { IPC_CHANNELS, type Point, type WheelMode, type WindowContext, type WindowKind, type WindowNotice } from '@orbitdrop/contracts';
 import { describeError, silentLogger, type Logger } from '../log';
+import { crashStep, windowNoticeFor, type WindowCrashState } from './crash';
 import { WINDOW_MARGIN, placeCentered, rectCenter, resizeWithin } from './placement';
 import { WINDOW_SPECS, editorsToEvict } from './specs';
 
@@ -18,6 +19,11 @@ import { WINDOW_SPECS, editorsToEvict } from './specs';
  * asks the user with the same dialog as its own × / Esc. Closes the window
  * itself or main asked for are not held back, nor is anything once the app
  * quits, the session ends, or the renderer died or hangs.
+ *
+ * A crashed page (render-process-gone) is logged and reloaded with a notice
+ * the page asks for (getWindowNotice): first the view comes back and says
+ * what happened, after a second crash only a crash screen is shown, a third
+ * closes the window (onPageCrashClosed tells the user) — see windows/crash.ts.
  */
 
 /** Per-window close guard state (mutable; see the class comment). */
@@ -48,6 +54,8 @@ export interface WindowRecord {
   readonly window: BrowserWindow;
   readonly createdAt: number;
   readonly guard: CloseGuardState;
+  /** Crashes of this window's page (mutable; see windows/crash.ts). */
+  readonly crash: WindowCrashState;
 }
 
 export interface WindowManagerDeps {
@@ -65,6 +73,8 @@ export interface WindowManagerDeps {
   readonly devTools: boolean;
   readonly onClosed?: (record: WindowRecord) => void;
   readonly onOpened?: (record: WindowRecord) => void;
+  /** The window was closed because its page kept crashing (the user is told by main). */
+  readonly onPageCrashClosed?: (record: WindowRecord) => void;
   readonly log?: Logger;
 }
 
@@ -208,6 +218,11 @@ export class WindowManager {
     return rectCenter(record.window.getBounds());
   }
 
+  /** getWindowNotice: why this window's page was reloaded (it had crashed), or null. */
+  notice(record: WindowRecord): WindowNotice | null {
+    return windowNoticeFor(record.crash);
+  }
+
   private create(context: WindowContext, anchor?: Point, focus = WINDOW_SPECS[context.kind].focus): BrowserWindow {
     const kind = context.kind;
     const spec = WINDOW_SPECS[kind];
@@ -256,6 +271,7 @@ export class WindowManager {
       window,
       createdAt: Date.now(),
       guard: { unsaved: false, approved: false, unresponsive: false, noAck: false, ackTimer: null },
+      crash: { count: 0, unsavedLost: false },
     };
     this.records.set(record.webContentsId, record);
     window.on('close', (event) => this.onCloseAttempt(record, event));
@@ -284,17 +300,26 @@ export class WindowManager {
     window.once('ready-to-show', show);
     const fallback = setTimeout(show, 4000); // never leave a window invisible if ready-to-show does not come
     fallback.unref?.();
-    let crashes = 0;
     window.webContents.on('render-process-gone', (_event, details) => {
       // Whatever was unsaved went with the renderer; the dead window must stay closable.
+      const unsaved = record.guard.unsaved;
       record.guard.unsaved = false;
-      this.log.error('renderer process gone', { kind, reason: details.reason, exitCode: details.exitCode });
+      this.log.error('renderer process gone', { kind, reason: details.reason, exitCode: details.exitCode, unsaved });
       if (details.reason === 'clean-exit' || this.ending || window.isDestroyed()) return;
-      // A frameless window with a dead page has no close button: load it again once (main still has its
-      // context — an editor comes back without its unsaved shapes); a second crash closes it.
-      crashes += 1;
-      if (crashes === 1) window.webContents.reload();
-      else this.closeRecord(record);
+      // A frameless window with a dead page has no close button: load it again (main still has its context —
+      // an editor comes back without its unsaved shapes) and the page says what happened (getWindowNotice).
+      record.crash.count += 1;
+      record.crash.unsavedLost ||= unsaved;
+      if (crashStep(record.crash.count) !== 'close') {
+        window.webContents.reload();
+        return;
+      }
+      this.closeRecord(record);
+      try {
+        this.deps.onPageCrashClosed?.(record);
+      } catch (error) {
+        this.log.error('crash close handler failed', { kind, error: describeError(error) });
+      }
     });
     window.on('closed', () => {
       clearTimeout(fallback);

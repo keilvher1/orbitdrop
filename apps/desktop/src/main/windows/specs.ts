@@ -35,6 +35,8 @@ export const WINDOW_SPECS: Readonly<Record<WindowKind, WindowSpec>> = {
   settings: { width: 520, height: 620, minWidth: 440, minHeight: 420, resizable: true, alwaysOnTop: false, focus: true, single: true, skipTaskbar: false, acceptFirstMouse: false },
   dropzone: { width: 220, height: 220, minWidth: 160, minHeight: 160, resizable: false, alwaysOnTop: true, focus: false, single: true, skipTaskbar: true, acceptFirstMouse: true },
   about: { width: 380, height: 340, minWidth: 320, minHeight: 280, resizable: false, alwaysOnTop: false, focus: true, single: true, skipTaskbar: false, acceptFirstMouse: false },
+  // First-run welcome (and Help › 사용법): laid out at 480 DIP (within 440–560); the height follows its content.
+  welcome: { width: 480, height: 600, minWidth: 440, minHeight: 320, resizable: false, alwaysOnTop: false, focus: true, single: true, skipTaskbar: false, acceptFirstMouse: false },
 };
 
 /** Editors open at most this many at once; the oldest is closed beyond it. */

@@ -1,6 +1,7 @@
 import type { MenuItemConstructorOptions } from 'electron';
 import { describe, expect, it, vi } from 'vitest';
-import type { HelperStatus, JobSnapshot } from '@orbitdrop/contracts';
+import { DEFAULT_SETTINGS, defaultSettingsFor, type HelperStatus, type JobSnapshot, type ModifierKey } from '@orbitdrop/contracts';
+import { comboText, trayTooltip } from '../../src/main/support/keys';
 import { HELPER_REASON_DISABLED_FOR_RUN, HELPER_REASON_NOT_FOUND, localizeHelperStatus } from '../../src/main/helper/status-text';
 import { bindTranslate } from '../../src/main/i18n';
 import type { JobRecordView, JobSpec } from '../../src/main/jobs/manager';
@@ -33,6 +34,13 @@ describe('window placement', () => {
     expect(resizeWithin(current, { width: 4000, height: 4000 }, work, { width: 440, height: 400 })).toEqual({ x: 8, y: 33, width: 1424, height: 859 });
   });
 
+  it('the welcome window is laid out within 440–560 DIP, takes focus and is a single window', () => {
+    expect(WINDOW_SPECS.welcome.width).toBeGreaterThanOrEqual(440);
+    expect(WINDOW_SPECS.welcome.width).toBeLessThanOrEqual(560);
+    expect(WINDOW_SPECS.welcome.minWidth).toBeGreaterThanOrEqual(440);
+    expect(WINDOW_SPECS.welcome).toMatchObject({ focus: true, single: true, alwaysOnTop: false, resizable: false });
+  });
+
   it('the editor starts 520 DIP wide within the 440–560 range, the Drop Zone is small and always on top', () => {
     expect(WINDOW_SPECS.editor.width).toBe(520);
     expect(WINDOW_SPECS.editor.minWidth).toBe(440);
@@ -59,6 +67,10 @@ function actions(): TrayActions & Record<string, ReturnType<typeof vi.fn>> {
     openSettings: vi.fn(),
     openAbout: vi.fn(),
     quit: vi.fn(),
+    openGuide: vi.fn(),
+    openWebsite: vi.fn(),
+    reportProblem: vi.fn(),
+    openLogFolder: vi.fn(),
   } as unknown as TrayActions & Record<string, ReturnType<typeof vi.fn>>;
 }
 
@@ -71,7 +83,7 @@ function state(helper: HelperStatus, extra: Partial<TrayState> = {}): TrayState 
 describe('tray menu', () => {
   it('has the product menu items in Korean by default', () => {
     const items = buildTrayTemplate(state({ state: 'running', helperVersion: '1', globalDrag: true }), actions(), bindTranslate(() => 'ko'));
-    expect(labels(items)).toEqual(['파일 열기…', 'Drop Zone 열기', '최근 작업', '작업 창', '전역 드래그: 켜짐', '전역 드래그 사용', '설정…', '정보', '종료']);
+    expect(labels(items)).toEqual(['파일 열기…', 'Drop Zone 열기', '최근 작업', '작업 창', '전역 드래그: 켜짐', '전역 드래그 사용', '설정…', '도움말', '정보', '종료']);
     const recent = items.find((i) => i.label === '최근 작업')!;
     expect((recent.submenu as MenuItemConstructorOptions[])[0]).toMatchObject({ label: '최근 작업 없음', enabled: false });
   });
@@ -103,6 +115,34 @@ describe('tray menu', () => {
     const missing = buildTrayTemplate(state({ state: 'unavailable', reason: 'x' }), actions(), t);
     expect(labels(missing)).toContain('파일 열기나 Drop Zone으로 계속 사용할 수 있습니다');
     expect(missing.find((i) => i.type === 'checkbox')!.enabled).toBe(false);
+  });
+
+  it('has a Help submenu: how to use, website, report a problem, log folder', () => {
+    const a = actions();
+    const items = buildTrayTemplate(state({ state: 'running', helperVersion: '1', globalDrag: true }), a, bindTranslate(() => 'ko'));
+    const help = items.find((i) => i.label === '도움말')!.submenu as MenuItemConstructorOptions[];
+    expect(labels(help)).toEqual(['사용법', 'OrbitDrop 웹사이트', '문제 신고', '로그 폴더 열기']);
+    for (const [label, action] of [
+      ['사용법', 'openGuide'],
+      ['OrbitDrop 웹사이트', 'openWebsite'],
+      ['문제 신고', 'reportProblem'],
+      ['로그 폴더 열기', 'openLogFolder'],
+    ] as const) {
+      (help.find((i) => i.label === label)!.click as () => void)();
+      expect(a[action]).toHaveBeenCalledTimes(1);
+    }
+    const english = buildTrayTemplate(state({ state: 'disabled' }), a, bindTranslate(() => 'en'));
+    expect(labels(english.find((i) => i.label === 'Help')!.submenu as MenuItemConstructorOptions[])).toEqual(['How to Use', 'OrbitDrop Website', 'Report a Problem', 'Open Log Folder']);
+  });
+
+  it('the tooltip names the drag keys of this platform (Option on macOS, Ctrl/Alt on Windows)', () => {
+    const ko = bindTranslate(() => 'ko');
+    expect(trayTooltip(DEFAULT_SETTINGS, 'darwin', ko)).toBe('OrbitDrop — 파일을 끌면서 Shift: 변환 · Option+Shift: 도구');
+    expect(trayTooltip(defaultSettingsFor('win32'), 'win32', bindTranslate(() => 'en'))).toBe('OrbitDrop — while dragging a file, Shift: Convert · Ctrl+Shift: Tools');
+    const custom = { ...DEFAULT_SETTINGS, globalDrag: { ...DEFAULT_SETTINGS.globalDrag, toolsModifiers: ['shift', 'alt', 'control'] as ModifierKey[] } };
+    expect(comboText(custom.globalDrag.toolsModifiers, 'win32', ko)).toBe('Ctrl+Alt+Shift');
+    // Global drag off: no keys to name.
+    expect(trayTooltip({ ...DEFAULT_SETTINGS, globalDrag: { ...DEFAULT_SETTINGS.globalDrag, enabled: false } }, 'darwin', ko)).toBe('OrbitDrop');
   });
 
   it('escapes & in file names on Windows', () => {

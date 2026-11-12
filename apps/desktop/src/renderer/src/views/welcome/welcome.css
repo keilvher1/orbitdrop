@@ -1,0 +1,133 @@
+/*
+ * Welcome window (WelcomeView.tsx): laid out at 480 DIP (the window spec allows
+ * 440–560) with the height following the content. Colours, radii and fonts are
+ * design tokens (theme/tokensCss.ts); reduced motion and forced colours follow base.css.
+ */
+
+.welcome-view {
+  width: 480px;
+}
+
+.welcome-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 24px 20px;
+}
+
+.welcome-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.welcome-heading {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+/* Focused only so a screen reader starts here; it is not a control. */
+.welcome-heading:focus,
+.welcome-heading:focus-visible {
+  outline: none;
+}
+
+.welcome-lead {
+  max-width: 410px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.welcome-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.welcome-section p {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.welcome-section-title {
+  color: var(--c-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.welcome-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.welcome-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 0;
+}
+
+.welcome-key-row {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.welcome-key-row dt,
+.welcome-key-row dd {
+  margin: 0;
+}
+
+.welcome-section .welcome-hint,
+.welcome-hint {
+  color: var(--c-text-muted);
+  font-size: 12px;
+}
+
+.welcome-login {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-control);
+  background: var(--c-surface);
+}
+
+.welcome-login-label {
+  font-weight: 600;
+}
+
+.welcome-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--c-border);
+}
+
+.welcome-privacy {
+  color: var(--c-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.welcome-footer .btn-primary {
+  flex: none;
+  min-width: 108px;
+}
+
+@media (forced-colors: active) {
+  .welcome-login {
+    border-color: CanvasText;
+  }
+}

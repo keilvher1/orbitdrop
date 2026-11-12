@@ -8,7 +8,10 @@
 /** What the window check reads from the page (WINDOW_PROBE). */
 export interface WindowProbe {
   readonly preload: boolean;
-  /** Text of an error the page shows instead of its view (bootstrap's FatalError, ViewError, a danger notice). */
+  /**
+   * Text of an error the page shows instead of its view (bootstrap's StartupFailure, ViewError, a crash
+   * screen marked data-window-failure, a danger notice).
+   */
   readonly failure: string | null;
   readonly view: boolean;
   /** Text of the About view's version line. */
@@ -19,7 +22,7 @@ export interface WindowProbe {
 
 /** Runs in the page (main world): what the window shows. */
 export const WINDOW_PROBE = `(() => {
-  const failure = document.querySelector('.view-error, .notice[data-tone="danger"]');
+  const failure = document.querySelector('.view-error, [data-window-failure], .notice[data-tone="danger"]');
   const links = Array.from(document.querySelectorAll('link[rel="stylesheet"]'));
   return {
     preload: typeof window.orbit === 'object' && window.orbit !== null,

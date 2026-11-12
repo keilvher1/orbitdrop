@@ -52,6 +52,18 @@ const AccessibilitySettings = z.strictObject({
   highContrast: z.enum(['system', 'on', 'off']).default('system'),
 });
 
+/**
+ * First-run state (added for the public release; not a preference). A file
+ * written before this section existed belongs to someone who already used
+ * OrbitDrop: main loads it with `welcomeDone: true` (no welcome window).
+ */
+const OnboardingSettings = z.strictObject({
+  /** The welcome window was closed once (Help › 사용법 opens it again). */
+  welcomeDone: z.boolean().default(false),
+  /** macOS: the offer to move the app into Applications was shown (asked once). */
+  moveToApplicationsAsked: z.boolean().default(false),
+});
+
 export const SettingsSchema = z.strictObject({
   version: z.literal(SETTINGS_VERSION),
   locale: LocaleSchema.default('ko'),
@@ -65,10 +77,26 @@ export const SettingsSchema = z.strictObject({
   launchAtLogin: z.boolean().default(false),
   /** System notification when a job started from a drag finishes. */
   notifications: z.boolean().default(true),
+  /** First-run state: welcome window, macOS move-to-Applications offer. */
+  onboarding: OnboardingSettings.prefault({}),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 
 export const DEFAULT_SETTINGS: Settings = SettingsSchema.parse({ version: SETTINGS_VERSION });
+
+/**
+ * Default tools combo on Windows: Ctrl+Shift. Alt+Shift (the macOS default,
+ * Option+Shift) is also Windows' input-language hotkey, which Settings warns
+ * about; the helper reads Ctrl with GetAsyncKeyState during an OLE drag like
+ * the other modifiers and accepts the drop as Copy whatever keys are held.
+ */
+export const WINDOWS_TOOLS_MODIFIERS: readonly ['control', 'shift'] = ['control', 'shift'];
+
+/** Defaults on a platform (first run, reset, repaired combos): Windows gets its own tools combo. */
+export function defaultSettingsFor(platform: string): Settings {
+  if (platform !== 'win32') return DEFAULT_SETTINGS;
+  return { ...DEFAULT_SETTINGS, globalDrag: { ...DEFAULT_SETTINGS.globalDrag, toolsModifiers: [...WINDOWS_TOOLS_MODIFIERS] } };
+}
 
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends readonly unknown[] ? T[K] : T[K] extends object ? DeepPartial<T[K]> : T[K] };
 export type SettingsPatch = DeepPartial<Omit<Settings, 'version'>>;
@@ -87,21 +115,23 @@ function deepMerge(base: unknown, patch: unknown): unknown {
 /**
  * Validate a raw settings object of any version. Fields that fail validation
  * are reset to their defaults one section at a time, so a single bad value
- * does not wipe the rest.
+ * does not wipe the rest. `defaults` fills what the file does not have and
+ * replaces sections that fail (default: DEFAULT_SETTINGS; main passes the
+ * defaults of its platform — see defaultSettingsFor).
  */
-export function migrateSettings(raw: unknown): Settings {
-  if (!isRecord(raw)) return DEFAULT_SETTINGS;
+export function migrateSettings(raw: unknown, defaults: Settings = DEFAULT_SETTINGS): Settings {
+  if (!isRecord(raw)) return defaults;
   // Version 0 (pre-release) used the same shape without a version field.
-  const candidate: Record<string, unknown> = { ...raw, version: SETTINGS_VERSION };
+  const candidate = deepMerge(defaults, { ...raw, version: SETTINGS_VERSION }) as Record<string, unknown>;
   const full = SettingsSchema.safeParse(candidate);
   if (full.success) return full.data;
 
   const result: Record<string, unknown> = { version: SETTINGS_VERSION };
   const shape = SettingsSchema.shape;
   for (const key of Object.keys(shape) as (keyof typeof shape)[]) {
-    if (key === 'version' || !(key in candidate)) continue;
+    if (key === 'version') continue;
     const parsed = shape[key].safeParse(candidate[key]);
-    if (parsed.success) result[key] = parsed.data;
+    result[key] = parsed.success ? parsed.data : defaults[key];
   }
   return SettingsSchema.parse(result);
 }

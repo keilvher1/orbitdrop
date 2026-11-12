@@ -17,16 +17,21 @@ afterEach(async () => {
 
 const readJson = async (name: string): Promise<unknown> => JSON.parse(await readFile(join(dir, name), 'utf8')) as unknown;
 
+/** Defaults after an unusable file was kept aside: its owner already used OrbitDrop, so no welcome window. */
+const RESET_DEFAULTS: Settings = { ...DEFAULT_SETTINGS, onboarding: { ...DEFAULT_SETTINGS.onboarding, welcomeDone: true } };
+
 describe('SettingsStore', () => {
-  it('uses defaults when there is no file and does not create one', async () => {
-    const store = new SettingsStore(dir);
+  it('uses defaults when there is no file (a first run) and does not create one', async () => {
+    const store = new SettingsStore(dir, undefined, 'darwin');
     expect(await store.load()).toEqual(DEFAULT_SETTINGS);
+    expect(store.firstRun).toBe(true);
+    expect(store.get().onboarding.welcomeDone).toBe(false); // the welcome window is still to show
     expect(await readdir(dir)).toEqual([]);
   });
 
   it('migrates old or partly invalid files section by section and writes the repaired file', async () => {
     await writeFile(join(dir, 'settings.json'), JSON.stringify({ locale: 'en', globalDrag: { wheelDiameter: 999 }, pdf: { dpi: 150 }, bogus: true }));
-    const store = new SettingsStore(dir);
+    const store = new SettingsStore(dir, undefined, 'darwin');
     const settings = await store.load();
     expect(settings.locale).toBe('en');
     expect(settings.pdf.dpi).toBe(150);
@@ -37,25 +42,26 @@ describe('SettingsStore', () => {
 
   it('keeps a corrupt file aside and starts from defaults', async () => {
     await writeFile(join(dir, 'settings.json'), '{ not json');
-    const store = new SettingsStore(dir);
-    expect(await store.load()).toEqual(DEFAULT_SETTINGS);
+    const store = new SettingsStore(dir, undefined, 'darwin');
+    expect(await store.load()).toEqual(RESET_DEFAULTS);
+    expect(store.firstRun).toBe(false);
     const names = await readdir(dir);
     const backup = names.find((n) => n.startsWith('settings.corrupt-'));
     expect(backup).toBeDefined();
     expect(await readFile(join(dir, backup!), 'utf8')).toBe('{ not json'); // the original bytes, untouched
-    expect(await readJson('settings.json')).toEqual(DEFAULT_SETTINGS);
+    expect(await readJson('settings.json')).toEqual(RESET_DEFAULTS);
     expect(store.loadIssue).toEqual({ reason: 'corrupt', backup }); // the app tells the user
   });
 
   it('an unreadable settings file (a folder in its place) is kept aside too, never overwritten, never a crash', async () => {
     await mkdir(join(dir, 'settings.json'));
     await writeFile(join(dir, 'settings.json', 'inside.txt'), 'keep me');
-    const store = new SettingsStore(dir);
-    expect(await store.load()).toEqual(DEFAULT_SETTINGS);
+    const store = new SettingsStore(dir, undefined, 'darwin');
+    expect(await store.load()).toEqual(RESET_DEFAULTS);
     const backup = (await readdir(dir)).find((n) => n.startsWith('settings.unreadable-'));
     expect(store.loadIssue).toEqual({ reason: 'unreadable', backup });
     expect(await readFile(join(dir, backup!, 'inside.txt'), 'utf8')).toBe('keep me');
-    expect(await readJson('settings.json')).toEqual(DEFAULT_SETTINGS);
+    expect(await readJson('settings.json')).toEqual(RESET_DEFAULTS);
     await expect(store.update({ locale: 'en' })).resolves.toMatchObject({ locale: 'en' });
     expect(await readJson('settings.json')).toMatchObject({ locale: 'en' });
   });
@@ -67,8 +73,8 @@ describe('SettingsStore', () => {
     // client, a virus scanner), so it cannot be renamed or replaced — whatever our privileges.
     const release = process.platform === 'win32' ? await holdOpenWithoutDeleteSharing(join(dir, 'settings.json')) : await denyWrites(dir).then(() => () => allowWrites(dir));
     try {
-      const store = new SettingsStore(dir);
-      expect(await store.load()).toEqual(DEFAULT_SETTINGS);
+      const store = new SettingsStore(dir, undefined, 'darwin');
+      expect(await store.load()).toEqual(RESET_DEFAULTS);
       expect(store.loadIssue).toEqual({ reason: 'corrupt', backup: null });
       expect(await readFile(join(dir, 'settings.json'), 'utf8')).toBe('{ broken');
       // Saving fails quietly (logged); the app keeps running with the in-memory settings.
@@ -83,8 +89,8 @@ describe('SettingsStore', () => {
   it('JSON that is not a settings object (null, an array, a number) is kept aside like a corrupt file', async () => {
     for (const content of ['null', '[]', '42', '"settings"']) {
       await writeFile(join(dir, 'settings.json'), content);
-      const store = new SettingsStore(dir);
-      expect(await store.load(), content).toEqual(DEFAULT_SETTINGS);
+      const store = new SettingsStore(dir, undefined, 'darwin');
+      expect(await store.load(), content).toEqual(RESET_DEFAULTS);
       const backup = (await readdir(dir)).find((n) => n.startsWith('settings.corrupt-'));
       expect(store.loadIssue, content).toEqual({ reason: 'corrupt', backup });
       expect(await readFile(join(dir, backup!), 'utf8'), content).toBe(content);

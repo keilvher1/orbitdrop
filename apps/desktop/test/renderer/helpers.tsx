@@ -202,6 +202,17 @@ export function createFakeOrbit(overrides: Partial<OrbitApi> = {}): FakeOrbit {
         listeners.delete(listener);
       };
     }),
+    getWindowNotice: vi.fn(async () => null),
+    reportRendererError: vi.fn(),
+    copyDiagnostics: vi.fn(async () => ({ logLines: 200 })),
+    openLogFolder: vi.fn(async () => undefined),
+    openDataFolder: vi.fn(async () => undefined),
+    resetSettings: vi.fn(async () => {
+      settings = { ...DEFAULT_SETTINGS, locale: settings.locale, onboarding: settings.onboarding };
+      return settings;
+    }),
+    openLicense: vi.fn(async () => undefined),
+    restartHelper: vi.fn(async () => undefined),
   };
   for (const [key, value] of Object.entries(overrides)) {
     const current = (base as Record<string, unknown>)[key];

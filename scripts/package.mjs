@@ -478,6 +478,9 @@ function smokeTest(binary, { x64OnArm = false } = {}) {
     const childEnv = { ...process.env };
     delete childEnv.ELECTRON_RUN_AS_NODE;
     delete childEnv.ORBITDROP_HELPER_PATH;
+    // Chromium's own messages (GPU process, renderer start-up) go to stderr too, so a failing smoke
+    // test shows why a window did not load (stderr is printed only when it fails).
+    childEnv.ELECTRON_ENABLE_LOGGING = '1';
     const started = Date.now();
     console.log(`  $ ${[cmd, ...args].join(' ')}`);
     const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], env: childEnv, detached: !isWin, windowsHide: true });
@@ -524,7 +527,7 @@ function smokeTest(binary, { x64OnArm = false } = {}) {
           parseError = err.message;
         }
       }
-      const tail = (s) => s.trim().split(/\r?\n/).slice(-8).join('\n');
+      const tail = (s, lines = 8) => s.trim().split(/\r?\n/).slice(-lines).join('\n');
       resolve({
         ran: true,
         exitCode: code,
@@ -536,7 +539,7 @@ function smokeTest(binary, { x64OnArm = false } = {}) {
         report,
         parseError,
         stdoutTail: tail(stdout),
-        stderrTail: tail(stderr),
+        stderrTail: tail(stderr, 60),
       });
     });
   });

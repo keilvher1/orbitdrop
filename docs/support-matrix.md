@@ -27,7 +27,8 @@
 | macOS 14 가상 머신 | macOS 14.8.7 (23J520) 게스트, tart 2.41.1(Virtualization.framework), 화면 1개(1×·2×), VNC 입력 | arm64 | 있음(2026-10-22) — [기록](verification.md#가상-머신-gui-검증--macos-1487-2026-10-22) |
 | macOS 26 가상 머신 | macOS 26.6.2 (25G83) 게스트, tart 2.41.1, 화면 1개(1×), VNC 입력 | arm64 | 있음(2026-10-24) — [기록](verification.md#가상-머신-핵심-흐름-점검--macos-2662-2026-10-24) |
 | Intel Mac | — | x64 | **없음** — x64 설치본은 Apple 실리콘의 Rosetta 2에서만 확인(개발 Mac의 smoke, macOS 26 가상 머신의 실제 Finder 드래그) |
-| Windows 10/11 | — | x64 | **없음** — Windows 헬퍼는 mingw-w64 교차 컴파일과 호스트 테스트(macOS clang)까지만. CI 워크플로(`windows-latest`)는 구성만 되어 있고 실행 전 |
+| Windows 10/11 | — | x64 | **없음**(실기기·사람 확인 없음) |
+| Windows CI 러너 | GitHub Actions `windows-latest`: Windows Server 2025 Datacenter 10.0.26100 (빌드 26100.33674), MSVC 19.51, Node 24.22.2 | x64 | 있음(2026-11-12~) — 단위·통합·helper(MSVC)·E2E·NSIS 패키지·패키지 smoke·설치/제거. GUI 드래그는 확인하지 않음 — [기록](verification.md#ci--github-actions에서-처음-돌린-windows-2026-11-12) |
 
 ## 자동 검증 명령 (개발 Mac, 2026-10-23)
 
@@ -47,15 +48,15 @@
 
 | 항목 | macOS arm64 | macOS x64 | Windows x64 | 증거 |
 |---|---|---|---|---|
-| 패키지 생성 (dmg+zip / NSIS) | 자동 검증됨 | 자동 검증됨 | 구현됨(설정만, Windows에서 빌드 안 함) | `node scripts/package.mjs mac --arch all`, [verification.md](verification.md#자동-검증-증거) |
-| 네이티브 바이너리 배치(sharp/libvips/canvas, 대상 아키텍처만) | 자동 검증됨 | 자동 검증됨 | 구현됨(after-pack 검사) | after-pack 훅, `lipo -archs` |
-| 패키지 smoke(엔진 probe, helper `ready`, PNG→JPG·PDF→PNG, 숨긴 창 렌더링) | 자동 검증됨 | 자동 검증됨(Rosetta 2) | 구현됨(CI 미실행) | `ORBITDROP_SMOKE {"ok":true…,"window":{"rendered":true…}}` |
-| 네이티브 모듈 검사(librsvg 그라데이션·마스크, canvas 로드, 한글 글꼴) | 자동 검증됨 | 자동 검증됨(Rosetta 2) | 구현됨(CI 미실행) | `apps/desktop/build/native-check` |
-| helper 포함(대상 아키텍처, 빈 entitlements, hardened runtime) | 자동 검증됨 | 자동 검증됨 | 구현됨(after-pack 검사) | `codesign -dv`, helper stdio smoke 18/18 |
+| 패키지 생성 (dmg+zip / NSIS) | 자동 검증됨 | 자동 검증됨 | 자동 검증됨(CI 러너) | `node scripts/package.mjs mac --arch all` / `win --install-test`, [verification.md](verification.md#자동-검증-증거) |
+| 네이티브 바이너리 배치(sharp/libvips/canvas, 대상 아키텍처만) | 자동 검증됨 | 자동 검증됨 | 자동 검증됨(CI, after-pack: x64 PE만) | after-pack 훅, `lipo -archs` |
+| 패키지 smoke(엔진 probe, helper `ready`, PNG→JPG·PDF→PNG, 숨긴 창 렌더링) | 자동 검증됨 | 자동 검증됨(Rosetta 2) | 자동 검증됨(CI, 설치본도) | `ORBITDROP_SMOKE {"ok":true…,"window":{"rendered":true…}}` |
+| 네이티브 모듈 검사(librsvg 그라데이션·마스크, canvas 로드, 한글 글꼴) | 자동 검증됨 | 자동 검증됨(Rosetta 2) | 자동 검증됨(CI, Malgun Gothic) | `apps/desktop/build/native-check` |
+| helper 포함(대상 아키텍처, 빈 entitlements, hardened runtime) | 자동 검증됨 | 자동 검증됨 | 자동 검증됨(CI: MSVC `/MT`, 코어 99·OLE 6·stdio smoke 47) | `codesign -dv`, helper stdio smoke 18/18 |
 | 코드 서명 | 미지원(자격 증명 없음, ad-hoc만, 파일명에 `-unsigned`) | 미지원(동일) | 미지원(미서명) | `build-report-*.json` |
 | 공증 / SmartScreen 평판 | 미지원 | 미지원 | 미지원 | [packaging.md](packaging.md) |
-| 사용자별 설치·제거(관리자 권한 없음) | 해당 없음(드래그 설치) | 해당 없음 | 구현됨(미실행) | `build/installer.nsh` |
-| 설치본 첫 실행·권한 안내 | VM GUI 검증됨(macOS 14.8.7·26.6.2: 실행 시 대화상자 없음, 첫 알림 때 알림 허용 배너) | VM GUI 검증됨(Rosetta 2, macOS 26.6.2: 첫 실행 약 1분 40초, Apple 실리콘용 설치본 안내 알림·설정·정보 창) · Intel 실기 미검증 | 미검증 | verification.md 1단계, 가상 머신 기록 |
+| 사용자별 설치·제거(관리자 권한 없음) | 해당 없음(드래그 설치) | 해당 없음 | 자동 검증됨(CI: 무인 설치, HKCU 항목만, 설치본 smoke, 무인 제거 후 파일·항목 없음) | `build/installer.nsh`, `package.mjs --install-test` |
+| 설치본 첫 실행·권한 안내 | VM GUI 검증됨(macOS 14.8.7·26.6.2: 실행 시 대화상자 없음, 첫 알림 때 알림 허용 배너 — 환영 창·응용 프로그램 폴더 이동 제안을 넣기 전 빌드 기준, 이후 미검증) | VM GUI 검증됨(Rosetta 2, macOS 26.6.2: 첫 실행 약 1분 40초, Apple 실리콘용 설치본 안내 알림·설정·정보 창) · Intel 실기 미검증 | 미검증 | verification.md 1단계, 가상 머신 기록 |
 
 ## P0 — 핵심 경로
 
@@ -92,11 +93,27 @@
 
 | 기능 | macOS arm64 | macOS x64 | Windows x64 | 증거 |
 |---|---|---|---|---|
-| HEIC 읽기/쓰기 | 자동 검증됨(헬퍼 ImageIO: 실제 HEVC 파일 생성, HEIC→PNG 바로 선 방향) · VM GUI 검증됨(설치본: JPG→HEIC, HEIC→JPG, HEIC 편집→HEIC — macOS 14.8.7, JPG→HEIC는 26.6.2도) | 구현됨(probe만, Rosetta) | 미지원(번들 sharp의 libheif에 HEVC 없음 — darwin 빌드로 실측, Windows 빌드는 같은 구성으로 예상) | `codecs-imageio.test.ts`, 패키지 probe |
+| HEIC 읽기/쓰기 | 자동 검증됨(헬퍼 ImageIO: 실제 HEVC 파일 생성, HEIC→PNG 바로 선 방향) · VM GUI 검증됨(설치본: JPG→HEIC, HEIC→JPG, HEIC 편집→HEIC — macOS 14.8.7, JPG→HEIC는 26.6.2도) | 구현됨(probe만, Rosetta) | 미지원(번들 sharp의 libheif에 HEVC 없음 — Windows CI 러너의 패키지 probe로 실측: decode·encode 목록에 heic 없음, 메뉴에서 비활성) | `codecs-imageio.test.ts`, 패키지 probe |
 | BMP 읽기/쓰기 | 자동 검증됨(자체 코덱, macOS ImageIO와 상호 확인) · VM GUI 검증됨 | 미검증 | 미검증 | `codecs-bmp.test.ts` |
 | PDF → DOCX(텍스트 중심) / 이미지 → DOCX(그림 삽입, OCR 없음) | 자동 검증됨(경고 `DOCX_TEXT_ONLY` / `DOCX_IMAGE_ONLY`) · VM GUI 검증됨 | 미검증 | 미검증 | `convert-docx.test.ts` |
 | OCR, 영상·음성, AI, 클라우드, 계정 | 미지원(범위 밖) | 미지원 | 미지원 | [requirements.md](requirements.md) |
 | Windows ARM64, Linux | — | — | 미지원(범위 밖) | [decisions.md](decisions.md) |
+
+## 첫 실행 · 도움말 · 진단 · 충돌 처리 (2026-11-12 추가)
+
+공개 배포 준비로 추가했다. 아래 "자동 검증됨"은 Vitest 단위·렌더러 테스트(개발 Mac)이며, 빌드된 앱의 E2E·실제 창·대화상자·알림은
+아직 실행하지 않았다(**GUI 미검증**).
+
+| 기능 | macOS arm64 | macOS x64 | Windows x64 | 증거 |
+|---|---|---|---|---|
+| 환영 창(처음 실행 1회, 도움말 › 사용법), OS 키 이름(Option / Alt·Ctrl), 로그인 시 실행 스위치(기본 꺼짐), 키보드·스크린리더 | 자동 검증됨(렌더러) · GUI 미검증 | 미검증 | 구현됨 · 미검증 | `welcome.test.tsx`, `onboarding.test.ts` |
+| 처음 실행 언어 = OS 언어(한국어 → ko, 그 밖 → en), 기존 설정 파일의 언어 유지 | 자동 검증됨(main) | 미검증 | 구현됨 · 미검증 | `onboarding.test.ts` |
+| Windows 도구 휠 기본 **Ctrl+Shift**([ADR-12](decisions.md#adr-12-windows-도구-휠-기본-조합-ctrlshift)) | 해당 없음(Option+Shift) | 해당 없음 | 구현됨(설정 기본값·검증 경고 없음은 자동 검증됨) · 실제 드래그 미검증 | `onboarding.test.ts`, `settings.test.tsx`, `contracts.test.ts`; helper는 `GetAsyncKeyState(VK_CONTROL)`(포터블 코어 호스트 테스트) |
+| 응용 프로그램 폴더로 이동 제안(패키지, 1회, 이동 / 나중에) | 흐름 자동 검증됨(main) · 실제 이동 미검증 | 동일 | 해당 없음 | `onboarding.test.ts` |
+| 도움말 메뉴(사용법·웹사이트·문제 신고·로그 폴더), 외부 URL 허용 목록(웹사이트·새 이슈만) | 자동 검증됨(main) · GUI 미검증 | 미검증 | 미검증 | `ui-logic.test.ts`, `support.test.ts`, `security.test.ts`, `contracts.test.ts` |
+| 정보 창: 진단 정보 복사(경로 다시 가림), 로그 폴더, 저작권·MIT, 오픈 소스 라이선스 파일 열기, 개인정보 | 자동 검증됨(main·렌더러) · GUI 미검증 | 미검증 | 미검증 | `support.test.ts`, `support-views.test.tsx` |
+| 설정 › 일반: 데이터 폴더 열기, 설정 초기화(앱 안 확인 창) · 설정 › 드래그: helper 다시 시작 | 자동 검증됨(렌더러·main) · GUI 미검증 | 미검증 | 미검증 | `support-views.test.tsx`, `onboarding.test.ts` |
+| 충돌 처리: 로컬 crash dump만(업로드 없음), main 예외·시작 실패 대화상자, helper 포기 알림, 창 페이지 충돌 안내·충돌 화면, 렌더러 오류 → main.log | 자동 검증됨(단위) · 실제 충돌·대화상자 미검증 | 미검증 | 미검증 | `crash.test.ts`, `crash-screens.test.tsx`, `ipc.test.ts` |
 
 ## 시각·접근성 (§8)
 
@@ -111,9 +128,13 @@
 
 - macOS에서 Input Monitoring 권한이 없으면 Esc는 포인터가 휠 위에 있을 때만 감지된다. 그 밖의 경우 마우스를 놓으면 휠이 닫힌다.
 - macOS에서는 Control·Command가 들어간 보조키 조합을 쓸 수 없다. AppKit이 이를 Link/Generic 드래그로 바꿔 Copy 드롭이 거부되기 때문이다.
-- PDF 안에 글꼴이 포함되지 않은 한글은 시스템 글꼴로 그린다. 한글 글꼴이 없는 시스템에서는 빈칸으로 보일 수 있다(텍스트 추출은 동작).
+- PDF 안에 글꼴이 포함되지 않은 한글은 시스템 글꼴로 그린다(macOS Apple SD Gothic Neo, Windows Malgun Gothic). 한글 글꼴이 없는 시스템에서는 빈칸으로 보일 수 있다(텍스트 추출은 동작). Windows에서는 내장되지 않은 **중국어·일본어** 글자도 아직 빈칸이다(@napi-rs/canvas의 기본 글꼴 Arial에 없고, 한글만 대체 글꼴을 붙인다).
+- Windows에서는 **산술 부호화 JPEG**(SOF9–SOF15, 드묾)을 읽을 수 없다. 번들 sharp의 Windows libvips가 산술 디코딩 없이 빌드됐기 때문이며, `ENGINE_UNAVAILABLE`("이 빌드에서 사용할 수 없는 기능")로 알린다. macOS는 읽는다.
+- Windows에서 이름은 255 UTF-16 단위, 경로는 32,767 단위까지다(260자를 넘는 경로는 동작). 넘으면 `PATH_TOO_LONG`.
 - 서명·공증 자격 증명이 없어 macOS 산출물은 ad-hoc 서명이다. Gatekeeper가 차단하며, 이를 끄라고 안내하지 않는다.
 - 실행 확인: 개발 Mac macOS 26.6(자동 검증, arm64·Rosetta x64), 가상 머신 macOS 14.8.7·26.6.2(arm64 설치본). macOS 15와 Intel Mac은 미실측.
-- Windows: 모든 동작이 미실측이다. 특히 Alt+Shift(기본 도구 메뉴 조합)는 Windows 입력 언어 전환 단축키와 겹칠 수 있고,
+- Windows: CI 러너(Windows Server 2025)의 자동 검증 말고는 미실측이다 — Explorer 드래그·휠·DPI는 사람이 확인하지 않았다. 도구 휠 기본 조합은 **Ctrl+Shift**다 — Alt+Shift는 입력 언어 전환 단축키와 겹쳐 기본값에서 뺐다
+  (설정에서 고르면 경고). 한 언어에 키보드 배열이 여럿이면 Ctrl+Shift가 배열 전환 단축키일 수 있어 실기기에서 확인해야 한다([ADR-12](decisions.md#adr-12-windows-도구-휠-기본-조합-ctrlshift)).
   관리자 권한으로 실행하면 일반 탐색기의 드래그를 받을 수 없으며(UIPI), 드래그 이미지와 휠 창의 겹침 순서는 실기기에서 확인해야 한다.
+  Windows 11은 새 알림 영역 아이콘을 ^(숨겨진 아이콘) 안에 둘 수 있다 — 환영 창이 안내한다.
 - 변환·편집별 메타데이터·색상·투명도 정책: [conversion-policy.md](conversion-policy.md).

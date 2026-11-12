@@ -17,6 +17,21 @@ How components are shipped:
   `dist`, pdf.js's legacy build); their licence texts are reproduced below.
 * **runtime** — Electron (with Chromium and Node.js) is the application runtime.
 
+## Source code of LGPL and MPL components
+
+The complete corresponding source of every component under the GNU LGPL or the Mozilla Public
+License that OrbitDrop ships — libvips and its LGPL/MPL libraries with the patches and build
+scripts used to build them, FFmpeg as built for Electron 44.9.0, and the MPL-2.0 Rust
+crates — is published with each release at https://github.com/keilvher1/orbitdrop/releases — asset
+`OrbitDrop-0.1.0-third-party-sources.tar.gz`. Its `MANIFEST.md` lists every archive with its
+upstream URL and SHA-256, and explains how to replace libvips or FFmpeg with a modified build.
+
+Written offer: if that archive cannot be obtained there, we will provide the same sources — and the
+source of the LGPL/MPL code in Electron's Chromium — to anyone who received OrbitDrop
+0.1.0 in binary form, for three years after its release, at no charge as a download
+or for no more than the cost of physically performing the distribution. Request it at
+https://github.com/keilvher1/orbitdrop/issues.
+
 ## Summary
 
 | Package | Version | Licence | Shipped as | Source |
@@ -147,7 +162,9 @@ Among them is **FFmpeg**, which Chromium builds as a separate dynamic library
 the GNU LGPL 2.1 or later. OrbitDrop ships it unmodified, exactly as published in Electron
 44.9.0, and does not call it directly; its notice is the "ffmpeg" entry of
 `LICENSES.chromium.html`. Source: https://chromium.googlesource.com/chromium/third_party/ffmpeg
-(the revision pinned by Electron 44.9.0's Chromium); the LGPL notes below apply to it too.
+(the revision pinned by Electron 44.9.0's Chromium; that revision and Electron's FFmpeg patch
+are in the release's sources archive, see "Source code of LGPL and MPL components"); the LGPL notes
+below apply to it too.
 
 ### libvips 8.18.7 and its libraries (via sharp)
 
@@ -198,11 +215,12 @@ LGPL compliance notes for OrbitDrop:
   ad hoc (`codesign --force --deep --sign - OrbitDrop.app`) to run it. OrbitDrop's terms do not
   restrict modification of these libraries or reverse engineering for debugging such modifications
   (LGPL-3.0 section 4).
-* Corresponding source for these exact versions: libvips https://github.com/libvips/libvips
-  (v8.18.7); build scripts and sources of every bundled library:
-  https://github.com/lovell/sharp-libvips (v1.3.4).
-* cairo is used under the Mozilla Public License 1.1; its source is available from
-  https://gitlab.freedesktop.org/cairo/cairo (tag 1.18.6) and through the sharp-libvips build above.
+* Corresponding source for these exact versions, with the patches and build scripts used: the
+  release's sources archive (see "Source code of LGPL and MPL components"). Upstream: libvips
+  https://github.com/libvips/libvips (v8.18.7); build scripts and sources of every bundled
+  library: https://github.com/lovell/sharp-libvips (v1.3.4).
+* cairo is used under the Mozilla Public License 1.1; its source is in the release's sources archive
+  and at https://gitlab.freedesktop.org/cairo/cairo (tag 1.18.6).
 * libvips also contains libnsgif (MIT, vendored in the libvips source tree), and librsvg is written
   in Rust: it statically links the 161 crates listed under "Crates linked into librsvg"
   below and the Rust standard library.
@@ -350,7 +368,7 @@ Each platform package ships a CycloneDX SBOM (`sbom.cdx.json`). The macOS one li
 
 </details>
 
-Licence expressions present: (MIT OR Apache-2.0) AND Unicode-3.0; Apache-2.0; Apache-2.0 / MIT; Apache-2.0 OR MIT; BSD-2-Clause; BSD-3-Clause; BSD-3-Clause AND IJG AND Zlib; FTL; ICU; ISC; MIT; MIT OR Apache-2.0; MIT/Apache-2.0; MPL-2.0; Unlicense OR MIT; Zlib; Zlib OR Apache-2.0 OR MIT; libpng-2.0. Components under MPL-2.0 are used unmodified; their source is available from their upstream repositories (crates.io).
+Licence expressions present: (MIT OR Apache-2.0) AND Unicode-3.0; Apache-2.0; Apache-2.0 / MIT; Apache-2.0 OR MIT; BSD-2-Clause; BSD-3-Clause; BSD-3-Clause AND IJG AND Zlib; FTL; ICU; ISC; MIT; MIT OR Apache-2.0; MIT/Apache-2.0; MPL-2.0; Unlicense OR MIT; Zlib; Zlib OR Apache-2.0 OR MIT; libpng-2.0. Components under MPL-2.0 are used unmodified; their source is in the release's sources archive (see "Source code of LGPL and MPL components") and on crates.io.
 
 ### Code compiled into dependency files
 
