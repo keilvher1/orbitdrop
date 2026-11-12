@@ -520,6 +520,63 @@ TEST_CASE("session: tools wheel for a PDF has no sectors (unsupported)") {
     CHECK(d.over(920, 500) == Effect::None);
 }
 
+TEST_CASE("session: with Claude analysis a PDF gets a one-sector tools wheel that every angle selects") {
+    Driver d;
+    d.cfg = defaults::referenceConfigure(proto::Locale::En, defaults::Theme::Light, true);
+    d.ctl.configure(d.cfg);
+    d.startWheel(800, 500, proto::kModShift | proto::kModAlt);
+    d.enter(kPdf, 800, 500);
+    CHECK_EQ(str(d.host.ofType("state").back(), "menuKey"), std::string("pdf"));
+    REQUIRE(d.host.model.sectors.size() == 1);
+    CHECK(!d.host.model.unsupported);
+    CHECK_EQ(d.host.model.sectors[0].label, std::string("ANALYZE"));
+    CHECK(d.host.model.sectors[0].icon == proto::IconId::Analyze);
+    for (int deg = -180; deg < 180; deg += 15) {
+        const double a = deg * 3.14159265358979 / 180;
+        const int x = 800 + static_cast<int>(std::lround(120 * std::cos(a)));
+        const int y = 500 + static_cast<int>(std::lround(120 * std::sin(a)));
+        CHECK(d.over(x, y) == Effect::Copy);
+        CHECK_EQ(d.host.model.highlight, 0);
+    }
+    // Straight down is where the single sector's span starts and ends: both sides select it.
+    for (int x : {799, 800, 801}) CHECK(d.over(x, 620) == Effect::Copy);
+    CHECK_EQ(d.host.model.capsuleText, std::string("ANALYZE"));
+    CHECK(d.over(800, 540) == Effect::None);  // dead zone
+    CHECK_EQ(d.host.model.highlight, -1);
+    CHECK(d.over(800, 681) == Effect::None);  // outside the disc
+    CHECK(d.drop(kPdf, 801, 620) == Effect::Copy);
+    const auto drops = d.host.ofType("drop");
+    REQUIRE(drops.size() == 1);
+    CHECK_EQ(str(drops[0], "actionId"), std::string("tool.analyze"));
+    CHECK_EQ(str(drops[0], "mode"), std::string("tools"));
+    CHECK(d.host.ofType("cancelled").empty());
+}
+
+TEST_CASE("session: PDF + image tools wheel: unsupported without Claude analysis, its one sector with it") {
+    const auto mixed = files({"C:\\a.pdf", "C:\\b.png"});
+    Driver off;
+    off.startWheel(800, 500, proto::kModShift | proto::kModAlt);
+    off.enter(mixed, 800, 500);
+    CHECK_EQ(str(off.host.ofType("state").back(), "menuKey"), std::string("mixed"));
+    CHECK(off.host.model.unsupported);
+    CHECK(off.over(680, 500) == Effect::None);
+
+    Driver d;
+    d.cfg = defaults::referenceConfigure(proto::Locale::Ko, defaults::Theme::Light, true);
+    d.ctl.configure(d.cfg);
+    d.startWheel(800, 500, proto::kModShift | proto::kModAlt);
+    d.enter(mixed, 800, 500);
+    CHECK_EQ(str(d.host.ofType("state").back(), "menuKey"), std::string("mixed"));
+    REQUIRE(d.host.model.sectors.size() == 1);
+    CHECK(d.host.model.sectors[0].enabled);  // batch-capable: two files are fine
+    CHECK(d.over(680, 500) == Effect::Copy);
+    CHECK(d.drop(mixed, 680, 500) == Effect::Copy);
+    const auto drops = d.host.ofType("drop");
+    REQUIRE(drops.size() == 1);
+    CHECK_EQ(str(drops[0], "actionId"), std::string("tool.analyze"));
+    CHECK_EQ(drops[0].get("files")->asArray().size(), size_t{2});
+}
+
 TEST_CASE("session: multi-file drags disable non-batch sectors and show the count") {
     Driver d;
     d.startWheel(800, 500, proto::kModShift | proto::kModAlt);

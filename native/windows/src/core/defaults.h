@@ -17,8 +17,13 @@ enum class Theme { Light, Dark, HighContrast };
 
 proto::WheelTokens tokens(Theme theme, bool reduceMotion = false);
 
-/** All MENU_KEYS with every sector enabled, labels in `locale`. */
-std::shared_ptr<proto::Configure> referenceConfigure(proto::Locale locale = proto::Locale::En, Theme theme = Theme::Light);
+/**
+ * All MENU_KEYS with every sector enabled, labels in `locale`. `analysis` adds the opt-in Claude
+ * analysis sector (tool.analyze) to every tools menu: last after the image tools, and the only
+ * sector of the PDF and mixed tools menus, which are empty without it.
+ */
+std::shared_ptr<proto::Configure> referenceConfigure(proto::Locale locale = proto::Locale::En, Theme theme = Theme::Light,
+                                                     bool analysis = false);
 
 /** Serialises a Configure as a `configure` protocol line (tests, tooling). */
 std::string configureToJson(const proto::Configure& cfg);

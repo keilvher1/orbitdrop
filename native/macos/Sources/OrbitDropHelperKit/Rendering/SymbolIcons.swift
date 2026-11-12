@@ -1,8 +1,9 @@
 import AppKit
 import OrbitDropHelperCore
 
-/// IconId → SF Symbol (all available on macOS 14). Generic glyphs chosen for meaning,
-/// not copied from any other product.
+/// IconId → SF Symbol (all available on macOS 14, the deployment target; RenderingTests
+/// checks each against the system's symbol availability list). Generic glyphs chosen for
+/// meaning, not copied from any other product.
 public enum SymbolIcons {
   public static func symbolName(for icon: IconId) -> String {
     switch icon {
@@ -13,6 +14,9 @@ public enum SymbolIcons {
     case .background: return "photo.artframe"
     case .crop: return "crop"
     case .redact: return "eye.slash"
+    // Claude analysis: the common "AI" sparkles (SF Symbols 1, macOS 10.15+). The more specific
+    // wand.and.sparkles needs macOS 15, and apple.intelligence is reserved for Apple Intelligence.
+    case .analyze: return "sparkles"
     }
   }
 

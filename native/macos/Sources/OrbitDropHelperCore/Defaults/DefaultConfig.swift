@@ -37,13 +37,14 @@ public enum DefaultConfig {
     case .toolAddBackground: return ActionInfo(label: ("배경 추가", "ADD BG"), icon: .background, batch: false)
     case .toolCrop: return ActionInfo(label: ("자르기", "CROP"), icon: .crop, batch: false)
     case .toolRedact: return ActionInfo(label: ("가리기", "REDACT"), icon: .redact, batch: false)
+    case .toolAnalyze: return ActionInfo(label: ("Claude 분석", "ANALYZE"), icon: .analyze, batch: true)
     }
   }
 
   /// Which inputs an action accepts (ACTIONS[...].inputs): "image", "pdf".
   public static func inputs(_ id: ActionId) -> Set<String> {
     switch id {
-    case .convertJpeg, .convertPng, .convertDocx: return ["image", "pdf"]
+    case .convertJpeg, .convertPng, .convertDocx, .toolAnalyze: return ["image", "pdf"]
     case .convertTxt: return ["pdf"]
     default: return ["image"]
     }
@@ -57,19 +58,22 @@ public enum DefaultConfig {
     .toolCompress, .toolMetadata, .toolEdit, .toolAnnotate, .toolAddBackground, .toolCrop, .toolRedact,
   ]
 
-  /// `baseMenuOrder(key, mode)` from menus.ts.
-  public static func baseMenuOrder(_ key: MenuKey, _ mode: WheelMode) -> [ActionId] {
+  /// `baseMenuOrder(key, mode)` from menus.ts. `analysis` (the opt-in Claude analysis setting)
+  /// appends `tool.analyze` to every tools wheel: last after the image tools, and the only
+  /// sector of the PDF and mixed (PDF + image) tools wheels, which are empty without it.
+  public static func baseMenuOrder(_ key: MenuKey, _ mode: WheelMode, analysis: Bool = false) -> [ActionId] {
+    let base: [ActionId]
     switch key {
     case .pdf:
-      return mode == .convert ? pdfConvertOrder : []
+      base = mode == .convert ? pdfConvertOrder : []
     case .mixed:
-      return mode == .convert ? pdfConvertOrder.filter { inputs($0).isSuperset(of: ["image", "pdf"]) } : []
+      base = mode == .convert ? pdfConvertOrder.filter { inputs($0).isSuperset(of: ["image", "pdf"]) } : []
     case .images:
-      return mode == .tools ? imageToolsOrder : imageConvertOrder
+      base = mode == .tools ? imageToolsOrder : imageConvertOrder
     case .image(let own):
-      if mode == .tools { return imageToolsOrder }
-      return imageConvertOrder.filter { $0.rawValue != "convert.\(own.rawValue)" }
+      base = mode == .tools ? imageToolsOrder : imageConvertOrder.filter { $0.rawValue != "convert.\(own.rawValue)" }
     }
+    return analysis && mode == .tools ? base + [.toolAnalyze] : base
   }
 
   /// Demo capability for snapshots: everything enabled except HEIC encoding
@@ -79,10 +83,10 @@ public enum DefaultConfig {
     return locale == .ko ? "HEIC 인코더가 이 빌드에 없음" : "No HEIC encoder in this build"
   }
 
-  public static func menus(locale: HelperLocale) -> [HelperMenu] {
+  public static func menus(locale: HelperLocale, analysis: Bool = false) -> [HelperMenu] {
     MenuKey.allCases.map { key in
       func sectors(_ mode: WheelMode) -> [WheelSector] {
-        baseMenuOrder(key, mode).map { id in
+        baseMenuOrder(key, mode, analysis: analysis).map { id in
           let info = action(id)
           let reason = demoDisabledReason(id, locale: locale)
           return WheelSector(
@@ -184,7 +188,10 @@ public enum DefaultConfig {
     return "#" + byte(color.r) + byte(color.g) + byte(color.b) + (color.a < 1 ? byte(color.a) : "")
   }
 
-  public static func config(locale: HelperLocale = .ko, theme: ThemeName = .light, enabled: Bool = true, reduceMotion: Bool = false) -> HelperConfig {
+  /// `analysis`: the menus main sends while the opt-in Claude analysis setting is on.
+  public static func config(
+    locale: HelperLocale = .ko, theme: ThemeName = .light, enabled: Bool = true, reduceMotion: Bool = false, analysis: Bool = false
+  ) -> HelperConfig {
     HelperConfig(
       enabled: enabled,
       locale: locale,
@@ -195,7 +202,7 @@ public enum DefaultConfig {
       convertModifiers: ModifierCombo([.shift]),
       toolsModifiers: ModifierCombo([.alt, .shift]),
       extensions: extensions,
-      menus: menus(locale: locale),
+      menus: menus(locale: locale, analysis: analysis),
       strings: strings(locale: locale)
     )
   }

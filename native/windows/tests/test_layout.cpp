@@ -111,6 +111,21 @@ TEST_CASE("layout: one sector is a full ring, two are half rings") {
     CHECK(layout::signedArea(layout::flatten(one.sectors[0].figures[1])) < 0);
     CHECK(layout::containsPoint(polys(one.sectors[0]), one.sectors[0].labelCenter));
     CHECK(!layout::containsPoint(polys(one.sectors[0]), Vec2{0, 0}));
+    // No gap and no seam: every point of the band is drawn and hit-tests to sector 0, straight down
+    // (where the single sector's span starts and ends) included; the dead zone and outside never.
+    const auto ring = polys(one.sectors[0]);
+    for (int deg = 0; deg < 360; deg += 5) {
+        for (double r : {one.innerR + 1, (one.innerR + one.sectorOuterR) / 2, one.sectorOuterR - 1}) {
+            const Vec2 p = polar(r, deg);
+            CHECK(layout::containsPoint(ring, p));
+            CHECK(geo::hitTestWheel(p.x, p.y, 1, 360) == geo::WheelHit::sector(0));
+        }
+    }
+    for (double dx : {-1e-9, 0.0, 1e-9}) CHECK(geo::hitTestWheel(dx, 120, 1, 360) == geo::WheelHit::sector(0));
+    CHECK(geo::hitTestWheel(0, one.innerR - 1, 1, 360) == geo::WheelHit::center());
+    CHECK(geo::hitTestWheel(0, one.outerR + 1, 1, 360) == geo::WheelHit::outside());
+    CHECK_NEAR(one.sectors[0].labelCenter.x, 0.0, 1e-9);  // label at the top (startAngleDeg −90°)
+    CHECK(one.sectors[0].labelCenter.y < -one.innerR);
 
     const layout::Layout two = layout::computeLayout(2, 360, geo::kDefaultGeometry);
     REQUIRE(two.sectors.size() == 2);

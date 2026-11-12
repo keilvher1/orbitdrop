@@ -44,6 +44,7 @@ const ActionInfo& info(ActionId id) {
          proto::IconId::Background, false},
         {ActionId::ToolCrop, "\xEC\x9E\x90\xEB\xA5\xB4\xEA\xB8\xB0", "CROP", proto::IconId::Crop, false},
         {ActionId::ToolRedact, "\xEA\xB0\x80\xEB\xA6\xAC\xEA\xB8\xB0", "REDACT", proto::IconId::Redact, false},
+        {ActionId::ToolAnalyze, "Claude \xEB\xB6\x84\xEC\x84\x9D", "ANALYZE", proto::IconId::Analyze, true},  // Claude 분석
     }};
     return table[static_cast<size_t>(id)];
 }
@@ -198,7 +199,7 @@ proto::WheelTokens tokens(Theme theme, bool reduceMotion) {
     return t;
 }
 
-std::shared_ptr<proto::Configure> referenceConfigure(proto::Locale locale, Theme theme) {
+std::shared_ptr<proto::Configure> referenceConfigure(proto::Locale locale, Theme theme, bool analysis) {
     auto cfg = std::make_shared<proto::Configure>();
     cfg->enabled = true;
     cfg->locale = locale;
@@ -239,6 +240,10 @@ std::shared_ptr<proto::Configure> referenceConfigure(proto::Locale locale, Theme
             }
             menu.convert = sectors(order, locale);
             menu.tools = sectors(kImageTools, locale);
+        }
+        if (analysis) {
+            const std::vector<proto::WheelSector> analyze = sectors({ActionId::ToolAnalyze}, locale);
+            menu.tools.insert(menu.tools.end(), analyze.begin(), analyze.end());
         }
         cfg->menus.push_back(std::move(menu));
     }

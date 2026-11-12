@@ -21,11 +21,13 @@ public enum ActionId: String, CaseIterable, Sendable, Codable, Hashable {
   case toolAddBackground = "tool.addBackground"
   case toolCrop = "tool.crop"
   case toolRedact = "tool.redact"
+  /// Claude analysis: opt-in (main sends it only while the setting is on), images and PDFs, batch.
+  case toolAnalyze = "tool.analyze"
 }
 
 /// `IconId` (ICON_IDS) — macOS maps these to SF Symbols.
 public enum IconId: String, CaseIterable, Sendable, Codable, Hashable {
-  case compress, metadata, edit, annotate, background, crop, redact
+  case compress, metadata, edit, annotate, background, crop, redact, analyze
 }
 
 /// `ImageFormat` (IMAGE_FORMATS), in contract order.

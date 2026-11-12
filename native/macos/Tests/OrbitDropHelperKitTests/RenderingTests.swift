@@ -265,4 +265,81 @@ final class RenderingTests: XCTestCase {
       XCTAssertNotNil(SymbolIcons.image(for: icon, pointSize: 20, weight: .bold, color: RGBA(r: 0, g: 0, b: 0)), "\(icon) → \(SymbolIcons.symbolName(for: icon))")
     }
   }
+
+  /// Each symbol must exist on the deployment target (macOS 14.0, Package.swift), not only on the Mac
+  /// running the tests: the system's SF Symbols availability list names the release that added it.
+  func testSymbolsExistOnTheDeploymentTarget() throws {
+    let url = URL(fileURLWithPath: "/System/Library/CoreServices/CoreGlyphs.bundle/Contents/Resources/name_availability.plist")
+    guard let data = try? Data(contentsOf: url),
+      let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+      let symbols = plist["symbols"] as? [String: String],
+      let releases = plist["year_to_release"] as? [String: [String: String]]
+    else { throw XCTSkip("SF Symbols availability list not readable on this system") }
+    for icon in IconId.allCases {
+      let name = SymbolIcons.symbolName(for: icon)
+      let macOS = symbols[name].flatMap { releases[$0]?["macOS"] }
+      let version = (macOS ?? "").split(separator: ".").compactMap { Int($0) } + [0, 0, 0]
+      XCTAssertNotNil(macOS, "\(name) is not in the availability list")
+      XCTAssertFalse([14, 0, 0].lexicographicallyPrecedes(version.prefix(3)), "\(icon) → \(name) needs macOS \(macOS ?? "?")")
+    }
+  }
+
+  /// Claude analysis on: the PDF tools wheel has one sector, drawn as a full ring without a gap or a
+  /// seam (straight down is where it starts and ends), its icon and label at the top. Highlighted,
+  /// the whole ring is active. (Without analysis this wheel is unsupported: testNeutralAndUnsupportedStates.)
+  func testSingleSectorToolsWheelIsAFullRing() throws {
+    let (bmp, model) = try render(["--menu", "pdf", "--mode", "tools", "--locale", "en", "--analysis"])
+    let t = model.presentation.tokens
+    XCTAssertEqual(model.content.sectors.map(\.label), ["ANALYZE"])
+    XCTAssertEqual(model.capsule, CapsuleContent(text: "PDF", style: .info))
+    let ri = WheelMath.innerRadius(360)
+    let ro = WheelMath.sectorOuterRadius(360)
+    func pixel(_ deg: Double, _ r: Double) -> (x: Int, y: Int) {
+      (204 + Int((r * cos(deg * .pi / 180)).rounded()), 204 + Int((r * sin(deg * .pi / 180)).rounded()))
+    }
+    // All around the band, away from the label at the top; the seam at 90° included.
+    for deg in stride(from: -30.0, through: 210, by: 10) {
+      for r in [ri + 6, (ri + ro) / 2, ro - 6] {
+        let p = pixel(deg, r)
+        assertColor(bmp.rgba(p.x, p.y), over(t.sector, t.wheelDisc), "band at \(deg)°, r = \(r)")
+      }
+    }
+    let anchorY = 204 - Int((ri + ro) / 2)
+    XCTAssertGreaterThan(bmp.darkPixels(inRect: CGRect(x: 204 - 20, y: anchorY - 24, width: 40, height: 20)), 10, "icon above the label")
+    XCTAssertGreaterThan(bmp.darkPixels(inRect: CGRect(x: 204 - 45, y: anchorY + 2, width: 90, height: 18)), 10, "label")
+
+    let (active, activeModel) = try render(["--menu", "pdf", "--mode", "tools", "--locale", "en", "--analysis", "--highlight", "0"])
+    XCTAssertEqual(activeModel.highlight, SectorHighlight(index: 0, style: .active))
+    XCTAssertEqual(activeModel.capsule, CapsuleContent(text: "ANALYZE", style: .action))
+    for deg in [-30.0, 0, 90, 180, 210] {
+      let p = pixel(deg, (ri + ro) / 2)
+      assertColor(active.rgba(p.x, p.y), over(t.sectorActive, RGBA(r: 0, g: 0, b: 0, a: 0)), "active ring at \(deg)°")
+    }
+  }
+
+  /// Claude analysis on: eight image tools. Each label fits its narrower sector in both languages
+  /// (shrunk at most to 11 pt, never cut with an ellipsis) and the last sector shows its icon.
+  func testEightToolsWithAnalysisFitTheirLabels() throws {
+    let ri = WheelMath.innerRadius(360)
+    let ro = WheelMath.sectorOuterRadius(360)
+    let maxWidth = SectorShape.labelWidth(count: 8, innerRadius: ri, outerRadius: ro, gap: WheelGeometry.default.sectorGap)
+    for locale in ["ko", "en"] {
+      let (bmp, model) = try render(["--menu", "image/png", "--mode", "tools", "--locale", locale, "--analysis"])
+      let t = model.presentation.tokens
+      let sectors = model.content.sectors
+      XCTAssertEqual(sectors.map(\.actionId), DefaultConfig.imageToolsOrder + [.toolAnalyze])
+      XCTAssertEqual(sectors.last?.label, locale == "ko" ? "Claude 분석" : "ANALYZE")
+      for sector in sectors {
+        // The size WheelRenderer.fittedLine picks (it tries 15, 14.5, … down to 9 pt).
+        let kern = sector.label.unicodeScalars.allSatisfy(\.isASCII) ? 0.4 : 0
+        let size = stride(from: t.labelSize, through: 9, by: -0.5).first { size in
+          WheelRenderer.lineMetrics(WheelRenderer.makeLine(sector.label, size: size, weight: t.labelWeight, color: t.sectorText, kern: kern)).width <= maxWidth
+        }
+        XCTAssertGreaterThanOrEqual(size ?? 0, 11, "\(locale) \(sector.label) at \(size.map { "\($0) pt" } ?? "an ellipsis")")
+      }
+      // Sector 7 is centered at −90° + 7 · 45° = 225° (upper left); its icon sits above the label.
+      let anchor = SectorShape.labelAnchor(index: 7, count: 8, innerRadius: ri, outerRadius: ro, startAngleDeg: -90)
+      XCTAssertGreaterThan(bmp.darkPixels(inRect: CGRect(x: 204 + anchor.x - 12, y: 204 + anchor.y - 24, width: 24, height: 18)), 8, "\(locale) icon")
+    }
+  }
 }

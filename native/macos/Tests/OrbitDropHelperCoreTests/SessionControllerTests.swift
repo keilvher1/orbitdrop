@@ -298,6 +298,55 @@ final class SessionControllerTests: XCTestCase {
     XCTAssertEqual(h.send(.draggingUpdated(point: at(120, 0), sourceAllowsCopy: true)).operation, .none)
   }
 
+  /// Claude analysis on: the PDF tools wheel is one sector, a full ring. Every angle of the band
+  /// selects it, both sides of the seam straight down included (the ring starts and ends there:
+  /// −90° + 180°); the dead zone and the outside still never select.
+  func testPdfToolsWheelWithAnalysisIsOneFullRingSector() {
+    var h = Harness(config: DefaultConfig.config(locale: .en, analysis: true))
+    h.beginDrag()
+    h.send(.modifiersChanged([.alt, .shift]))
+    h.send(.draggingEntered(items: pdf, point: center, sourceAllowsCopy: true))
+    XCTAssertEqual(h.view?.content.sectors.map(\.actionId), [.toolAnalyze])
+    XCTAssertEqual(h.states.last, StateMessage(sessionId: "s1", state: .wheelActive, mode: .tools, menuKey: .some(.pdf), fileCount: 1))
+    var points = stride(from: -180.0, to: 180.0, by: 15).map { at(120 * cos($0 * .pi / 180), 120 * sin($0 * .pi / 180)) }
+    points += [at(-1e-9, 120), at(1e-9, 120), at(0, 65), at(0, 179.9)]
+    for p in points {
+      XCTAssertEqual(h.send(.draggingUpdated(point: p, sourceAllowsCopy: true)).operation, .copy, "\(p)")
+      XCTAssertEqual(h.view?.highlight, SectorHighlight(index: 0, style: .active), "\(p)")
+      XCTAssertEqual(h.view?.capsule, CapsuleContent(text: "ANALYZE", style: .action))
+    }
+    XCTAssertEqual(h.send(.draggingUpdated(point: at(0, 40), sourceAllowsCopy: true)).operation, .none, "dead zone")
+    XCTAssertNil(h.view?.highlight)
+    XCTAssertEqual(h.send(.draggingUpdated(point: at(0, 181), sourceAllowsCopy: true)).operation, .none, "outside the disc")
+    XCTAssertNil(h.view?.highlight)
+    XCTAssertTrue(h.send(.performDrop(items: pdf, point: at(1e-9, 120), sourceAllowsCopy: true)).dropAccepted)
+    XCTAssertEqual(h.drops, [DropMessage(sessionId: "s1", actionId: .toolAnalyze, mode: .tools, files: ["/Users/me/Desktop/Page 001.pdf"])])
+    XCTAssertEqual(h.cancels, [])
+  }
+
+  /// PDF + image drags: no tools today; with Claude analysis on, the same single (batch-capable) sector for all files.
+  func testMixedToolsWheelOffersOnlyClaudeAnalysis() {
+    let items = pdf + png
+    var off = Harness()
+    off.beginDrag()
+    off.send(.modifiersChanged([.alt, .shift]))
+    off.send(.draggingEntered(items: items, point: center, sourceAllowsCopy: true))
+    XCTAssertEqual(off.states.last?.menuKey, .some(.mixed))
+    XCTAssertEqual(off.view?.content, .unsupported)
+    XCTAssertFalse(off.send(.performDrop(items: items, point: at(-120, 0), sourceAllowsCopy: true)).dropAccepted)
+    XCTAssertEqual(off.cancels, [.invalidPayload])
+
+    var h = Harness(config: DefaultConfig.config(locale: .en, analysis: true))
+    h.beginDrag()
+    h.send(.modifiersChanged([.alt, .shift]))
+    h.send(.draggingEntered(items: items, point: center, sourceAllowsCopy: true))
+    XCTAssertEqual(h.states.last?.menuKey, .some(.mixed))
+    XCTAssertEqual(h.view?.content.sectors, [WheelSector(actionId: .toolAnalyze, label: "ANALYZE", icon: .analyze, enabled: true, batch: true)])
+    XCTAssertEqual(h.view?.capsule, CapsuleContent(text: "2 files", style: .info))
+    XCTAssertTrue(h.send(.performDrop(items: items, point: at(-120, 0), sourceAllowsCopy: true)).dropAccepted)
+    XCTAssertEqual(h.drops, [DropMessage(sessionId: "s1", actionId: .toolAnalyze, mode: .tools, files: ["/Users/me/Desktop/Page 001.pdf", "/Users/me/Desktop/photo.png"])])
+  }
+
   func testNoDropWithoutDragEnter() {
     var h = Harness()
     XCTAssertFalse(h.send(.performDrop(items: pdf, point: center, sourceAllowsCopy: true)).dropAccepted)

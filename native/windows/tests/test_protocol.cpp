@@ -106,6 +106,39 @@ TEST_CASE("protocol: reference configure round-trips through the validator") {
     CHECK_EQ(c.strings.fileCount, ref->strings.fileCount);
 }
 
+TEST_CASE("protocol: Claude analysis menus (tool.analyze, icon analyze) round-trip; one-sector PDF and mixed tools") {
+    const auto ref = defaults::referenceConfigure(proto::Locale::Ko, defaults::Theme::Light, true);
+    const auto r = proto::parseMainToHelper(defaults::configureToJson(*ref));
+    REQUIRE(r.ok());
+    const auto* cfgp = std::get_if<std::shared_ptr<const proto::Configure>>(&*r.message);
+    REQUIRE(cfgp != nullptr);
+    const proto::Configure& c = **cfgp;
+    for (const proto::MenuKey key : {proto::MenuKey::Pdf, proto::MenuKey::Mixed}) {
+        const proto::HelperMenu* m = c.findMenu(key);
+        REQUIRE(m != nullptr);
+        REQUIRE(m->tools.size() == 1);  // the whole tools wheel: one sector
+        CHECK(m->tools[0].actionId == proto::ActionId::ToolAnalyze);
+        CHECK(m->tools[0].icon == proto::IconId::Analyze);
+        CHECK(m->tools[0].batch);
+        CHECK(m->tools[0].enabled);
+        CHECK_EQ(m->tools[0].label, std::string("Claude \xEB\xB6\x84\xEC\x84\x9D"));  // Claude 분석
+        CHECK_EQ(m->convert.size(), ref->findMenu(key)->convert.size());
+    }
+    for (const proto::HelperMenu& m : c.menus) {
+        if (m.key == proto::MenuKey::Pdf || m.key == proto::MenuKey::Mixed) continue;
+        REQUIRE(m.tools.size() == 8);  // the seven image tools, then Claude analysis
+        CHECK(m.tools[6].actionId == proto::ActionId::ToolRedact);
+        CHECK(m.tools[7].actionId == proto::ActionId::ToolAnalyze);
+    }
+    // Analysis is opt-in: without it the PDF and mixed tools wheels stay empty.
+    const auto off = defaults::referenceConfigure(proto::Locale::Ko);
+    CHECK(off->findMenu(proto::MenuKey::Pdf)->tools.empty());
+    CHECK(off->findMenu(proto::MenuKey::Mixed)->tools.empty());
+    CHECK_EQ(off->findMenu(proto::MenuKey::ImagePng)->tools.size(), size_t{7});
+    const auto en = defaults::referenceConfigure(proto::Locale::En, defaults::Theme::Light, true);
+    CHECK_EQ(en->findMenu(proto::MenuKey::Pdf)->tools[0].label, std::string("ANALYZE"));
+}
+
 TEST_CASE("protocol: envelope validation") {
     EXPECT_FAIL(proto::parseMainToHelper("not json"), ParseErrorKind::InvalidJson);
     EXPECT_FAIL(proto::parseMainToHelper("[1,2]"), ParseErrorKind::NotAnObject);
@@ -265,6 +298,8 @@ TEST_CASE("protocol: menus and sectors") {
     EXPECT_FAIL(sector("actionId", json::Value::makeString("convert.gif")), ParseErrorKind::InvalidMessage);
     EXPECT_FAIL(sector("actionId", json::Value::makeString("tool.Crop")), ParseErrorKind::InvalidMessage);
     EXPECT_OK(sector("actionId", json::Value::makeString("tool.addBackground")));
+    EXPECT_OK(sector("actionId", json::Value::makeString("tool.analyze")));
+    EXPECT_FAIL(sector("actionId", json::Value::makeString("tool.analyse")), ParseErrorKind::InvalidMessage);
     EXPECT_FAIL(sector("label", json::Value::makeString("")), ParseErrorKind::InvalidMessage);
     EXPECT_OK(sector("label", json::Value::makeString(std::string(32, 'L'))));
     EXPECT_FAIL(sector("label", json::Value::makeString(std::string(33, 'L'))), ParseErrorKind::InvalidMessage);
@@ -276,7 +311,9 @@ TEST_CASE("protocol: menus and sectors") {
     EXPECT_FAIL(sector("label", json::Value::makeString(repeat("\xF0\x9F\x98\x80", 33))), ParseErrorKind::InvalidMessage);
     EXPECT_OK(sector("label", json::Value::makeString(repeat("\xED\x95\x9C", 32))));  // 32 Hangul syllables
     EXPECT_FAIL(sector("icon", json::Value::makeString("star")), ParseErrorKind::InvalidMessage);
+    EXPECT_FAIL(sector("icon", json::Value::makeString("sparkles")), ParseErrorKind::InvalidMessage);
     EXPECT_OK(sector("icon", json::Value::makeString("background")));
+    EXPECT_OK(sector("icon", json::Value::makeString("analyze")));
     EXPECT_OK(sector("icon", json::Value::makeNull()));
     EXPECT_FAIL(mutated([](json::Value& v) { removeMember(firstSector(v), "icon"); }), ParseErrorKind::InvalidMessage);
     EXPECT_FAIL(sector("enabled", json::Value::makeNumber(1)), ParseErrorKind::InvalidMessage);
@@ -414,6 +451,12 @@ TEST_CASE("protocol: enum string tables") {
         const auto a = static_cast<proto::ActionId>(i);
         CHECK(proto::parseActionId(proto::toString(a)) == a);
     }
+    for (size_t i = 0; i < proto::kIconCount; ++i) {
+        const auto ic = static_cast<proto::IconId>(i);
+        CHECK(proto::parseIconId(proto::toString(ic)) == ic);
+    }
+    CHECK_EQ(std::string(proto::toString(proto::ActionId::ToolAnalyze)), std::string("tool.analyze"));
+    CHECK_EQ(std::string(proto::toString(proto::IconId::Analyze)), std::string("analyze"));
     for (size_t i = 0; i < proto::kMenuKeyCount; ++i) {
         const auto k = static_cast<proto::MenuKey>(i);
         CHECK(proto::parseMenuKey(proto::toString(k)) == k);
