@@ -1,0 +1,60 @@
+# OrbitDrop — automated GUI drag test on GitHub's Windows runner (synthesized input).
+#
+# A real File Explorer window, a real OLE file drag made with SendInput, Shift → OrbitDrop's native
+# wheel → drop on a sector; the packaged app must write the right output next to the original.
+# Evidence level: "GitHub runner VM GUI test (synthesized input)" — not a physical PC and not a
+# person (docs/support-matrix.md, docs/verification.md).
+#
+# The driver (tests/windows-gui/driver) takes over the mouse and keyboard, so it only ever runs
+# here, on a disposable runner desktop. This workflow uses no secrets and publishes nothing.
+name: windows-gui
+
+on:
+  push:
+    branches: [ci/windows-gui]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-gui-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  probe:
+    name: Probe the runner desktop
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Runner facts
+        shell: pwsh
+        run: |
+          Get-CimInstance Win32_OperatingSystem | Format-List Caption, Version, BuildNumber, OSArchitecture
+          Get-CimInstance Win32_VideoController | Format-List Name, VideoModeDescription, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate
+          query user 2>&1 | Out-String
+          whoami /groups /fo list | Select-String -Pattern 'Mandatory Label' -Context 0,3 | Out-String
+          Get-Process explorer -IncludeUserName -ErrorAction SilentlyContinue | Format-Table Id, SessionId, UserName, StartTime
+          Get-Process -Id $PID | Format-List Id, SessionId
+          dotnet --list-sdks
+
+      - name: Build the GUI driver
+        run: dotnet build tests/windows-gui/driver/OrbitDropGuiDriver.csproj -c Release -o C:\odgui\driver
+
+      - name: Probe (session, desktop, integrity, screen, synthesized Explorer drag)
+        run: C:\odgui\driver\OrbitDropGuiDriver.exe probe --out C:\odgui\out\probe
+
+      - name: Upload probe evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-gui-probe
+          if-no-files-found: warn
+          retention-days: 30
+          path: C:\odgui\out\probe

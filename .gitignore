@@ -27,3 +27,7 @@ playwright-report/
 # local env
 .env
 .env.*
+
+# Windows GUI driver (.NET build output)
+tests/windows-gui/driver/bin/
+tests/windows-gui/driver/obj/

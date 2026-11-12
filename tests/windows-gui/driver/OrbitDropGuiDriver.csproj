@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    GUI drag driver for the Windows runner (.github/workflows/windows-gui.yml).
+    It synthesizes mouse and keyboard input with SendInput, so it must only ever run on a
+    disposable CI desktop (the GitHub runner VM), never on a developer machine.
+    UseWPF brings System.Windows.Automation (UI Automation client); UseWindowsForms brings
+    System.Drawing (screenshots) and the small text drag source used for the non-file case.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RollForward>LatestMajor</RollForward>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <RootNamespace>OrbitDropGui</RootNamespace>
+    <AssemblyName>OrbitDropGuiDriver</AssemblyName>
+    <!-- WFAC010: the manifest declares PerMonitorV2 on purpose (a console driver, no WinForms app bootstrap). -->
+    <NoWarn>$(NoWarn);WFAC010;CA1416</NoWarn>
+  </PropertyGroup>
+
+</Project>
