@@ -144,6 +144,7 @@ export function SelectionWheel({ selection, initialMode, diameter, onSubmitted, 
         <Wheel
           sectors={sectors}
           diameter={diameter}
+          opacity={settings.globalDrag.wheelOpacity}
           label={mode === 'convert' ? t('wheel.label.convert') : t('wheel.label.tools')}
           centerText={loading ? t('common.loading') : usable.length > 1 ? t.plural('common.files', usable.length) : sizeText}
           onActivate={(sector) => void submit(sector.actionId)}

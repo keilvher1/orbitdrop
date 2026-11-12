@@ -6,9 +6,11 @@ import {
   DEFAULT_SETTINGS,
   HELPER_MAX_LINE_BYTES,
   HelperConfigureSchema,
+  wheelTokens,
   type HelperConfigureMessage,
   type HelperDropMessage,
   type HelperStatus,
+  type ThemeName,
 } from '@orbitdrop/contracts';
 import { buildConfigureMessage } from '../../src/main/helper/configure';
 import { LineReader } from '../../src/main/helper/line-reader';
@@ -77,13 +79,13 @@ function drop(sessionId: string, files = ['/Users/test/Page 001.pdf']): HelperDr
   return { v: 1, type: 'drop', sessionId, actionId: 'convert.jpeg', mode: 'convert', files, dropEffect: 'copy' };
 }
 
-function configureMessage(enabled = true): HelperConfigureMessage {
+function configureMessage(enabled = true, wheelOpacity = DEFAULT_SETTINGS.globalDrag.wheelOpacity, theme: ThemeName = 'light'): HelperConfigureMessage {
   return buildConfigureMessage({
-    settings: { ...DEFAULT_SETTINGS, globalDrag: { ...DEFAULT_SETTINGS.globalDrag, enabled } },
+    settings: { ...DEFAULT_SETTINGS, globalDrag: { ...DEFAULT_SETTINGS.globalDrag, enabled, wheelOpacity } },
     snapshot: snapshotWith(),
-    theme: 'light',
+    theme,
     reduceMotion: false,
-    highContrast: false,
+    highContrast: theme === 'highContrast',
     strings: { dropHint: '여기에 놓기', unsupported: '지원하지 않는 파일', multiFileUnsupported: '한 번에 한 파일만', fileCount: '{n}개 파일' },
   });
 }
@@ -108,6 +110,8 @@ interface Harness {
   drops: HelperDropMessage[];
   statuses: HelperStatus[];
   enabled: { value: boolean };
+  /** settings.globalDrag.wheelOpacity the configure message is built from. */
+  wheelOpacity: { value: number };
 }
 
 const managers: HelperManager[] = [];
@@ -117,6 +121,7 @@ function harness(overrides: Partial<HelperManagerOptions> = {}, locate: string |
   const drops: HelperDropMessage[] = [];
   const statuses: HelperStatus[] = [];
   const enabled = { value: true };
+  const wheelOpacity = { value: DEFAULT_SETTINGS.globalDrag.wheelOpacity };
   const manager = new HelperManager({
     locate: async () => (locate ? { path: locate, source: 'dev' } : null),
     spawn: () => {
@@ -124,7 +129,7 @@ function harness(overrides: Partial<HelperManagerOptions> = {}, locate: string |
       children.push(child);
       return child;
     },
-    configure: () => configureMessage(enabled.value),
+    configure: () => configureMessage(enabled.value, wheelOpacity.value),
     enabled: () => enabled.value,
     onDrop: (message) => {
       drops.push(message);
@@ -138,7 +143,7 @@ function harness(overrides: Partial<HelperManagerOptions> = {}, locate: string |
     ...overrides,
   });
   managers.push(manager);
-  return { manager, children, drops, statuses, enabled };
+  return { manager, children, drops, statuses, enabled, wheelOpacity };
 }
 
 afterEach(async () => {
@@ -209,6 +214,20 @@ describe('configure message', () => {
     const pdf = message.menus.find((m) => m.key === 'pdf')!;
     expect(pdf.convert.map((s) => s.actionId)).toEqual(['convert.docx', 'convert.jpeg', 'convert.png', 'convert.txt']);
     expect(message.strings.dropHint).toBe('여기에 놓기');
+  });
+
+  it('scales the wheel background by the wheel-opacity setting; high contrast stays opaque', () => {
+    expect(configureMessage().tokens).toEqual(wheelTokens('light', false, DEFAULT_SETTINGS.globalDrag.wheelOpacity));
+    expect(configureMessage(true, 55).tokens).toEqual(wheelTokens('light', false, 55));
+    expect(configureMessage(true, 55, 'dark').tokens).toEqual(wheelTokens('dark', false, 55));
+    expect(configureMessage(true, 100).tokens).toEqual(wheelTokens('light', false));
+    expect(configureMessage(true, 40, 'highContrast').tokens).toEqual(wheelTokens('highContrast', false));
+    // Only the background is see-through: the highlighted sector, text and capsule are as designed.
+    const translucent = configureMessage(true, 40).tokens;
+    const opaque = configureMessage(true, 100).tokens;
+    expect(translucent.sector).not.toBe(opaque.sector);
+    expect([translucent.sectorActive, translucent.sectorText, translucent.capsule, translucent.wheelRing]).toEqual([opaque.sectorActive, opaque.sectorText, opaque.capsule, opaque.wheelRing]);
+    expect(HelperConfigureSchema.safeParse(configureMessage(true, 40, 'dark')).success).toBe(true);
   });
 });
 
@@ -365,6 +384,23 @@ describe('HelperManager', () => {
     await waitFor(() => child.ofType('configure').length === 2);
     expect(child.ofType('configure')[1]!.enabled).toBe(false);
     expect(h.manager.status).toEqual({ state: 'disabled' });
+  });
+
+  it('a new wheel opacity reaches the running helper as a new configure (like a new wheel size)', async () => {
+    const h = harness();
+    await h.manager.start();
+    const child = h.children[0]!;
+    child.send(READY);
+    await waitFor(() => child.ofType('configure').length === 1);
+    h.wheelOpacity.value = 45;
+    h.manager.reconfigure();
+    await waitFor(() => child.ofType('configure').length === 2, 1000, 'configure with the new opacity');
+    const sent = child.ofType('configure')[1] as unknown as HelperConfigureMessage;
+    expect(HelperConfigureSchema.safeParse(sent).success).toBe(true);
+    expect(sent.tokens).toEqual(wheelTokens('light', false, 45));
+    h.manager.reconfigure();
+    await tick();
+    expect(child.ofType('configure')).toHaveLength(2); // same opacity: nothing new to send
   });
 
   it('shuts down with a shutdown message and EOF, killing a helper that does not exit', async () => {

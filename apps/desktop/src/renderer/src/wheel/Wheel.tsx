@@ -1,15 +1,22 @@
 import { DEFAULT_WHEEL_GEOMETRY, DESIGN_TOKENS, type WheelGeometry, type WheelSector } from '@orbitdrop/contracts';
 import { hitTestWheel, innerRadius, sectorOuterRadius } from '@orbitdrop/core';
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
-import { useT } from '../app/env';
+import { useEnv } from '../app/env';
 import { ACTION_ICONS } from '../components/ActionIcon';
 import { sectorShape } from './sectorPath';
+import { wheelOpacityFactor, wheelOpacityStyle } from './wheelOpacity';
 import './wheel.css';
 
 export interface WheelProps {
   readonly sectors: readonly WheelSector[];
   /** Disc diameter in CSS px (settings.globalDrag.wheelDiameter, 320–380). */
   readonly diameter: number;
+  /**
+   * Opacity of the wheel's background in percent (settings.globalDrag.wheelOpacity, 40–100; default
+   * 100): the disc, sector fills and shadow. Text, icons, the highlighted sector, the ring and the
+   * capsule stay solid; high contrast and forced colours are always opaque.
+   */
+  readonly opacity?: number;
   /** Accessible name of the menu, e.g. "변환 메뉴". */
   readonly label: string;
   /** Capsule text when no sector is active (file size, like the reference). */
@@ -90,6 +97,7 @@ export function labelFontSize(label: string, labelRadius: number, count: number,
 export function Wheel({
   sectors,
   diameter,
+  opacity = 100,
   label,
   centerText,
   onActivate,
@@ -100,7 +108,8 @@ export function Wheel({
   describedBy,
   geometry = DEFAULT_WHEEL_GEOMETRY,
 }: WheelProps) {
-  const t = useT();
+  const { t, appearance } = useEnv();
+  const opacityFactor = wheelOpacityFactor(opacity, appearance);
   const baseId = useId().replace(/:/g, '');
   const menuRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState<number | null>(null);
@@ -267,7 +276,13 @@ export function Wheel({
   const describedByIds = [describedBy].filter(Boolean).join(' ') || undefined;
 
   return (
-    <div className="wheel" style={{ width: diameter, height: diameter }} data-keyboard={keyboard} data-focus-ring={focusRing} data-busy={busy}>
+    <div
+      className="wheel"
+      style={{ width: diameter, height: diameter, ...wheelOpacityStyle(opacityFactor) }}
+      data-keyboard={keyboard}
+      data-focus-ring={focusRing}
+      data-busy={busy}
+    >
       <div
         ref={menuRef}
         className="wheel-hit"

@@ -1,4 +1,11 @@
-/* Radial menu. Colours: design tokens (wheel*, sector*, capsule*). */
+/*
+ * Radial menu. Colours: design tokens (wheel*, sector*, capsule*).
+ *
+ * Wheel opacity (Settings › 드래그 › 휠 불투명도): --wheel-opacity (0.4–1, set inline by Wheel and the
+ * settings preview, see wheelOpacity.ts) scales the background only — the disc and sector fills and the
+ * disc shadow — as contracts `wheelTokens` does for the native wheel. Text, icons, the highlighted
+ * sector, the ring (the disc's stroke) and the capsule stay solid; high contrast passes 1.
+ */
 
 .wheel {
   position: relative;
@@ -36,8 +43,9 @@
 
 .wheel-disc {
   fill: var(--c-wheel-disc);
+  fill-opacity: var(--wheel-opacity, 1);
   stroke: var(--c-wheel-ring);
-  filter: drop-shadow(0 10px 22px var(--c-wheel-shadow));
+  filter: drop-shadow(0 10px 22px rgb(from var(--c-wheel-shadow) r g b / calc(alpha * var(--wheel-opacity, 1))));
 }
 
 .wheel[data-focus-ring='true'] .wheel-hit:focus .wheel-disc {
@@ -47,7 +55,10 @@
 
 .wheel-sector path {
   fill: var(--c-sector);
-  transition: fill var(--motion-sector) var(--motion-easing);
+  fill-opacity: var(--wheel-opacity, 1);
+  transition:
+    fill var(--motion-sector) var(--motion-easing),
+    fill-opacity var(--motion-sector) var(--motion-easing);
 }
 
 .wheel-text {
@@ -67,6 +78,14 @@
 :root[data-theme='highContrastDark'] .wheel-sector path {
   stroke: var(--c-wheel-ring);
   stroke-width: 1.5px;
+}
+
+/*
+ * The highlighted sector stays solid at any wheel opacity: the drop target, and a disabled sector under the
+ * pointer (like the native wheel's refused sector, drawn with the unscaled capsuleReject).
+ */
+.wheel-sector[data-active='true'] path {
+  fill-opacity: 1;
 }
 
 .wheel-sector[data-enabled='true'][data-active='true'] path {
@@ -155,12 +174,14 @@
 @media (forced-colors: active) {
   .wheel-disc {
     fill: Canvas;
+    fill-opacity: 1;
     stroke: CanvasText;
     filter: none;
   }
 
   .wheel-sector path {
     fill: Canvas;
+    fill-opacity: 1;
     stroke: CanvasText;
     stroke-width: 1px;
   }

@@ -180,6 +180,25 @@
   stroke: var(--c-text-muted);
 }
 
+/* Stand-in file list behind the preview wheel: shows what the wheel opacity lets through. */
+.wheel-preview-backdrop-window {
+  fill: var(--c-surface);
+  stroke: var(--c-border);
+}
+
+.wheel-preview-backdrop-stripe {
+  fill: var(--c-surface-muted);
+}
+
+.wheel-preview-backdrop-icon,
+.wheel-preview-backdrop-text {
+  fill: var(--c-text-muted);
+}
+
+.wheel-preview-backdrop-text {
+  opacity: 0.6;
+}
+
 .wheel-preview-capsule {
   fill: var(--c-capsule);
 }
@@ -282,6 +301,11 @@
 
   .wheel-preview-limit {
     stroke: GrayText;
+  }
+
+  /* The wheel is opaque with forced colours: nothing to show through. */
+  .wheel-preview-backdrop {
+    display: none;
   }
 
   .wheel-preview-capsule {

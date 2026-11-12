@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { COMPOSITION_LIMITS } from './composition';
-import { WHEEL_DIAMETER_RANGE } from './geometry';
+import { WHEEL_DIAMETER_RANGE, WHEEL_OPACITY_RANGE } from './geometry';
 import { LocaleSchema, ModifierCombo, Quality } from './schemas';
 
 /**
@@ -17,6 +17,12 @@ const GlobalDragSettings = z.strictObject({
   /** Held during a file drag to open the tools wheel. 'alt' = Option on macOS. */
   toolsModifiers: ModifierCombo.default(['alt', 'shift']),
   wheelDiameter: z.number().int().min(WHEEL_DIAMETER_RANGE.min).max(WHEEL_DIAMETER_RANGE.max).default(360),
+  /**
+   * Opacity of the wheel's background in percent (added after 1.0.0; additive: files without it get
+   * the default, SETTINGS_VERSION is unchanged). Lower lets the files behind the wheel show through;
+   * labels, the highlighted sector and the capsule stay solid, high contrast stays opaque (wheelTokens).
+   */
+  wheelOpacity: z.number().int().min(WHEEL_OPACITY_RANGE.min).max(WHEEL_OPACITY_RANGE.max).default(70),
 });
 
 const PdfSettings = z.strictObject({

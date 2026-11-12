@@ -90,6 +90,14 @@ export const DEFAULT_WHEEL_GEOMETRY: WheelGeometry = {
 
 export const WHEEL_DIAMETER_RANGE = { min: 320, max: 380 } as const;
 
+/**
+ * Wheel opacity in percent (settings.globalDrag.wheelOpacity): how strongly the
+ * wheel's background (disc, sectors, shadow) covers what is behind it.
+ * `wheelTokens` applies it; text, the highlighted sector, the ring and the
+ * capsule stay as they are, and high contrast is always 100.
+ */
+export const WHEEL_OPACITY_RANGE = { min: 40, max: 100 } as const;
+
 /** Result of hit-testing a point relative to the wheel center. */
 export type WheelHit =
   | { readonly zone: 'center' }

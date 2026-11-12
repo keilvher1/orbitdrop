@@ -18,6 +18,7 @@ import {
   utf8ByteLength,
   wheelTokens,
   DEFAULT_WHEEL_GEOMETRY,
+  WHEEL_OPACITY_RANGE,
   ALLOWED_WEB_PAGES,
   LicenseOpenRequestSchema,
   ORBITDROP_NEW_ISSUE,
@@ -160,6 +161,32 @@ describe('settings', () => {
     expect(defaultSettingsFor('darwin')).toBe(DEFAULT_SETTINGS);
     expect(DEFAULT_SETTINGS.globalDrag.toolsModifiers).toEqual(['alt', 'shift']);
     expect(SettingsSchema.safeParse(defaultSettingsFor('win32')).success).toBe(true);
+  });
+
+  it('wheel opacity: 70 % by default, whole percent in 40–100, added without a version bump', () => {
+    expect(DEFAULT_SETTINGS.globalDrag.wheelOpacity).toBe(70);
+    expect(DEFAULT_SETTINGS.globalDrag.wheelOpacity).toBeGreaterThanOrEqual(WHEEL_OPACITY_RANGE.min);
+    expect(DEFAULT_SETTINGS.globalDrag.wheelOpacity).toBeLessThanOrEqual(WHEEL_OPACITY_RANGE.max);
+    expect(defaultSettingsFor('win32').globalDrag.wheelOpacity).toBe(70);
+    expect(DEFAULT_SETTINGS.version).toBe(1);
+    for (const ok of [WHEEL_OPACITY_RANGE.min, 55, WHEEL_OPACITY_RANGE.max]) {
+      expect(applySettingsPatch(DEFAULT_SETTINGS, { globalDrag: { wheelOpacity: ok } })?.globalDrag.wheelOpacity).toBe(ok);
+    }
+    for (const bad of [WHEEL_OPACITY_RANGE.min - 1, WHEEL_OPACITY_RANGE.max + 1, 70.5, '70', null]) {
+      expect(applySettingsPatch(DEFAULT_SETTINGS, { globalDrag: { wheelOpacity: bad } }), JSON.stringify(bad)).toBeNull();
+    }
+  });
+
+  it('wheel opacity: a 1.0.0 settings file (no wheelOpacity) gets the default and keeps the other drag settings', () => {
+    const older = { version: 1, locale: 'en', globalDrag: { enabled: false, convertModifiers: ['alt'], toolsModifiers: ['alt', 'shift'], wheelDiameter: 340 } };
+    const migrated = migrateSettings(older);
+    expect(migrated.globalDrag).toEqual({ enabled: false, convertModifiers: ['alt'], toolsModifiers: ['alt', 'shift'], wheelDiameter: 340, wheelOpacity: 70 });
+    expect(migrated.locale).toBe('en');
+    expect(migrateSettings({ version: 1, globalDrag: { wheelOpacity: 45 } }).globalDrag.wheelOpacity).toBe(45);
+    // An invalid value resets the drag section to its defaults (like any invalid field), nothing else.
+    const invalid = migrateSettings({ version: 1, locale: 'en', globalDrag: { wheelOpacity: 5, wheelDiameter: 340 } });
+    expect(invalid.globalDrag).toEqual(DEFAULT_SETTINGS.globalDrag);
+    expect(invalid.locale).toBe('en');
   });
 
   it('migration fills gaps and failed sections from the given defaults', () => {

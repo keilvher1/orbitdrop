@@ -1,6 +1,16 @@
 // @vitest-environment jsdom
 import './setup';
-import { DEFAULT_SETTINGS, DEFAULT_WHEEL_GEOMETRY, WHEEL_DIAMETER_RANGE, defaultSettingsFor, isAllowedExternalUrl, type HelperStatus, type ModifierKey, type Settings } from '@orbitdrop/contracts';
+import {
+  DEFAULT_SETTINGS,
+  DEFAULT_WHEEL_GEOMETRY,
+  WHEEL_DIAMETER_RANGE,
+  WHEEL_OPACITY_RANGE,
+  defaultSettingsFor,
+  isAllowedExternalUrl,
+  type HelperStatus,
+  type ModifierKey,
+  type Settings,
+} from '@orbitdrop/contracts';
 import { innerRadius, sectorOuterRadius } from '@orbitdrop/core';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -67,11 +77,19 @@ describe('modifier combo validation', () => {
   });
 });
 
-function setup(options: { status?: HelperStatus; platform?: 'darwin' | 'win32' } = {}) {
+function setup(options: { status?: HelperStatus; platform?: 'darwin' | 'win32'; settings?: Settings } = {}) {
   const orbit = createFakeOrbit({ platform: options.platform ?? 'darwin' });
   if (options.status) orbit.getHelperStatus.mockResolvedValue(options.status);
-  const view = renderWithEnv(<SettingsView />, { orbit });
+  const view = renderWithEnv(<SettingsView />, { orbit, ...(options.settings ? { settings: options.settings } : {}) });
   return { ...view, orbit, user: userEvent.setup() };
+}
+
+/** The wheel preview in Settings › 드래그 (size and opacity). */
+function previewSvg(): SVGSVGElement {
+  const figure = screen.getByRole('figure', { name: '휠 미리보기' });
+  const svg = figure.querySelector('svg.wheel-preview-svg');
+  if (!(svg instanceof SVGSVGElement)) throw new Error('no preview svg');
+  return svg;
 }
 
 describe('SettingsView modifier keys', () => {
@@ -209,12 +227,6 @@ describe('SettingsView other settings', () => {
 });
 
 describe('SettingsView wheel size preview', () => {
-  const previewSvg = () => {
-    const figure = screen.getByRole('figure', { name: '휠 크기 미리보기' });
-    const svg = figure.querySelector('svg.wheel-preview-svg');
-    if (!(svg instanceof SVGSVGElement)) throw new Error('no preview svg');
-    return svg;
-  };
   const disc = (svg: SVGSVGElement) => svg.querySelector('circle.wheel-disc');
 
   it('follows every slider movement at once; the save is debounced to one call with the final value', async () => {
@@ -313,6 +325,112 @@ describe('SettingsView wheel size preview', () => {
     expect(previewDiameter(1000)).toBe(WHEEL_DIAMETER_RANGE.max);
     expect(previewDiameter(341.6)).toBe(342);
     expect(previewDiameter(Number.NaN)).toBe(DEFAULT_WHEEL_GEOMETRY.diameter);
+  });
+});
+
+describe('SettingsView wheel opacity', () => {
+  const HINT = '낮출수록 휠 뒤의 파일이 더 잘 보입니다. 글자와 선택한 항목은 그대로 선명합니다.';
+  const factor = (svg: SVGSVGElement) => svg.style.getPropertyValue('--wheel-opacity');
+
+  it('is a 40–100 % slider under the size slider, at 70 % by default, described by its hint', async () => {
+    const { user } = setup();
+    await user.click(screen.getByRole('tab', { name: '드래그' }));
+    const slider = screen.getByRole('slider', { name: '휠 불투명도' }) as HTMLInputElement;
+    expect([slider.min, slider.max, slider.value]).toEqual([String(WHEEL_OPACITY_RANGE.min), String(WHEEL_OPACITY_RANGE.max), '70']);
+    expect(slider.getAttribute('aria-valuetext')).toBe('70 %');
+    const hintId = slider.getAttribute('aria-describedby');
+    expect(hintId).toBeTruthy();
+    expect(document.getElementById(hintId!)?.textContent).toBe(HINT);
+    expect(screen.getByRole('spinbutton', { name: '휠 불투명도' }).getAttribute('aria-describedby')).toBe(hintId);
+    const size = screen.getByRole('slider', { name: '휠 크기' });
+    expect(size.compareDocumentPosition(slider) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('the preview follows every movement at once; the save is debounced to one call with the final value', async () => {
+    const { orbit, user } = setup();
+    await user.click(screen.getByRole('tab', { name: '드래그' }));
+    expect(previewSvg().getAttribute('data-opacity')).toBe('70');
+    expect(factor(previewSvg())).toBe('0.7');
+
+    const slider = screen.getByRole('slider', { name: '휠 불투명도' });
+    fireEvent.change(slider, { target: { value: '52' } });
+    expect(previewSvg().getAttribute('data-opacity')).toBe('52');
+    fireEvent.change(slider, { target: { value: '45' } });
+    expect(factor(previewSvg())).toBe('0.45');
+    expect(previewSvg().getAttribute('data-diameter')).toBe(String(DEFAULT_SETTINGS.globalDrag.wheelDiameter)); // size untouched
+    expect(orbit.updateSettings).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(orbit.updateSettings).toHaveBeenCalledWith({ globalDrag: { wheelOpacity: 45 } }));
+    expect(orbit.updateSettings).toHaveBeenCalledTimes(1);
+    expect(factor(previewSvg())).toBe('0.45');
+  });
+
+  it('a typed value is kept inside 40–100 % and saved', async () => {
+    const { orbit, user } = setup();
+    await user.click(screen.getByRole('tab', { name: '드래그' }));
+    const field = screen.getByRole('spinbutton', { name: '휠 불투명도' });
+    await user.clear(field);
+    await user.type(field, '20{Enter}');
+    expect(previewSvg().getAttribute('data-opacity')).toBe(String(WHEEL_OPACITY_RANGE.min));
+    await waitFor(() => expect(orbit.updateSettings).toHaveBeenCalledWith({ globalDrag: { wheelOpacity: WHEEL_OPACITY_RANGE.min } }));
+  });
+
+  it('draws a file list behind the preview wheel so the opacity can be seen', async () => {
+    const { user } = setup();
+    await user.click(screen.getByRole('tab', { name: '드래그' }));
+    const svg = previewSvg();
+    const backdrop = svg.querySelector('g.wheel-preview-backdrop');
+    expect(backdrop).not.toBeNull();
+    expect(svg.firstElementChild).toBe(backdrop); // behind the disc and the sectors
+    expect(backdrop!.querySelectorAll('.wheel-preview-backdrop-icon').length).toBeGreaterThan(5);
+    // The highlighted sample sector is drawn like the wheel's: wheel.css keeps it solid.
+    expect(svg.querySelector('.wheel-sector[data-active="true"]')).not.toBeNull();
+  });
+
+  it('shows a value saved elsewhere', async () => {
+    let listener: ((settings: Settings) => void) | null = null;
+    const orbit = createFakeOrbit({
+      onSettingsChanged: (next) => {
+        listener = next;
+        return () => {
+          listener = null;
+        };
+      },
+    });
+    renderWithEnv(<SettingsView />, { orbit });
+    await userEvent.setup().click(screen.getByRole('tab', { name: '드래그' }));
+    act(() => listener?.({ ...DEFAULT_SETTINGS, globalDrag: { ...DEFAULT_SETTINGS.globalDrag, wheelOpacity: 85 } }));
+    expect(previewSvg().getAttribute('data-opacity')).toBe('85');
+    expect((screen.getByRole('slider', { name: '휠 불투명도' }) as HTMLInputElement).value).toBe('85');
+  });
+
+  it('high contrast: the wheel stays opaque, the hint says so, and the value is still saved for later', async () => {
+    const orbit = createFakeOrbit();
+    const settings = await orbit.updateSettings({ accessibility: { highContrast: 'on' } });
+    orbit.updateSettings.mockClear();
+    renderWithEnv(<SettingsView />, { orbit, settings });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: '드래그' }));
+    expect(previewSvg().getAttribute('data-opacity')).toBe('100');
+    expect(factor(previewSvg())).toBe('1');
+    expect(previewSvg().querySelector('.wheel-preview-backdrop')).toBeNull();
+    const slider = screen.getByRole('slider', { name: '휠 불투명도' });
+    expect(document.getElementById(slider.getAttribute('aria-describedby')!)?.textContent).toBe(`${HINT} 고대비에서는 휠이 항상 불투명합니다.`);
+    fireEvent.change(slider, { target: { value: '50' } });
+    expect(previewSvg().getAttribute('data-opacity')).toBe('100');
+    await waitFor(() => expect(orbit.updateSettings).toHaveBeenCalledWith({ globalDrag: { wheelOpacity: 50 } }));
+  });
+
+  it('English labels', async () => {
+    const orbit = createFakeOrbit();
+    const settings = await orbit.updateSettings({ locale: 'en' });
+    renderWithEnv(<SettingsView />, { orbit, settings });
+    await userEvent.setup().click(screen.getByRole('tab', { name: 'Drag' }));
+    const slider = screen.getByRole('slider', { name: 'Wheel opacity' });
+    expect(document.getElementById(slider.getAttribute('aria-describedby')!)?.textContent).toBe(
+      'Lower values show more of the files behind the wheel. Labels and the highlighted item stay solid.',
+    );
+    expect(screen.getByRole('figure', { name: 'Wheel preview' })).toBeTruthy();
   });
 });
 

@@ -1,6 +1,7 @@
 import {
   COMPOSITION_LIMITS,
   WHEEL_DIAMETER_RANGE,
+  WHEEL_OPACITY_RANGE,
   isAllowedExternalUrl,
   type HelperStatus,
   type ModifierKey,
@@ -21,6 +22,7 @@ import { Segmented } from '../../components/Segmented';
 import { SliderField } from '../../components/SliderField';
 import { TitleBar } from '../../components/TitleBar';
 import type { Translator } from '../../i18n/catalog';
+import { wheelAlwaysOpaque } from '../../wheel/wheelOpacity';
 import { AboutContent } from './AboutView';
 import { DataActions } from './DataActions';
 import { RestartHelperButton } from './RestartHelperButton';
@@ -209,6 +211,7 @@ function DebouncedSlider({
   onCommit,
   onLiveChange,
   delay = 250,
+  describedBy,
 }: {
   readonly label: string;
   readonly value: number;
@@ -219,6 +222,8 @@ function DebouncedSlider({
   readonly onCommit: (value: number) => void;
   readonly onLiveChange?: (value: number) => void;
   readonly delay?: number;
+  /** Id of the hint that describes the slider. */
+  readonly describedBy?: string;
 }) {
   const [local, setLocal] = useState(value);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -256,7 +261,7 @@ function DebouncedSlider({
     }, delay);
   };
 
-  return <SliderField label={label} value={local} min={min} max={max} step={step} unit={unit} onChange={onChange} />;
+  return <SliderField label={label} value={local} min={min} max={max} step={step} unit={unit} onChange={onChange} describedBy={describedBy} />;
 }
 
 /** Commit a whole number only when it is inside [min, max]. */
@@ -540,9 +545,14 @@ function ModifierPicker({
 }
 
 function DragPanel({ settings, apply }: PanelProps) {
-  const { t } = useEnv();
-  // The slider's value as shown (follows every movement; the save is debounced).
+  const { t, appearance } = useEnv();
+  // The sliders' values as shown (follow every movement; the saves are debounced).
   const [liveDiameter, setLiveDiameter] = useState(settings.globalDrag.wheelDiameter);
+  const [liveOpacity, setLiveOpacity] = useState(settings.globalDrag.wheelOpacity);
+  const opacityHintId = useId();
+  const opacityHint = wheelAlwaysOpaque(appearance)
+    ? `${t('settings.wheelOpacityHint')} ${t('settings.wheelOpacityHighContrast')}`
+    : t('settings.wheelOpacityHint');
   return (
     <>
       <div className="settings-group">
@@ -560,8 +570,21 @@ function DragPanel({ settings, apply }: PanelProps) {
             onLiveChange={setLiveDiameter}
             onCommit={intCommit(WHEEL_DIAMETER_RANGE.min, WHEEL_DIAMETER_RANGE.max, (wheelDiameter) => apply({ globalDrag: { wheelDiameter } }))}
           />
+          <DebouncedSlider
+            label={t('settings.wheelOpacity')}
+            value={settings.globalDrag.wheelOpacity}
+            min={WHEEL_OPACITY_RANGE.min}
+            max={WHEEL_OPACITY_RANGE.max}
+            unit={t('common.percentSign')}
+            describedBy={opacityHintId}
+            onLiveChange={setLiveOpacity}
+            onCommit={intCommit(WHEEL_OPACITY_RANGE.min, WHEEL_OPACITY_RANGE.max, (wheelOpacity) => apply({ globalDrag: { wheelOpacity } }))}
+          />
+          <p className="settings-hint" id={opacityHintId}>
+            {opacityHint}
+          </p>
         </div>
-        <WheelSizePreview diameter={liveDiameter} />
+        <WheelSizePreview diameter={liveDiameter} opacity={liveOpacity} />
       </div>
       <HelperStatusPanel />
     </>

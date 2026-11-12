@@ -544,6 +544,36 @@ async function main() {
         const saved = (await hooks('updateSettings', {}))?.globalDrag?.wheelDiameter;
         await shot(page, 'settings-wheel-preview');
         check('settings: wheel preview follows the slider live and the size is saved', live === before + 5 && saved === before + 5, `${before} → live ${live}, saved ${saved}`);
+        // Wheel opacity: the preview follows the slider at once and the value is saved. Real Chromium paint:
+        // the sector and disc fills take the factor, the highlighted sector and the labels stay solid, and the
+        // disc shadow's colour is scaled too (relative colour syntax, which jsdom cannot check).
+        const opacityBefore = Number(await preview.getAttribute('data-opacity'));
+        await page.getByRole('slider', { name: '휠 불투명도' }).focus();
+        for (let i = 0; i < 15; i += 1) await page.keyboard.press('ArrowLeft');
+        const opacityLive = Number(await preview.getAttribute('data-opacity'));
+        await page.waitForTimeout(500); // the debounced save; also lets the sector fill transition finish
+        const paint = await page.evaluate(() => {
+          const svg = document.querySelector('svg.wheel-preview-svg');
+          const style = (selector) => getComputedStyle(svg.querySelector(selector));
+          const token = getComputedStyle(document.documentElement).getPropertyValue('--c-wheel-shadow').trim();
+          return {
+            sector: Number(style('.wheel-sector[data-active="false"] path').fillOpacity),
+            disc: Number(style('.wheel-disc').fillOpacity),
+            active: Number(style('.wheel-sector[data-active="true"] path').fillOpacity),
+            label: Number(style('.wheel-text').fillOpacity),
+            shadowAlpha: Number.parseInt(token.slice(7, 9) || 'ff', 16) / 255,
+            filter: style('.wheel-disc').filter,
+          };
+        });
+        const opacitySaved = (await hooks('updateSettings', {}))?.globalDrag?.wheelOpacity;
+        await shot(page, 'settings-wheel-opacity');
+        const factor = opacityLive / 100;
+        const shadowScaled = (paint.filter.match(/[\d.]+/g) ?? []).map(Number).some((n) => Math.abs(n - paint.shadowAlpha * factor) < 0.006);
+        check(
+          'settings: wheel opacity follows the slider live and is saved; only the background is see-through',
+          opacityLive === opacityBefore - 15 && opacitySaved === opacityLive && paint.sector === factor && paint.disc === factor && paint.active === 1 && paint.label === 1 && shadowScaled,
+          `${opacityBefore} → live ${opacityLive}, saved ${opacitySaved}; fill-opacity sector ${paint.sector} disc ${paint.disc} active ${paint.active} label ${paint.label}; ${paint.filter}`,
+        );
         // High contrast while the OS is dark: the dark high-contrast token set (white on black).
         await page.getByRole('tab', { name: '접근성' }).click();
         await page.emulateMedia({ colorScheme: 'dark' });

@@ -60,7 +60,8 @@ export function buildConfigureMessage(inputs: ConfigureInputs): HelperConfigureM
     enabled: settings.globalDrag.enabled,
     locale,
     geometry: { ...DEFAULT_WHEEL_GEOMETRY, diameter: settings.globalDrag.wheelDiameter },
-    tokens: wheelTokens(inputs.theme, inputs.reduceMotion),
+    // The wheel-opacity setting scales the background colours' alpha (high contrast stays opaque).
+    tokens: wheelTokens(inputs.theme, inputs.reduceMotion, settings.globalDrag.wheelOpacity),
     reduceMotion: inputs.reduceMotion,
     highContrast: inputs.highContrast,
     modifiers: { convert: [...settings.globalDrag.convertModifiers], tools: [...settings.globalDrag.toolsModifiers] },
