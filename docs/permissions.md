@@ -15,8 +15,12 @@ Drop Zone)로 변환·편집은 계속 쓸 수 있어야 한다.
 | 파일 접근 | 사용자가 드래그·선택한 파일 읽기, 원본 폴더에 결과 쓰기 | processor worker(utilityProcess), main | 작업 실행 시 |
 | 입력 관찰 | 드래그 중 보조키·마우스 버튼 상태, 드래그 시작 신호 관찰 | 네이티브 helper | 전역 드래그 기능이 켜져 있을 때 |
 
-OrbitDrop은 계정·네트워크·카메라·마이크·위치·연락처 권한을 쓰지 않는다. 모든 처리는 로컬이다. 네트워크는 업데이트 확인(GitHub
-Releases, 설정 › 일반에서 끌 수 있음)에만 쓴다 — [packaging.md §9](packaging.md#9-자동-업데이트).
+OrbitDrop은 계정·네트워크·카메라·마이크·위치·연락처 권한을 쓰지 않는다. 변환과 편집은 모두 로컬에서 처리한다. 네트워크는 두 곳에만
+쓴다.
+
+* 업데이트 확인(GitHub Releases, 설정 › 일반에서 끌 수 있음) — [packaging.md §9](packaging.md#9-자동-업데이트).
+* 선택 기능인 Claude 분석. 기본으로 꺼져 있고, 사용자가 켜고 자기 Anthropic API 키를 저장한 뒤 휠의 ‘Claude 분석’에 놓은 파일만
+  api.anthropic.com으로 보낸다 — [packaging.md §10](packaging.md#10-claude-분석-선택-기능--네트워크).
 
 ## 2. macOS
 

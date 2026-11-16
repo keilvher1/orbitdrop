@@ -1,8 +1,10 @@
 import { ERROR_CODES, WARNING_CODES } from '@orbitdrop/contracts';
 import { describe, expect, it } from 'vitest';
 import enErrors from '../../src/shared/locales/en/errors.json';
+import enMain from '../../src/shared/locales/en/main.json';
 import enUi from '../../src/shared/locales/en/ui.json';
 import koErrors from '../../src/shared/locales/ko/errors.json';
+import koMain from '../../src/shared/locales/ko/main.json';
 import koUi from '../../src/shared/locales/ko/ui.json';
 import { createTranslator, interpolate } from '../../src/renderer/src/i18n/catalog';
 import { formatBytes, percentChange } from '../../src/renderer/src/i18n/format';
@@ -27,6 +29,23 @@ describe('locale catalogs', () => {
   it('errors.json contains nothing but error.* and warning.* for known codes', () => {
     const known = new Set([...ERROR_CODES.map((c) => `error.${c}`), ...WARNING_CODES.map((c) => `warning.${c}`)]);
     for (const key of Object.keys(koErrors)) expect(known.has(key), key).toBe(true);
+  });
+
+  it('no message claims that everything stays on this computer without naming the Claude analysis exception', () => {
+    // Since 1.1.0 the optional Claude analysis sends a file to Anthropic when the user drops it on "Claude 분석".
+    // The 1.1.0 welcome window and About still said "모든 처리는 이 컴퓨터 안에서만 이루어집니다"; a blanket claim
+    // like that must name the exception (a claim scoped to conversions and edits needs none).
+    const blanket = /모든 처리|이 컴퓨터 안에서만|컴퓨터 밖으로 나가지|everything is processed|everything runs|never leave this computer/i;
+    const catalogs: Record<string, string>[] = [koUi, koErrors, koMain, enUi, enErrors, enMain];
+    let checked = 0;
+    for (const catalog of catalogs) {
+      for (const [key, text] of Object.entries(catalog)) {
+        if (!blanket.test(text)) continue;
+        checked++;
+        expect(text, key).toMatch(/Claude/);
+      }
+    }
+    expect(checked).toBeGreaterThanOrEqual(4); // welcome.privacy and about.legal.privacyLocal in both languages
   });
 
   it('no message is empty and both languages use the same placeholders', () => {

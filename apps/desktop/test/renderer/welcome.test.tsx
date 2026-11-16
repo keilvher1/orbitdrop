@@ -33,6 +33,10 @@ describe('welcome window', () => {
     expect([...container.querySelectorAll('.welcome-key-row kbd')].map((kbd) => kbd.textContent)).toEqual(['Shift', 'Option', 'Shift']);
     expect(screen.getByText(/메뉴 막대\(화면 오른쪽 위\)에서 실행되며 Dock에는 나타나지 않습니다/)).toBeTruthy();
     expect(screen.queryByText(/숨겨진 아이콘 표시/)).toBeNull();
+    // The privacy line names the one exception to "processed on this computer": the optional Claude analysis.
+    expect(container.querySelector('.welcome-privacy')?.textContent).toBe(
+      '직접 켜는 Claude 분석을 빼면 모든 처리는 이 컴퓨터 안에서 이루어집니다. 계정이 필요 없고 사용 기록도 보내지 않습니다.',
+    );
   });
 
   it('Windows: Ctrl+Shift for tools (the Windows default), File Explorer, the notification area and its ^ overflow', () => {
@@ -123,5 +127,6 @@ describe('welcome window', () => {
     expect(screen.getByRole('button', { name: 'Get Started' })).toBeTruthy();
     const list = screen.getByRole('list');
     expect(within(list).getByText('Start dragging a file in Finder.')).toBeTruthy();
+    expect(screen.getByText(/^Apart from Claude analysis, which you turn on yourself, everything is processed on this computer\./)).toBeTruthy();
   });
 });

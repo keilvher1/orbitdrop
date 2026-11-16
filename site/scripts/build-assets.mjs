@@ -455,12 +455,12 @@ const OG_COPY = {
   ko: {
     lines: ['파일을 끌다가 Shift,', '원하는 형식에 놓으세요.'],
     sub: '무료 오픈 소스 · macOS · Windows(베타)',
-    foot: '모든 처리는 내 컴퓨터에서 — 업로드도, 계정도 없습니다.',
+    foot: '변환과 편집은 모두 내 컴퓨터에서 — 계정도 필요 없습니다.',
   },
   en: {
     lines: ['Drag a file, press Shift,', 'drop it on a format.'],
     sub: 'Free and open source · macOS · Windows (beta)',
-    foot: 'Everything runs on your computer — no upload, no account.',
+    foot: 'Conversions and edits run on your computer — no account.',
   },
 };
 
