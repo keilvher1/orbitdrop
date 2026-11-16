@@ -16,7 +16,7 @@
 
 <p align="center"><img src="apps/desktop/build/icon.png" width="128" alt="OrbitDrop icon"></p>
 
-## 상태 (2026-11-13, 1.1.0)
+## 상태 (2026-11-16, 1.1.1)
 
 기능별·OS별 상태는 [docs/support-matrix.md](docs/support-matrix.md)가 기준입니다.
 
@@ -24,7 +24,7 @@
 |---|---|
 | macOS (14 이상, Apple 실리콘·Intel) | **Developer ID 서명·Apple 공증**(앱과 DMG, 공증 티켓 부착). 가상 머신의 실제 Finder로 드래그부터 변환·편집까지 검증(macOS 14.8.7 전 기능, 26.6.2 핵심 흐름, Intel 판은 Rosetta 2). 실물 Mac에서 사람이 한 확인은 아직 없음 · [verification.md](docs/verification.md) |
 | Windows 11 x64 | **베타, 아직 코드 서명 없음**(파일 이름의 `-unsigned`; SignPath Foundation 무료 코드 서명을 준비·신청 중 — [코드 서명 정책](https://keilvher1.github.io/orbitdrop/code-signing-policy/)). GitHub의 Windows Server 2025 러너에서 빌드·무인 설치/제거·실행 시험과, 실제 탐색기 창의 파일을 끌어 Shift로 휠을 띄우고 변환하는 자동 GUI 시험(9가지 경우)을 통과. 실제 Windows 11 PC에서 사람이 한 확인, 125% 이상 배율·다중 모니터·도구 휠·편집기 확인은 아직 없음 |
-| 업데이트 | GitHub Releases에서 자동 확인·내려받기·종료 시 설치(설정에서 끌 수 있음). 서명되지 않은 빌드와 개발 빌드는 업데이트하지 않음 |
+| 업데이트 | GitHub Releases에서 자동 확인·내려받기·종료 시 설치(설정에서 끌 수 있음). macOS는 Developer ID로 서명된 빌드, Windows는 설치 프로그램으로 설치한 경우에 업데이트(Windows는 아직 미서명이어도 받음). 직접 빌드한 미서명 macOS 빌드와 개발 빌드는 업데이트하지 않음. 공개 버전 사이의 실제 업데이트는 macOS에서 확인(1.0.0 → 1.1.0), Windows는 아직 |
 | 변환·편집 엔진 | sharp(libvips), PDF.js + @napi-rs/canvas, pdf-lib, docx — 설치본 안에서 엔진 probe와 변환 파이프라인 확인 |
 | Claude 분석(선택) | 기본으로 꺼짐. 설정 › Claude 분석에서 켜고 본인의 Anthropic API 키를 저장하면 도구 휠에 'Claude 분석'이 생김. 실제 API로 이미지(PNG·TIFF)·PDF 분석과 추가 요청을 확인. 자동 시험은 가짜 API만 씀(CI에 키 없음). 키는 OS 보안 저장소(키체인·DPAPI)로 암호화 |
 
