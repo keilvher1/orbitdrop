@@ -486,7 +486,7 @@ analysis-enabled configure reaches them (parallel branch); the live check with t
 in main/worker does not use the system proxy. At integration the PDF limit went from 30 MiB to 20 MiB: base64 makes a
 30 MiB PDF about 40 MB, past the API's 32 MB request limit (a 413 only after the upload); 20 MiB is about 28 MB.
 
-## Stage 12 — privacy wording after Claude analysis (2026-11-16, branch `fix/privacy-wording`)
+## Stage 12 — privacy wording after Claude analysis (2026-11-16, released as 1.1.1)
 
 Found while writing the Windows QA checklist: two lines of the 1.1.0 app still made the blanket pre-analysis
 claim. The welcome window footer (`welcome.privacy`) and the About tagline (`about.tagline`) said "모든 처리는 이
@@ -514,3 +514,7 @@ Verified locally (macOS 26, arm64):
 - Playwright E2E 47/47, plus a one-off check of the welcome and About windows in ko/en. The privacy line is 2
   lines in Korean and 3 in English, never under the Start button, with no horizontal overflow.
 - `site/scripts/check.mjs` ok.
+
+Released as **v1.1.1** on 2026-11-16 13:27 UTC. The release checks and the first differential auto-update
+(1.1.0 → 1.1.1 on macOS arm64) are in [verification.md](verification.md#공개-릴리스-111-2026-11-16-kst).
+That test also found that an update check failing offline during sleep is not retried on wake (open).

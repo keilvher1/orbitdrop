@@ -13,6 +13,43 @@
 
 ---
 
+## 공개 릴리스 1.1.1 (2026-11-16 KST)
+
+[v1.1.1](https://github.com/keilvher1/orbitdrop/releases/tag/v1.1.1) — 소스 `3ce3a5c`(태그 `v1.1.1`), 2026-11-16 13:27 UTC 공개. 앱 안의 개인정보 문구를 고친 패치다.
+환영 창 아래쪽과 정보 창 소개 문장이 "모든 처리는 이 컴퓨터 안에서만"이라고 하던 것을 고쳐, 직접 켜는 Claude 분석이라는 예외를 밝힌다. 웹사이트 공유 이미지 문구도 함께 고쳤다.
+
+| 항목 | 결과 |
+|---|---|
+| 태그 전 검사(개발 Mac) | typecheck, vitest 1399 통과 / 7 건너뜀, Playwright E2E 46/46, electron-verify 39/39, 라이선스·버전·사이트 검사. 새 i18n 검사는 Claude를 밝히지 않은 "모든 처리는 이 컴퓨터에서" 문구를 막는다(1.1.0 문구에서 실패함을 확인). 환영 창과 정보 창은 한국어·영어 모두 줄바꿈을 확인했다(버튼과 겹침 없음, 가로 넘침 없음) |
+| 태그 커밋의 CI | CI(run 43873182746: macOS arm64+x64 패키지·E2E, Windows x64 패키지), native-windows(run 43873182794), Pages(run 43873182505) 통과 |
+| Windows 패키지 | Release(run 43873182748)에서 빌드·smoke·무인 설치 시험(실행 파일 ProductVersion 1.1.1) 뒤 초안에 업로드. **코드 서명 없음**(`-unsigned`) |
+| macOS 패키지 | `scripts/release-mac.mjs v1.1.1`(`--dry-run` 뒤 `--skip-build`). Developer ID 서명, 앱·DMG 공증과 티켓 부착(DMG 제출 arm64 `3527cea4…`, x64 `16f037bb…` Accepted). 태그 커밋 `3ce3a5c`에서 빌드(dirty 아님), smoke 통과(x64는 Rosetta 2). 두 DMG `spctl` accepted·`stapler validate`. 격리 표시를 붙인 앱 사본은 `spctl`·`stapler`·`syspolicy_check distribution` 통과 |
+| 공개 전·후 확인 | 초안의 11개 파일을 모두 내려받아 `shasum -a 256 -c SHA256SUMS.txt` 전부 OK. `latest-mac.yml`(1.1.1, arm64·x64 zip), `latest.yml`(1.1.1, 설치 파일). 공개 뒤 API 최신 릴리스 v1.1.1(파일 12개), `releases/latest/download/latest*.yml` 1.1.1 |
+| **실제 자동 업데이트 1.1.0 → 1.1.1 (macOS, arm64)** | `/Applications/OrbitDrop.app` 1.1.0을 AppleEvent로 종료하고 다시 실행했다 → 61초 뒤 자동 확인이 1.1.1을 찾음 → blockmap 차등 다운로드(139,336 KB 중 6,628 KB, 5 %, 약 2초) → 종료하자 ShipIt "Installation completed successfully" → `/Applications/OrbitDrop.app` 1.1.1, `spctl` accepted(Notarized Developer ID) → 다시 실행하니 `core started version="1.1.1"`, helper 1.1.1 `globalDrag=true`, `enabledActions=18 probeErrors=0` |
+
+SHA-256(`SHA256SUMS.txt`와 같음):
+
+| 파일 | SHA-256 |
+|---|---|
+| `OrbitDrop-1.1.1-mac-arm64.dmg` | `96951e657abe07102dfb25f123e11e77039e3d49eb85dd1e639f72167c8ccbb4` |
+| `OrbitDrop-1.1.1-mac-x64.dmg` | `9b37cf49320511e786aa659e2fc0644897abfed53392d908826b8e28c0f440ed` |
+| `OrbitDrop-1.1.1-mac-arm64.zip` | `c9659a4f444636db8fd90b4ec7de0c96ae4e76a7bf9a45f42b8f47e9a9149475` |
+| `OrbitDrop-1.1.1-mac-x64.zip` | `36780f7cda4076fbddd63b049a9cc017230d24e88126738fab9496fdbfa43e22` |
+| `OrbitDrop-1.1.1-win-x64-unsigned-setup.exe` | `9e527dbbf28082eee9330fc924711ab4c1999480ef919f9e6c8661a9cd4e4728` |
+| `OrbitDrop-1.1.1-third-party-sources.tar.gz` | `043bad7a4c74eea24c84180c512c47eebb4d3dcb141e94a6e540cdecb06132b6` |
+
+시험 중 발견(아직 고치지 않음):
+* 설치된 1.1.0의 로그를 보니 6시간마다 도는 자동 확인이 세 번 연속 Mac이 잠든 사이에 실행되어 `offline`으로 실패했다(11-16 00:18, 06:41, 12:44 UTC).
+* 깨어날 때의 `UpdateService.resumed()`는 마지막 확인을 *시작한* 시각만 본다. 그래서 실패한 확인도 "6시간 안에 확인함"으로 치고 다시 확인하지 않으며,
+  다음 확인은 6시간 뒤로 밀린다(`apps/desktop/src/main/update/service.ts`).
+* 자주 잠드는 Mac에서는 업데이트가 늦게 도착할 수 있다. 이미 설치된 버전의 동작이라 1.1.0 → 1.1.1에는 영향이 없었다(위 시험은 다시 실행해서 확인함).
+* 다음 버전 후보: 오프라인·네트워크 오류로 끝난 확인은 깨어날 때나 짧은 간격으로 다시 확인한다.
+
+아직 확인하지 않은 것: Windows에서 공개 버전 사이의 자동 업데이트(Windows QA 체크리스트 ABT-05, 1.1.0 → 1.1.1), 실물 Windows 11 PC에서
+사람이 한 확인, 실제 Finder 드래그로 ‘Claude 분석’에 놓기(사람 확인).
+
+---
+
 ## 공개 릴리스 1.1.0 (2026-11-13 KST)
 
 [v1.1.0](https://github.com/keilvher1/orbitdrop/releases/tag/v1.1.0) — 소스 `3ab51d7`(태그 `v1.1.0`), 2026-11-12 17:59 UTC 공개. 새 기능: 반투명 휠(기본 70 %,
